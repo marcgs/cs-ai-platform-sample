@@ -7,8 +7,7 @@ from pydantic import BaseModel
 from cs_platform.capture import EPISODE_ID_KEY
 from cs_platform.episodes import Episode, InMemoryEpisodeStore
 from cs_platform.factory import build_agent
-
-from .conftest import ScriptedChatClient, call, text
+from cs_platform.testing import ScriptedChatClient, call, text
 
 if TYPE_CHECKING:
     from cs_platform.spec import AgentSpec

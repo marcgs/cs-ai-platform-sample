@@ -1,0 +1,8 @@
+name: rca-agent
+version: 0.1.0
+description: >-
+  Diagnoses a machine incident from a field engineer's description: gathers evidence from
+  diagnostic tools and returns ranked root-cause hypotheses, each backed by cited evidence.
+instructions: instructions.md
+tools: [diagnostics]
+eval_suite: ../../../../evals/rca

@@ -8,14 +8,10 @@ from typing import Any
 
 import pytest
 
+from diagnostics_mcp.tools import TOOL_NAMES
+
 APP_PATH = Path(__file__).parents[1] / "function_app.py"
-EXPECTED_TOOLS = {
-    "get_machine_context",
-    "get_error_events",
-    "get_telemetry_window",
-    "lookup_error_code",
-    "get_logbook",
-}
+EXPECTED_TOOLS = set(TOOL_NAMES)
 
 type Functions = dict[str, Any]
 

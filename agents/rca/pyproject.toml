@@ -1,0 +1,19 @@
+[project]
+name = "rca-agent"
+version = "0.1.0"
+description = "Root-cause analysis agent for machine incidents, built on the CS AI platform."
+requires-python = ">=3.14,<3.15"
+dependencies = [
+    "cs-platform",
+    "python-dotenv>=1.1.0",
+]
+
+[project.scripts]
+rca-local = "rca_agent.local:main"
+
+[tool.uv.sources]
+cs-platform = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.13.5,<0.14"]
+build-backend = "uv_build"

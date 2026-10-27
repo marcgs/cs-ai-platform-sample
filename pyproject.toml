@@ -7,6 +7,8 @@ requires-python = ">=3.14,<3.15"
 dependencies = [
     "cs-platform",
     "diagnostics-domain",
+    "diagnostics-mcp",
+    "rca-agent",
 ]
 
 [dependency-groups]
@@ -22,17 +24,19 @@ dev = [
 package = false
 
 [tool.uv.workspace]
-members = ["packages/*", "services/*"]
+members = ["packages/*", "services/*", "agents/*"]
 
 [tool.uv.sources]
 cs-platform = { workspace = true }
 diagnostics-domain = { workspace = true }
+diagnostics-mcp = { workspace = true }
+rca-agent = { workspace = true }
 
 # --- Ruff: lint + format -----------------------------------------------------
 [tool.ruff]
 line-length = 100
 target-version = "py314"
-src = ["packages/*/src", "services/*/src", "services/*"]
+src = ["packages/*/src", "services/*/src", "services/*", "agents/*/src"]
 
 [tool.ruff.lint]
 select = [
@@ -64,12 +68,12 @@ pythonVersion = "3.14"
 venvPath = "."
 venv = ".venv"
 typeCheckingMode = "standard"
-strict = ["packages/*/src", "services/*/src"]
+strict = ["packages/*/src", "services/*/src", "agents/*/src"]
 exclude = ["**/.venv", "**/__pycache__", "**/node_modules"]
 
 # --- Pytest -------------------------------------------------------------------
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib", "-ra"]
-testpaths = ["packages", "services"]
+testpaths = ["packages", "services", "agents"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"

@@ -19,6 +19,15 @@ from diagnostics_domain.models import Severity, Subsystem
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+TOOL_NAMES = (
+    "get_machine_context",
+    "get_error_events",
+    "get_telemetry_window",
+    "lookup_error_code",
+    "get_logbook",
+)
+"""The MCP tool names this server exposes; agents' instructions refer to them."""
+
 MAX_EVENT_HOURS = 168
 MAX_TELEMETRY_HOURS = 168
 MAX_LOGBOOK_DAYS = 120

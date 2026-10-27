@@ -38,7 +38,9 @@ class PlatformSettings(BaseModel):
         if not endpoint:
             raise SettingsError("FOUNDRY_PROJECT_ENDPOINT is not set")
         optional = {
-            "model_deployment": env.get("FOUNDRY_MODEL_DEPLOYMENT_NAME"),
+            # Foundry hosting injects AZURE_AI_MODEL_DEPLOYMENT_NAME for hosted agents.
+            "model_deployment": env.get("FOUNDRY_MODEL_DEPLOYMENT_NAME")
+            or env.get("AZURE_AI_MODEL_DEPLOYMENT_NAME"),
             "toolbox_endpoint": env.get("TOOLBOX_ENDPOINT"),
             "mcp_server_url": env.get("DIAGNOSTICS_MCP_URL"),
             "cosmos_endpoint": env.get("COSMOS_ENDPOINT"),

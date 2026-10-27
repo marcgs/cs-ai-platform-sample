@@ -113,8 +113,8 @@ Each step ends green: lint, type check and tests pass, and the step is committed
 **4. RCA agent (`agents/rca`)**
 - MAF agent built through the harness, served with the hosted-agent Responses host.
 - Instructions require cited evidence and a structured `RcaReport`.
-- Runs locally with `azd ai agent run` against a local MCP server.
-- Uses **container deploy mode**, with a uv-based Dockerfile, so the workspace packages build reliably.
+- Runs locally with `rca-local` against a local MCP server (any Foundry model deployment); `azd ai agent run` once `azure.yaml` exists (step 5).
+- Uses **container deploy mode**, with a uv-based Dockerfile, so the workspace packages build reliably. The image is built remotely in ACR (step 5); a package mirror can be passed as a BuildKit secret for local builds.
 
 **5. Infrastructure (`infra/`, `azure.yaml`)**
 - Bicep modules for all the resources above. RBAC:

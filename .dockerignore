@@ -1,0 +1,16 @@
+# Build context is the repository root; keep it to what images need.
+.git
+.github
+.claude
+.azure
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/tests
+**/local.settings.json
+.env
+.env.*
+uv.lock
+docs
+evals

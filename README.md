@@ -13,12 +13,13 @@ A reference sample that shows the path from **an agent prototype** to **an agent
 
 | Path | Purpose |
 |---|---|
-| `packages/cs-platform` | Reusable platform harness (agent specs, telemetry, episode capture) |
+| `packages/cs-platform` | Reusable platform harness: agent specs, episode capture, stores, telemetry ([README](packages/cs-platform/README.md)) |
 | `packages/diagnostics-domain` | Synthetic diagnostics domain, data generator and seed data |
 | `services/diagnostics-mcp` | Read-only diagnostic tools as an MCP server on Azure Functions ([README](services/diagnostics-mcp/README.md)) |
+| `agents/rca` | Root-cause analysis agent built on the platform, hosted in Foundry ([README](agents/rca/README.md)) |
 | `docs/` | Plan, ADRs, architecture notes |
 
-Further folders (`agents/`, `evals/`, `cli/`, `infra/`) are added as the plan progresses.
+Further folders (`evals/`, `cli/`, `infra/`) are added as the plan progresses.
 
 ## Prerequisites
 
