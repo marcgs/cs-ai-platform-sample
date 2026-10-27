@@ -50,6 +50,10 @@ select = [
   "PT",    # pytest style
 ]
 
+[tool.ruff.lint.flake8-type-checking]
+# Pydantic resolves annotations at runtime, so their imports must stay at module level.
+runtime-evaluated-base-classes = ["pydantic.BaseModel", "diagnostics_domain.models._Record"]
+
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["PLR2004"]
 
