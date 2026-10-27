@@ -48,13 +48,14 @@ Azure resources (one resource group, default `swedencentral`; all resources in t
 - Cosmos DB NoSQL (serverless)
 - Function App (Flex Consumption) + storage
 - User-assigned identities where needed
+- Virtual network with private endpoints and private DNS for Storage and Cosmos DB; the function app and the hosted agents join it through delegated subnets
 
-Access is Entra/RBAC only: no keys in code, and `disableLocalAuth` where the service supports it.
+Access is Entra/RBAC only: no keys in code, and `disableLocalAuth` where the service supports it. Storage and Cosmos DB are private (ADR 0003); Foundry, the registry and AI Search stay public so developers can deploy and run from outside the network.
 
 Deferred to iteration 2:
 
 - APIM AI gateway
-- Private networking
+- Private endpoints for Foundry, the registry, AI Search and Application Insights (needs in-network deployment runners)
 - Outer feedback loop (SME approval and replay via Logic Apps, agent optimizer)
 - Content Understanding ingestion
 - Fabric / ADX telemetry
@@ -117,16 +118,18 @@ Each step ends green: lint, type check and tests pass, and the step is committed
 - Uses **container deploy mode**, with a uv-based Dockerfile, so the workspace packages build reliably. The image is built remotely in ACR (step 5); a package mirror can be passed as a BuildKit secret for local builds.
 
 **5. Infrastructure (`infra/`, `azure.yaml`)**
-- Bicep modules for all the resources above. RBAC:
-  - project MI: Foundry User, ACR pull, Log Analytics reader
-  - dev user: Foundry User / Project Manager, Cosmos data contributor, Search index contributor
-  - Functions MI: storage access
-- azd hooks:
-  - `postprovision`: create and seed the AI Search index (logbooks and cases, with integrated vectorization or script embeddings)
-  - `postdeploy`: grant the hosted agent's identity the Cosmos data role, using its object ID after deployment
+- Bicep for every resource (azd's standard Bicep provider). The Foundry part is based on the layer `azd ai agent init --infra=bicep` generates: AIServices account, project, model deployments, registry with project connection and AcrPull, plus an Application Insights connection.
+- RBAC, no keys (local auth disabled on Foundry, Cosmos DB, AI Search, Storage):
+  - project MI: AcrPull, Log Analytics Reader, Search Index Data Reader
+  - dev user: Azure AI User, AcrPush, Cosmos data contributor, Search service and index data contributor
+  - Functions identity: storage blob/queue/table data roles, Monitoring Metrics Publisher
+- The MCP function app deploys without a remote build: `scripts/package_mcp.sh` (azd `prepackage` hook) installs Linux wheels, including the workspace packages, into `.python_packages`.
+- Networking (ADR 0003): a virtual network with subnets for private endpoints, Flex VNet integration and Foundry agent network injection. Storage (blob, queue, table) and Cosmos DB have public access disabled and private endpoints. Agent network injection only applies when the Foundry account is created.
 - Goal: `azd up` works from a clean subscription.
 
-**6. Toolbox wiring**
+**6. Agent deployment and toolbox wiring**
+- The hosted agent joins `azure.yaml` (container, remote build in ACR), and `postdeploy` grants its agent identity the Cosmos DB data role (the identity exists only after deployment).
+- The AI Search index for logbooks and historical cases is created and seeded (`postprovision`).
 - An `azure.ai.toolbox` service in `azure.yaml` bundles the MCP server connection and the `azure_ai_search` tool. The agent consumes it via `uses:` or `TOOLBOX_ENDPOINT`.
 - MCP auth: start with a key-based project connection (secret held by Foundry), then harden to Entra (project MI + Functions built-in auth) as the last task of this step if feasible. Otherwise move it to the iteration 2 backlog.
 
@@ -140,7 +143,7 @@ Each step ends green: lint, type check and tests pass, and the step is committed
 **8. CLI (`cli/`)**
 - `csai diagnose <machine-id> "<symptom>"` renders the hypotheses and evidence and prints the episode ID.
 - `csai episodes list/show`.
-- `csai feedback <episode-id> --verdict --actual-root-cause --note` writes the expert correction to Cosmos.
+- `csai feedback <episode-id> --verdict --actual-root-cause --note` attaches the expert correction to the episode. Cosmos DB is private, so the CLI goes through a platform endpoint rather than writing to Cosmos directly.
 
 **9. CI/CD (documented, not active)**
 - `docs/ci-cd.md` maps the local gates to a pipeline: quality checks and `csai eval` on pull requests, `azd provision` + `azd deploy` with OIDC on merge, plus a smoke test. Nothing is wired up in this repo.

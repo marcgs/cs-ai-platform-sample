@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+name: cs-ai-platform-sample
+requiredVersions:
+  azd: ">=1.27.1"
+
+infra:
+  provider: bicep
+  path: infra
+
+services:
+  diagnostics-mcp:
+    project: services/diagnostics-mcp
+    language: python
+    host: function
+    # Workspace packages aren't on a package index, so dependencies are built locally as
+    # Linux wheels (scripts/package_mcp.sh) and the package is deployed as-is.
+    remoteBuild: false
+    hooks:
+      prepackage:
+        posix:
+          shell: sh
+          run: ../../scripts/package_mcp.sh

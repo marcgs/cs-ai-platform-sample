@@ -1,0 +1,14 @@
+{
+  "cognitiveServicesAccounts": "cog-",
+  "containerRegistryRegistries": "cr",
+  "documentDBDatabaseAccounts": "cosmos-",
+  "searchSearchServices": "srch-",
+  "operationalInsightsWorkspaces": "log-",
+  "insightsComponents": "appi-",
+  "webSitesFunctions": "func-",
+  "webServerFarms": "plan-",
+  "storageStorageAccounts": "st",
+  "managedIdentityUserAssignedIdentities": "id-",
+  "networkVirtualNetworks": "vnet-",
+  "networkPrivateEndpoints": "pe-"
+}
