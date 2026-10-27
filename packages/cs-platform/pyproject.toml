@@ -1,0 +1,10 @@
+[project]
+name = "cs-platform"
+version = "0.1.0"
+description = "Reusable agent platform harness: agent specs, telemetry, episode capture."
+requires-python = ">=3.14,<3.15"
+dependencies = []
+
+[build-system]
+requires = ["uv_build>=0.13.5,<0.14"]
+build-backend = "uv_build"

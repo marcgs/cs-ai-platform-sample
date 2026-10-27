@@ -1,0 +1,70 @@
+[project]
+name = "cs-ai-platform-sample"
+version = "0.1.0"
+description = "Reference sample: a minimal CS AI platform on Azure, validated with a fictional RCA diagnostics agent."
+readme = "README.md"
+requires-python = ">=3.14,<3.15"
+dependencies = [
+    "cs-platform",
+    "diagnostics-domain",
+]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.7.0",
+    "pyright>=1.1.414",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.17.1",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+cs-platform = { workspace = true }
+diagnostics-domain = { workspace = true }
+
+# --- Ruff: lint + format -----------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+select = [
+  "E",     # pycodestyle errors
+  "W",     # pycodestyle warnings
+  "F",     # pyflakes
+  "I",     # isort
+  "UP",    # pyupgrade
+  "B",     # bugbear
+  "SIM",   # simplify
+  "N",     # naming
+  "RUF",   # ruff-specific
+  "ASYNC", # async pitfalls
+  "PTH",   # prefer pathlib
+  "TC",    # type-checking imports
+  "PT",    # pytest style
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["PLR2004"]
+
+# --- Pyright: type checking -------------------------------------------------
+[tool.pyright]
+pythonVersion = "3.14"
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "standard"
+strict = ["packages/*/src"]
+exclude = ["**/.venv", "**/__pycache__", "**/node_modules"]
+
+# --- Pytest -------------------------------------------------------------------
+[tool.pytest.ini_options]
+addopts = ["--import-mode=importlib", "-ra"]
+testpaths = ["packages"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
