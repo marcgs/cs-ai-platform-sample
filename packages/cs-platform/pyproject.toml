@@ -3,7 +3,16 @@ name = "cs-platform"
 version = "0.1.0"
 description = "Reusable agent platform harness: agent specs, telemetry, episode capture."
 requires-python = ">=3.14,<3.15"
-dependencies = []
+dependencies = [
+    "agent-framework-core>=1.22.0",
+    "agent-framework-foundry>=1.15.0",
+    "agent-framework-foundry-hosting>=1.0.0b261015",
+    "azure-cosmos>=4.17.1",
+    "azure-identity>=1.27.0",
+    "microsoft-opentelemetry>=1.5.0",
+    "pydantic>=2.14.1",
+    "pyyaml>=6.0.3",
+]
 
 [build-system]
 requires = ["uv_build>=0.13.5,<0.14"]

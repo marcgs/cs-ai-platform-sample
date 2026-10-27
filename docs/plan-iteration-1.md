@@ -103,9 +103,9 @@ Each step ends green: lint, type check and tests pass, and the step is committed
 - Tests call the tool functions directly; run locally with `func start` and the MCP inspector.
 
 **3. Platform harness (`cs-platform`)**
-- `AgentSpec` (YAML): name, instructions file, model deployment, toolbox name, output schema, eval suite.
+- `AgentSpec` (YAML): name, version, instructions file, tool sources, eval suite. The model deployment comes from platform settings, and the output schema from the agent's code.
 - Telemetry bootstrap (Microsoft OpenTelemetry distro, MAF spans).
-- `RcaReport` output schema: ranked hypotheses with confidence, evidence items (source, ref, excerpt) and recommended checks.
+- Generic `Evidence` item (source, ref, excerpt) for agents to cite. The RCA-specific `RcaReport` lives with the agent (step 4).
 - Episode model and `EpisodeStore` protocol, with Cosmos and in-memory implementations.
 - MAF middleware that records tool calls, evidence and the final report into an episode, deterministically and outside the LLM's control.
 - Tests use the in-memory store and a fake chat client.
