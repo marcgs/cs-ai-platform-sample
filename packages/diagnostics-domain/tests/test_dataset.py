@@ -1,6 +1,7 @@
 from datetime import timedelta
 
 import pytest
+
 from diagnostics_domain.dataset import DiagnosticsDataset, UnknownRecordError, load_seed
 from diagnostics_domain.generator import RAMP_HOURS, generate
 from diagnostics_domain.models import SignatureKind

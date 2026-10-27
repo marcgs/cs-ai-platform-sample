@@ -15,13 +15,15 @@ A reference sample that shows the path from **an agent prototype** to **an agent
 |---|---|
 | `packages/cs-platform` | Reusable platform harness (agent specs, telemetry, episode capture) |
 | `packages/diagnostics-domain` | Synthetic diagnostics domain, data generator and seed data |
+| `services/diagnostics-mcp` | Read-only diagnostic tools as an MCP server on Azure Functions ([README](services/diagnostics-mcp/README.md)) |
 | `docs/` | Plan, ADRs, architecture notes |
 
-Further folders (`agents/`, `services/`, `evals/`, `cli/`, `infra/`) are added as the plan progresses.
+Further folders (`agents/`, `evals/`, `cli/`, `infra/`) are added as the plan progresses.
 
 ## Prerequisites
 
 - [uv](https://docs.astral.sh/uv/) 0.13+ (installs Python 3.14 automatically)
+- [Azure Functions Core Tools v4](https://learn.microsoft.com/azure/azure-functions/functions-run-local), to run the MCP server locally
 
 ## Development
 

@@ -22,7 +22,7 @@ dev = [
 package = false
 
 [tool.uv.workspace]
-members = ["packages/*"]
+members = ["packages/*", "services/*"]
 
 [tool.uv.sources]
 cs-platform = { workspace = true }
@@ -32,6 +32,7 @@ diagnostics-domain = { workspace = true }
 [tool.ruff]
 line-length = 100
 target-version = "py314"
+src = ["packages/*/src", "services/*/src", "services/*"]
 
 [tool.ruff.lint]
 select = [
@@ -63,12 +64,12 @@ pythonVersion = "3.14"
 venvPath = "."
 venv = ".venv"
 typeCheckingMode = "standard"
-strict = ["packages/*/src"]
+strict = ["packages/*/src", "services/*/src"]
 exclude = ["**/.venv", "**/__pycache__", "**/node_modules"]
 
 # --- Pytest -------------------------------------------------------------------
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib", "-ra"]
-testpaths = ["packages"]
+testpaths = ["packages", "services"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
