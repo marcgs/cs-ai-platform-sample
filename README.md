@@ -8,6 +8,7 @@ A reference sample that shows the path from **an agent prototype** to **an agent
 - How it was built: [`docs/plan-iteration-1.md`](docs/plan-iteration-1.md) · decisions in [`docs/adr/`](docs/adr/)
 - Adding an agent: [`docs/onboarding-an-agent.md`](docs/onboarding-an-agent.md)
 - What's next: [`docs/iteration-2-backlog.md`](docs/iteration-2-backlog.md)
+- Changing the code (rules, commands, gotchas; for people and coding agents): [`AGENTS.md`](AGENTS.md)
 
 ## What runs where
 
