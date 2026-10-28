@@ -1,20 +1,24 @@
-// Flex Consumption function app hosting the diagnostics MCP server.
-// Storage, deployment and telemetry all use the app's user-assigned identity; no keys.
-// The storage account is private: the app reaches it through its integrated subnet.
+// One Flex Consumption function app (Python) with its own user-assigned identity.
+// Storage, deployment and telemetry use that identity; no keys. The app is integrated into
+// a subnet, so it reaches the private storage account and other private endpoints.
 
 param location string
 param tags object = {}
 param appName string
 param planName string
-param storageAccountName string
 param identityName string
+@description('azd service name; azd finds the app to deploy by this tag.')
+param serviceName string
+param storageAccountName string
+@description('Blob container that holds this app\'s deployment package.')
+param deploymentContainer string
 param appInsightsName string
 @description('Subnet delegated to Microsoft.App/environments for VNet integration.')
 param subnetId string
-param serviceName string = 'diagnostics-mcp'
+@description('Additional app settings.')
+param settings object = {}
 param pythonVersion string = '3.14'
 
-var deploymentContainer = 'app-package'
 var roles = {
   storageBlobDataOwner: 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
   storageQueueDataContributor: '974c5e8b-45b9-4653-ba55-5f855dd0fb88'
@@ -28,32 +32,8 @@ resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' 
   tags: tags
 }
 
-resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
+resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
   name: storageAccountName
-  location: location
-  tags: tags
-  kind: 'StorageV2'
-  sku: {
-    name: 'Standard_LRS'
-  }
-  properties: {
-    allowBlobPublicAccess: false
-    allowSharedKeyAccess: false
-    minimumTlsVersion: 'TLS1_2'
-    publicNetworkAccess: 'Disabled'
-    networkAcls: {
-      defaultAction: 'Deny'
-      bypass: 'None'
-    }
-  }
-
-  resource blobServices 'blobServices' = {
-    name: 'default'
-
-    resource container 'containers' = {
-      name: deploymentContainer
-    }
-  }
 }
 
 resource storageRoles 'Microsoft.Authorization/roleAssignments@2022-04-01' = [
@@ -139,15 +119,20 @@ resource app 'Microsoft.Web/sites@2024-04-01' = {
     }
   }
 
-  resource settings 'config' = {
+  resource appSettings 'config' = {
     name: 'appsettings'
-    properties: {
-      AzureWebJobsStorage__accountName: storage.name
-      AzureWebJobsStorage__credential: 'managedidentity'
-      AzureWebJobsStorage__clientId: identity.properties.clientId
-      APPLICATIONINSIGHTS_CONNECTION_STRING: appInsights.properties.ConnectionString
-      APPLICATIONINSIGHTS_AUTHENTICATION_STRING: 'ClientId=${identity.properties.clientId};Authorization=AAD'
-    }
+    properties: union(
+      {
+        AzureWebJobsStorage__accountName: storage.name
+        AzureWebJobsStorage__credential: 'managedidentity'
+        AzureWebJobsStorage__clientId: identity.properties.clientId
+        // DefaultAzureCredential in app code picks the user-assigned identity.
+        AZURE_CLIENT_ID: identity.properties.clientId
+        APPLICATIONINSIGHTS_CONNECTION_STRING: appInsights.properties.ConnectionString
+        APPLICATIONINSIGHTS_AUTHENTICATION_STRING: 'ClientId=${identity.properties.clientId};Authorization=AAD'
+      },
+      settings
+    )
   }
 
   dependsOn: [
@@ -157,6 +142,4 @@ resource app 'Microsoft.Web/sites@2024-04-01' = {
 
 output name string = app.name
 output hostName string = app.properties.defaultHostName
-output mcpEndpoint string = 'https://${app.properties.defaultHostName}/runtime/webhooks/mcp'
-output storageAccountId string = storage.id
 output identityPrincipalId string = identity.properties.principalId

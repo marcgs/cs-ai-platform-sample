@@ -123,7 +123,7 @@ Each step ends green: lint, type check and tests pass, and the step is committed
   - project MI: AcrPull, Log Analytics Reader, Search Index Data Reader
   - dev user: Azure AI User, AcrPush, Cosmos data contributor, Search service and index data contributor
   - Functions identity: storage blob/queue/table data roles, Monitoring Metrics Publisher
-- The MCP function app deploys without a remote build: `scripts/package_mcp.sh` (azd `prepackage` hook) installs Linux wheels, including the workspace packages, into `.python_packages`.
+- The function apps deploy without a remote build: `scripts/package_function.sh` (azd `prepackage` hook) installs the locked third-party versions and the workspace packages as Linux wheels into `.python_packages`.
 - Networking (ADR 0003): a virtual network with subnets for private endpoints, Flex VNet integration and Foundry agent network injection. Storage (blob, queue, table) and Cosmos DB have public access disabled and private endpoints. Agent network injection only applies when the Foundry account is created.
 - Goal: `azd up` works from a clean subscription.
 
@@ -144,10 +144,11 @@ Each step ends green: lint, type check and tests pass, and the step is committed
 - Publishing to Foundry Evaluations is blocked in this environment: with agent network injection, cloud evaluations need account- and project-level capability hosts (and evaluation storage), which can only be set when the project is created. `--publish` reports the failure as a warning; the code-based gate is unaffected. Moved to the iteration 2 backlog.
 - Findings: about 1 in 6 hosted runs fail on the first attempt (model rate limit inside the agent; the 50k TPM deployment is shared by parallel runs); the agent almost never searches historical cases (`used_knowledge` 0.00-0.06).
 
-**8. CLI (`cli/`)**
-- `csai diagnose <machine-id> "<symptom>"` renders the hypotheses and evidence and prints the episode ID.
-- `csai episodes list/show`.
-- `csai feedback <episode-id> --verdict --actual-root-cause --note` attaches the expert correction to the episode. Cosmos DB is private, so the CLI goes through a platform endpoint rather than writing to Cosmos directly.
+**8. Platform API and CLI (`services/platform-api`, `cli/`)**
+- Cosmos DB is private, so episodes are read and annotated through a platform API: a second Flex Consumption function app in the functions subnet (same private storage, no extra private endpoints) with its own identity holding the Cosmos data role. `GET /api/episodes`, `GET /api/episodes/{id}`, `POST /api/episodes/{id}/feedback`, protected by a function key that `csai` fetches with the caller's Azure sign-in (so access follows Azure RBAC).
+- `csai diagnose "<machine>: <symptom>" [--target hosted|local]` prints the report and, for hosted runs, the episode ID.
+- `csai episodes list/show` lists recent runs and shows one with tool calls, arguments, durations and the report.
+- `csai feedback <episode-id> --verdict --actual-root-cause --note --reviewer` attaches the expert's assessment to the episode.
 
 **9. CI/CD (documented, not active)**
 - `docs/ci-cd.md` maps the local gates to a pipeline: quality checks and `csai eval` on pull requests, `azd provision` + `azd deploy` with OIDC on merge, plus a smoke test. Nothing is wired up in this repo.

@@ -1,0 +1,18 @@
+[project]
+name = "platform-api"
+version = "0.1.0"
+description = "Platform API on Azure Functions: read agent episodes and attach expert feedback."
+requires-python = ">=3.14,<3.15"
+dependencies = [
+    "azure-functions>=2.3.0",
+    "azure-identity>=1.27.0",
+    "cs-platform",
+    "pydantic>=2.14.1",
+]
+
+[tool.uv.sources]
+cs-platform = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.13.5,<0.14"]
+build-backend = "uv_build"

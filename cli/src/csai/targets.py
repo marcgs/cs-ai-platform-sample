@@ -16,6 +16,7 @@ from cs_platform.capture import EPISODE_ID_KEY
 from cs_platform.episodes import InMemoryEpisodeStore
 from cs_platform.evals import RunOutput
 from rca_agent.agent import create_agent
+from rca_agent.local import render
 from rca_agent.report import RcaReport
 from rca_evals import load_suite
 
@@ -42,13 +43,15 @@ class AgentEntry:
     create: Callable[..., Agent[Any]]
     output_type: type[BaseModel]
     load_suite: Callable[[], EvalSuite]
+    render: Callable[[Any], str]
+    """Formats a structured output for the terminal."""
 
     @property
     def responses_endpoint_variable(self) -> str:
         return f"AGENT_{self.service.upper().replace('-', '_')}_RESPONSES_ENDPOINT"
 
 
-AGENTS = {"rca": AgentEntry("rca-agent", create_agent, RcaReport, load_suite)}
+AGENTS = {"rca": AgentEntry("rca-agent", create_agent, RcaReport, load_suite, render)}
 
 
 def parse(output_type: type[BaseModel], text: str | None) -> BaseModel | None:

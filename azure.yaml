@@ -21,20 +21,32 @@ services:
     project: services/diagnostics-mcp
     language: python
     host: function
-    # Workspace packages aren't on a package index, so dependencies are built locally as
-    # Linux wheels (scripts/package_mcp.sh) and the package is deployed as-is.
+    # Workspace packages aren't on a package index, so dependencies are installed locally as
+    # Linux wheels (scripts/package_function.sh) and the package is deployed as-is.
     remoteBuild: false
     hooks:
       prepackage:
         posix:
           shell: sh
-          run: ../../scripts/package_mcp.sh
+          run: ../../scripts/package_function.sh diagnostics-mcp diagnostics-domain
       # Register the MCP server as a project connection and publish the "diagnostics"
       # toolbox (MCP server + AI Search); sets TOOLBOX_ENDPOINT for the agent.
       postdeploy:
         posix:
           shell: sh
           run: uv run python ../../scripts/setup_platform.py connect-tools
+
+  # Episodes and feedback over the private episode store, for `csai episodes` and `csai feedback`.
+  platform-api:
+    project: services/platform-api
+    language: python
+    host: function
+    remoteBuild: false
+    hooks:
+      prepackage:
+        posix:
+          shell: sh
+          run: ../../scripts/package_function.sh platform-api cs-platform
 
   rca-agent:
     host: azure.ai.agent

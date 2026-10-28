@@ -45,6 +45,9 @@ var token = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
 var hasPrincipal = !empty(principalId)
 var cosmosDatabase = 'cs-platform'
+var cosmosAccountName = '${abbrs.documentDBDatabaseAccounts}${token}'
+// Known before the account exists, so the platform API's settings don't depend on it.
+var cosmosEndpoint = 'https://${cosmosAccountName}.documents.azure.com:443/'
 var episodesContainer = 'episodes'
 // Created and seeded by the postprovision hook (scripts/setup_platform.py).
 var searchIndexName = 'diagnostics-cases'
@@ -109,11 +112,14 @@ module cosmos 'modules/cosmos.bicep' = {
   params: {
     location: location
     tags: tags
-    accountName: '${abbrs.documentDBDatabaseAccounts}${token}'
+    accountName: cosmosAccountName
     databaseName: cosmosDatabase
     episodesContainerName: episodesContainer
     // The hosted agent's identity is added after deployment (scripts/setup_platform.py).
-    dataContributorPrincipalIds: hasPrincipal ? [principalId] : []
+    dataContributorPrincipalIds: concat(
+      [apiApp.outputs.identityPrincipalId],
+      hasPrincipal ? [principalId] : []
+    )
   }
 }
 
@@ -146,18 +152,56 @@ module connections 'modules/foundry-connections.bicep' = {
   }
 }
 
-module functions 'modules/functions.bicep' = {
-  name: 'functions'
+// Private storage shared by the function apps (host state and deployment packages).
+module functionStorage 'modules/function-storage.bicep' = {
+  name: 'function-storage'
+  scope: rg
+  params: {
+    location: location
+    tags: tags
+    name: '${abbrs.storageStorageAccounts}mcp${token}'
+    deploymentContainers: ['app-package', 'app-package-api']
+  }
+}
+
+// The diagnostics MCP server (agent tools).
+module mcpApp 'modules/function-app.bicep' = {
+  name: 'function-app-mcp'
   scope: rg
   params: {
     location: location
     tags: tags
     appName: '${abbrs.webSitesFunctions}mcp-${token}'
     planName: '${abbrs.webServerFarms}mcp-${token}'
-    storageAccountName: '${abbrs.storageStorageAccounts}mcp${token}'
     identityName: '${abbrs.managedIdentityUserAssignedIdentities}mcp-${token}'
+    serviceName: 'diagnostics-mcp'
+    storageAccountName: functionStorage.outputs.name
+    deploymentContainer: 'app-package'
     appInsightsName: monitoring.outputs.appInsightsName
     subnetId: network.outputs.functionsSubnetId
+  }
+}
+
+// The platform API: episodes and feedback over the private episode store.
+module apiApp 'modules/function-app.bicep' = {
+  name: 'function-app-api'
+  scope: rg
+  params: {
+    location: location
+    tags: tags
+    appName: '${abbrs.webSitesFunctions}api-${token}'
+    planName: '${abbrs.webServerFarms}api-${token}'
+    identityName: '${abbrs.managedIdentityUserAssignedIdentities}api-${token}'
+    serviceName: 'platform-api'
+    storageAccountName: functionStorage.outputs.name
+    deploymentContainer: 'app-package-api'
+    appInsightsName: monitoring.outputs.appInsightsName
+    subnetId: network.outputs.functionsSubnetId
+    settings: {
+      COSMOS_ENDPOINT: cosmosEndpoint
+      COSMOS_DATABASE: cosmosDatabase
+      COSMOS_EPISODES_CONTAINER: episodesContainer
+    }
   }
 }
 
@@ -178,7 +222,7 @@ module endpoints 'modules/private-endpoint.bicep' = [
       tags: tags
       name: '${abbrs.networkPrivateEndpoints}${pe.service}-${toLower(pe.groupId)}-${token}'
       subnetId: network.outputs.privateEndpointSubnetId
-      serviceId: pe.service == 'storage' ? functions.outputs.storageAccountId : cosmos.outputs.accountId
+      serviceId: pe.service == 'storage' ? functionStorage.outputs.id : cosmos.outputs.accountId
       groupId: pe.groupId
       dnsZoneId: network.outputs.dnsZoneIds[pe.dnsZone]
     }
@@ -219,5 +263,7 @@ output AZURE_SEARCH_CONNECTION_NAME string = connections.outputs.searchConnectio
 output AZURE_SEARCH_CONNECTION_ID string = connections.outputs.searchConnectionId
 output AZURE_SEARCH_INDEX_NAME string = searchIndexName
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.connectionString
-output DIAGNOSTICS_MCP_FUNCTION_NAME string = functions.outputs.name
-output DIAGNOSTICS_MCP_ENDPOINT string = functions.outputs.mcpEndpoint
+output DIAGNOSTICS_MCP_FUNCTION_NAME string = mcpApp.outputs.name
+output DIAGNOSTICS_MCP_ENDPOINT string = 'https://${mcpApp.outputs.hostName}/runtime/webhooks/mcp'
+output PLATFORM_API_FUNCTION_NAME string = apiApp.outputs.name
+output PLATFORM_API_ENDPOINT string = 'https://${apiApp.outputs.hostName}/api'

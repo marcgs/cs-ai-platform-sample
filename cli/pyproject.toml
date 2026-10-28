@@ -7,7 +7,9 @@ dependencies = [
     "azure-ai-projects>=2.7.0",
     "azure-identity>=1.27.0",
     "cs-platform",
+    "httpx>=0.28.1",
     "openai>=3.35.1",
+    "platform-api",
     "python-dotenv>=1.1.0",
     "rca-agent",
     "rca-evals",
@@ -19,6 +21,7 @@ csai = "csai.app:main"
 
 [tool.uv.sources]
 cs-platform = { workspace = true }
+platform-api = { workspace = true }
 rca-agent = { workspace = true }
 rca-evals = { workspace = true }
 
