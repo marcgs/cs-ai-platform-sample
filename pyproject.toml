@@ -6,9 +6,11 @@ readme = "README.md"
 requires-python = ">=3.14,<3.15"
 dependencies = [
     "cs-platform",
+    "csai",
     "diagnostics-domain",
     "diagnostics-mcp",
     "rca-agent",
+    "rca-evals",
 ]
 
 [dependency-groups]
@@ -29,19 +31,21 @@ dev = [
 package = false
 
 [tool.uv.workspace]
-members = ["packages/*", "services/*", "agents/*"]
+members = ["packages/*", "services/*", "agents/*", "evals/*", "cli"]
 
 [tool.uv.sources]
 cs-platform = { workspace = true }
+csai = { workspace = true }
 diagnostics-domain = { workspace = true }
 diagnostics-mcp = { workspace = true }
 rca-agent = { workspace = true }
+rca-evals = { workspace = true }
 
 # --- Ruff: lint + format -----------------------------------------------------
 [tool.ruff]
 line-length = 100
 target-version = "py314"
-src = ["packages/*/src", "services/*/src", "services/*", "agents/*/src", "scripts"]
+src = ["packages/*/src", "services/*/src", "services/*", "agents/*/src", "evals/*/src", "cli/src", "scripts"]
 
 [tool.ruff.lint]
 select = [
@@ -73,12 +77,12 @@ pythonVersion = "3.14"
 venvPath = "."
 venv = ".venv"
 typeCheckingMode = "standard"
-strict = ["packages/*/src", "services/*/src", "agents/*/src", "scripts"]
+strict = ["packages/*/src", "services/*/src", "agents/*/src", "evals/*/src", "cli/src", "scripts"]
 exclude = ["**/.venv", "**/__pycache__", "**/node_modules"]
 
 # --- Pytest -------------------------------------------------------------------
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib", "-ra"]
-testpaths = ["packages", "services", "agents"]
+testpaths = ["packages", "services", "agents", "evals", "cli"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"

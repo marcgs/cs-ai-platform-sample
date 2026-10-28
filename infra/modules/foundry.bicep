@@ -31,6 +31,7 @@ param agentSubnetId string
 
 var roles = {
   acrPull: '7f951dda-4ed3-4680-a7ca-43fe172d538d'
+  foundryUser: '53ca6127-db72-4b80-b1b0-d745d6d5456d'
   logAnalyticsReader: '73c42c96-874c-492b-b04d-ab87d138a893'
 }
 
@@ -107,6 +108,17 @@ resource projectAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
     principalId: account::project.identity.principalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.acrPull)
+  }
+}
+
+// Cloud evaluations run as the project identity: they read and write datasets in the project.
+resource projectFoundryUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(account.id, account::project.id, roles.foundryUser)
+  scope: account
+  properties: {
+    principalId: account::project.identity.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roles.foundryUser)
   }
 }
 

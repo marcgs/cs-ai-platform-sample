@@ -1,0 +1,27 @@
+[project]
+name = "csai"
+version = "0.1.0"
+description = "Command line for the CS AI platform: evaluate, diagnose, review episodes."
+requires-python = ">=3.14,<3.15"
+dependencies = [
+    "azure-ai-projects>=2.7.0",
+    "azure-identity>=1.27.0",
+    "cs-platform",
+    "openai>=3.35.1",
+    "python-dotenv>=1.1.0",
+    "rca-agent",
+    "rca-evals",
+    "typer>=0.27.3",
+]
+
+[project.scripts]
+csai = "csai.app:main"
+
+[tool.uv.sources]
+cs-platform = { workspace = true }
+rca-agent = { workspace = true }
+rca-evals = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.13.5,<0.14"]
+build-backend = "uv_build"

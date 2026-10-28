@@ -1,0 +1,10 @@
+# Minimum mean score per metric over all cases; `csai eval` fails below any of them.
+# Baseline 2026-10-28 (gpt-5.4-mini, toolbox, 18 cases): 1.00 on every gated metric except
+# tool_coverage 0.97. With the investigation steps removed from the instructions, hit_at_1
+# fell to 0.67 and tool_coverage to 0.77, failing the gate.
+minimums:
+  schema_valid: 1.0
+  hit_at_1: 0.8
+  hit_at_3: 0.9
+  evidence_grounded: 0.95
+  tool_coverage: 0.9

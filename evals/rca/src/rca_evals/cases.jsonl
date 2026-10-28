@@ -1,0 +1,18 @@
+{"id":"SC-001","input":"M-0001: Recurring stage temperature errors and overlay correction warnings since yesterday.","expected":{"machine_id":"M-0001","failure_mode":"FM-01"}}
+{"id":"SC-002","input":"M-0002: Chamber pressure excursions after the access port was opened.","expected":{"machine_id":"M-0002","failure_mode":"FM-02"}}
+{"id":"SC-003","input":"M-0003: CD uniformity complaints from the fab, dose warnings in the event log.","expected":{"machine_id":"M-0003","failure_mode":"FM-03"}}
+{"id":"SC-004","input":"M-0004: Reticle transfer retries piling up, one gripper force error.","expected":{"machine_id":"M-0004","failure_mode":"FM-04"}}
+{"id":"SC-005","input":"M-0005: Overlay drifting, metrology reports noisy position measurement.","expected":{"machine_id":"M-0005","failure_mode":"FM-05"}}
+{"id":"SC-006","input":"M-0006: Machine rebooted itself twice, communication timeouts before that.","expected":{"machine_id":"M-0006","failure_mode":"FM-06"}}
+{"id":"SC-007","input":"M-0007: Pressure excursions in the chamber, purge flow looks lower than normal.","expected":{"machine_id":"M-0007","failure_mode":"FM-07"}}
+{"id":"SC-008","input":"M-0008: Focus out of tolerance on high-throughput recipes.","expected":{"machine_id":"M-0008","failure_mode":"FM-08"}}
+{"id":"SC-009","input":"M-0009: Recurring stage temperature errors and overlay correction warnings since yesterday.","expected":{"machine_id":"M-0009","failure_mode":"FM-01"}}
+{"id":"SC-010","input":"M-0010: Pump-down takes much longer than usual and we saw a pump-down timeout.","expected":{"machine_id":"M-0010","failure_mode":"FM-02"}}
+{"id":"SC-011","input":"M-0011: Dose instability warnings and occasional pulse energy errors during exposure.","expected":{"machine_id":"M-0011","failure_mode":"FM-03"}}
+{"id":"SC-012","input":"M-0012: Reticle exchange is slow and keeps retrying.","expected":{"machine_id":"M-0012","failure_mode":"FM-04"}}
+{"id":"SC-013","input":"M-0013: Overlay drifting, metrology reports noisy position measurement.","expected":{"machine_id":"M-0013","failure_mode":"FM-05"}}
+{"id":"SC-014","input":"M-0014: Watchdog resets since the weekend, tool keeps dropping out of production.","expected":{"machine_id":"M-0014","failure_mode":"FM-06"}}
+{"id":"SC-015","input":"M-0015: Purge flow low warnings together with pressure excursions.","expected":{"machine_id":"M-0015","failure_mode":"FM-07"}}
+{"id":"SC-016","input":"M-0016: Focus errors toward the end of long lots, overlay warnings as well.","expected":{"machine_id":"M-0016","failure_mode":"FM-08"}}
+{"id":"SC-017","input":"M-0017: Recurring stage temperature errors and overlay correction warnings since yesterday.","expected":{"machine_id":"M-0017","failure_mode":"FM-01"}}
+{"id":"SC-018","input":"M-0018: Pump-down takes much longer than usual and we saw a pump-down timeout.","expected":{"machine_id":"M-0018","failure_mode":"FM-02"}}

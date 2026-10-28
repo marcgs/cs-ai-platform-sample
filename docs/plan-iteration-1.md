@@ -136,12 +136,12 @@ Each step ends green: lint, type check and tests pass, and the step is committed
 - The AI Search connection is Entra-based (Bicep). The Foundry account and project identities get the Search roles; the search service's identity may call the embedding deployment.
 - MCP auth stays key-based, with the key held only by Foundry. Entra (built-in auth on the function app) needs an app registration and moves to the iteration 2 backlog.
 
-**7. Evaluation gate (`evals/rca`)**
-- `cases.jsonl`: about 15–20 synthetic cases with the expected root cause.
-- Evaluators:
-  - code-based: root-cause hit@1 and hit@3, evidence present and citing real refs, schema validity
-  - built-in Foundry: task adherence, tool-call accuracy, groundedness
-- `thresholds.yaml` sets the pass criteria. `csai eval` runs the suite against a local or deployed agent, publishes the run to Foundry, and exits non-zero on regression.
+**7. Evaluation gate (`evals/rca`, `csai eval`)**
+- Generic harness in `cs_platform.evals`: case manifest, evaluators (plain functions), thresholds, a runner with concurrency, retries with backoff for transient failures, and a gate that reports errored cases separately from metric failures.
+- `evals/rca` (package `rca-evals`): `cases.jsonl` derived from the 18 seed scenarios (regenerated with `python -m rca_evals.manifest`, checked by a test), `thresholds.yaml`, and code-based evaluators: `schema_valid`, `hit_at_1`, `hit_at_3`, `evidence_grounded` (cited refs exist and belong to the machine), `tool_coverage` (diagnostic tools called), and `used_knowledge` (informational).
+- `csai eval rca --target local|hosted` runs the suite against the in-process agent or the deployed hosted agent and exits 1 below a threshold. `--publish` also creates a Foundry eval run scored by built-in evaluators (task adherence, intent resolution, coherence), with the code metrics as columns; publishing reports, the code metrics gate.
+- Baseline (gpt-5.4-mini, toolbox, 18 cases): 1.00 on every gated metric except `tool_coverage` 0.97, locally and hosted. With the investigation steps removed from the instructions, `hit_at_1` fell to 0.67 and `tool_coverage` to 0.77, failing the gate.
+- Findings: about 1 in 6 hosted runs fail on the first attempt (model rate limit inside the agent; the 50k TPM deployment is shared by parallel runs); the agent almost never searches historical cases (`used_knowledge` 0.00-0.06).
 
 **8. CLI (`cli/`)**
 - `csai diagnose <machine-id> "<symptom>"` renders the hypotheses and evidence and prints the episode ID.
