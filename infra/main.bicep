@@ -46,6 +46,8 @@ var tags = { 'azd-env-name': environmentName }
 var hasPrincipal = !empty(principalId)
 var cosmosDatabase = 'cs-platform'
 var episodesContainer = 'episodes'
+// Created and seeded by the postprovision hook (scripts/setup_platform.py).
+var searchIndexName = 'diagnostics-cases'
 
 resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = {
   name: 'rg-${environmentName}'
@@ -96,8 +98,6 @@ module foundry 'modules/foundry.bicep' = {
         sku: { name: 'DataZoneStandard', capacity: embeddingModel.capacity }
       }
     ]
-    appInsightsId: monitoring.outputs.appInsightsId
-    appInsightsConnectionString: monitoring.outputs.connectionString
     logAnalyticsId: monitoring.outputs.logAnalyticsId
     agentSubnetId: network.outputs.agentsSubnetId
   }
@@ -112,7 +112,7 @@ module cosmos 'modules/cosmos.bicep' = {
     accountName: '${abbrs.documentDBDatabaseAccounts}${token}'
     databaseName: cosmosDatabase
     episodesContainerName: episodesContainer
-    // The hosted agent's identity is added after deployment (scripts/grant_agent_access.py).
+    // The hosted agent's identity is added after deployment (scripts/setup_platform.py).
     dataContributorPrincipalIds: hasPrincipal ? [principalId] : []
   }
 }
@@ -126,7 +126,23 @@ module search 'modules/search.bicep' = {
     name: '${abbrs.searchSearchServices}${token}'
     contributorPrincipalIds: hasPrincipal ? [principalId] : []
     contributorPrincipalType: principalType
-    readerPrincipalIds: [foundry.outputs.projectPrincipalId]
+    toolPrincipalIds: [foundry.outputs.accountPrincipalId, foundry.outputs.projectPrincipalId]
+    foundryAccountName: foundry.outputs.accountName
+  }
+}
+
+module connections 'modules/foundry-connections.bicep' = {
+  name: 'foundry-connections'
+  scope: rg
+  params: {
+    accountName: foundry.outputs.accountName
+    projectName: foundry.outputs.projectName
+    projectPrincipalId: foundry.outputs.projectPrincipalId
+    registryName: foundry.outputs.registryName
+    appInsightsId: monitoring.outputs.appInsightsId
+    appInsightsConnectionString: monitoring.outputs.connectionString
+    searchId: search.outputs.id
+    searchEndpoint: search.outputs.endpoint
   }
 }
 
@@ -192,13 +208,16 @@ output AZURE_AI_PROJECT_ID string = foundry.outputs.projectId
 output AZURE_OPENAI_ENDPOINT string = foundry.outputs.openAiEndpoint
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = foundry.outputs.registryLoginServer
 output AZURE_CONTAINER_REGISTRY_RESOURCE_ID string = foundry.outputs.registryId
-output AZURE_AI_PROJECT_ACR_CONNECTION_NAME string = foundry.outputs.acrConnectionName
+output AZURE_AI_PROJECT_ACR_CONNECTION_NAME string = connections.outputs.acrConnectionName
 output COSMOS_ENDPOINT string = cosmos.outputs.endpoint
 output COSMOS_ACCOUNT_NAME string = cosmos.outputs.accountName
 output COSMOS_DATABASE string = cosmos.outputs.databaseName
 output COSMOS_EPISODES_CONTAINER string = cosmos.outputs.episodesContainerName
 output AZURE_SEARCH_ENDPOINT string = search.outputs.endpoint
 output AZURE_SEARCH_NAME string = search.outputs.name
+output AZURE_SEARCH_CONNECTION_NAME string = connections.outputs.searchConnectionName
+output AZURE_SEARCH_CONNECTION_ID string = connections.outputs.searchConnectionId
+output AZURE_SEARCH_INDEX_NAME string = searchIndexName
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.connectionString
 output DIAGNOSTICS_MCP_FUNCTION_NAME string = functions.outputs.name
 output DIAGNOSTICS_MCP_ENDPOINT string = functions.outputs.mcpEndpoint

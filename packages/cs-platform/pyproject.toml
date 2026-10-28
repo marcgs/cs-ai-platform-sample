@@ -9,9 +9,13 @@ dependencies = [
     "agent-framework-foundry-hosting>=1.0.0b261015",
     "azure-cosmos>=4.17.1",
     "azure-identity>=1.27.0",
+    # Agent Framework's MCP client (direct servers and toolboxes); its MCP subscription
+    # recovery needs tenacity, which Agent Framework doesn't declare.
+    "mcp>=1.24.0,<2",
     "microsoft-opentelemetry>=1.5.0",
     "pydantic>=2.14.1",
     "pyyaml>=6.0.3",
+    "tenacity>=9.0.0",
 ]
 
 [build-system]

@@ -128,10 +128,13 @@ Each step ends green: lint, type check and tests pass, and the step is committed
 - Goal: `azd up` works from a clean subscription.
 
 **6. Agent deployment and toolbox wiring**
-- The hosted agent joins `azure.yaml` (container, remote build in ACR), and `postdeploy` grants its agent identity the Cosmos DB data role (the identity exists only after deployment).
-- The AI Search index for logbooks and historical cases is created and seeded (`postprovision`).
-- An `azure.ai.toolbox` service in `azure.yaml` bundles the MCP server connection and the `azure_ai_search` tool. The agent consumes it via `uses:` or `TOOLBOX_ENDPOINT`.
-- MCP auth: start with a key-based project connection (secret held by Foundry), then harden to Entra (project MI + Functions built-in auth) as the last task of this step if feasible. Otherwise move it to the iteration 2 backlog.
+- The hosted agent is an `azure.ai.agent` service in `azure.yaml`: a container built remotely in ACR from the repository root, injected into the agent subnet. A `prepackage` hook exports the local `uv.lock` to a hashed requirements file (no index URLs), so the image runs the locally tested versions.
+- `scripts/setup_platform.py` holds the setup steps, run as azd hooks:
+  - `seed-search` (`postprovision`): creates the `diagnostics-cases` index (keyword, semantic and vector search; a Foundry vectorizer embeds queries) and loads the historical cases.
+  - `connect-tools` (`postdeploy` of the MCP server): stores the function key in a `diagnostics-mcp` project connection and publishes the `diagnostics` toolbox (MCP server + `azure_ai_search`); sets `TOOLBOX_ENDPOINT`.
+  - `grant-agent` (`postdeploy` of the agent): gives the agent identity the Cosmos DB data role.
+- The AI Search connection is Entra-based (Bicep). The Foundry account and project identities get the Search roles; the search service's identity may call the embedding deployment.
+- MCP auth stays key-based, with the key held only by Foundry. Entra (built-in auth on the function app) needs an app registration and moves to the iteration 2 backlog.
 
 **7. Evaluation gate (`evals/rca`)**
 - `cases.jsonl`: about 15–20 synthetic cases with the expected root cause.

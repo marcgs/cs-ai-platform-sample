@@ -127,6 +127,13 @@ def test_agent_needs_a_tool_source() -> None:
         )
 
 
+def test_hosting_server_accepts_the_factory() -> None:
+    # The server validates the factory's signature, evaluating its annotations at runtime.
+    from agent_framework_foundry_hosting._agent_source import validate_agent_source
+
+    validate_agent_source(hosted.agent_factory)
+
+
 async def test_hosted_factory_builds_the_agent_once(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(
         "FOUNDRY_PROJECT_ENDPOINT", "https://example.services.ai.azure.com/api/projects/p"

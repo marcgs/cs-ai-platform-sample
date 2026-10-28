@@ -56,8 +56,9 @@ async def run(incident: str) -> int:
     configure_telemetry(settings, service_name="rca-agent-local")
     async with DefaultAzureCredential() as credential:
         store: EpisodeStore = episode_store(settings, credential)
-        agent = create_agent(settings, credential, store=store)
-        response: Any = await agent.run(incident)
+        # The agent owns its tool connections; close them in the task that opened them.
+        async with create_agent(settings, credential, store=store) as agent:
+            response: Any = await agent.run(incident)
 
         report = response.value
         print(render(report) if isinstance(report, RcaReport) else response.text)

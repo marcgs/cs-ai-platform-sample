@@ -4,16 +4,16 @@ The hosting library configures OpenTelemetry export, so this module doesn't. His
 managed by the hosting infrastructure, so responses aren't stored by the model service.
 """
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
+# A runtime import: the hosting server inspects the factory's signature, which evaluates
+# its annotations.
+from agent_framework import Agent  # noqa: TC002
 from agent_framework_foundry_hosting import ResponsesHostServer
 from azure.identity.aio import DefaultAzureCredential
 
 from cs_platform.settings import PlatformSettings
 from rca_agent.agent import create_agent
-
-if TYPE_CHECKING:
-    from agent_framework import Agent
 
 _agent: Agent[Any] | None = None
 

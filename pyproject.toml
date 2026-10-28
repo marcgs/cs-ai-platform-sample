@@ -13,6 +13,11 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    # scripts/setup_platform.py (azd hooks)
+    "azure-ai-projects>=2.7.0",
+    "azure-identity>=1.27.0",
+    "httpx>=0.28.1",
+    "openai>=3.35.1",
     "pre-commit>=4.7.0",
     "pyright>=1.1.414",
     "pytest>=9.1.1",
@@ -36,7 +41,7 @@ rca-agent = { workspace = true }
 [tool.ruff]
 line-length = 100
 target-version = "py314"
-src = ["packages/*/src", "services/*/src", "services/*", "agents/*/src"]
+src = ["packages/*/src", "services/*/src", "services/*", "agents/*/src", "scripts"]
 
 [tool.ruff.lint]
 select = [
@@ -68,7 +73,7 @@ pythonVersion = "3.14"
 venvPath = "."
 venv = ".venv"
 typeCheckingMode = "standard"
-strict = ["packages/*/src", "services/*/src", "agents/*/src"]
+strict = ["packages/*/src", "services/*/src", "agents/*/src", "scripts"]
 exclude = ["**/.venv", "**/__pycache__", "**/node_modules"]
 
 # --- Pytest -------------------------------------------------------------------

@@ -23,3 +23,4 @@ Committing only lock files generated against public PyPI avoids this, but it nee
 
 - Builds aren't byte-for-byte reproducible across machines; two developers may get different patch versions. Pinning a specific package fixes this where it matters.
 - If the sample becomes a reference for others, switch to committed lock files generated against public PyPI: a lock-generation workflow, a provenance check that only allows `pypi.org` and `files.pythonhosted.org`, and restore-only use (`UV_FROZEN=1`) on machines that must use a mirror.
+- Container images don't resolve packages on their own: the agent's `prepackage` hook exports the local lock to a requirements file with exact versions and hashes but without index URLs, so images run the locally tested versions without exposing the mirror.
