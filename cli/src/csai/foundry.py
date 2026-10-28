@@ -3,6 +3,9 @@
 The code-based metrics stay the gate; Foundry adds judgment the code can't make (does the
 answer follow the instructions, address the engineer's intent, read coherently) and keeps
 every run, with per-case rows, next to the agent's traces in the portal.
+
+In a project with agent network injection, cloud evaluations also need account- and
+project-level capability hosts; without them the run fails and ``publish`` raises.
 """
 
 import time
