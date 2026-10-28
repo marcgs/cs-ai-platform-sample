@@ -4,7 +4,7 @@ import pytest
 from agent_framework import tool
 from pydantic import BaseModel
 
-from cs_platform.capture import EPISODE_ID_KEY
+from cs_platform.capture import EPISODE_ID_KEY, MAX_RESULT_CHARS
 from cs_platform.episodes import Episode, InMemoryEpisodeStore
 from cs_platform.factory import build_agent
 from cs_platform.testing import ScriptedChatClient, call, text
@@ -79,6 +79,42 @@ async def test_tool_results_reach_the_model_unchanged(spec: AgentSpec) -> None:
     await agent.run("check M-0002")
     second_request = " ".join(str(c.to_dict()) for m in client.requests[1] for c in m.contents)
     assert "M-0002: stage temperature" in second_request
+
+
+@tool
+def get_history(machine_id: str) -> str:
+    """Return a long event history, with the evidence ref at the end."""
+    return "x" * 10_000 + f" EV-999999 {machine_id}"
+
+
+@tool
+def get_huge_dump(machine_id: str) -> str:
+    """Return more than an episode keeps."""
+    return "y" * (MAX_RESULT_CHARS + 10)
+
+
+async def test_long_tool_results_are_kept_whole(spec: AgentSpec) -> None:
+    store = InMemoryEpisodeStore()
+    client = ScriptedChatClient([[call("get_history", machine_id="M-0004")], [text("done")]])
+    agent = build_agent(spec, client=client, store=store, tools=[get_history])
+    await agent.run("check M-0004")
+
+    [tool_call] = (await _only_episode(store)).tool_calls
+    assert tool_call.result is not None
+    assert tool_call.result.endswith("EV-999999 M-0004")
+    assert not tool_call.result_truncated
+
+
+async def test_oversized_tool_results_are_flagged(spec: AgentSpec) -> None:
+    store = InMemoryEpisodeStore()
+    client = ScriptedChatClient([[call("get_huge_dump", machine_id="M-0004")], [text("done")]])
+    agent = build_agent(spec, client=client, store=store, tools=[get_huge_dump])
+    await agent.run("check M-0004")
+
+    [tool_call] = (await _only_episode(store)).tool_calls
+    assert tool_call.result is not None
+    assert len(tool_call.result) == MAX_RESULT_CHARS
+    assert tool_call.result_truncated
 
 
 async def test_tool_failure_is_recorded(spec: AgentSpec) -> None:

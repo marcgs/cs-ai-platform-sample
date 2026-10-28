@@ -9,8 +9,8 @@
 **/.ruff_cache
 **/tests
 **/local.settings.json
-.env
-.env.*
+**/.env
+**/.env.*
 uv.lock
 docs
 evals

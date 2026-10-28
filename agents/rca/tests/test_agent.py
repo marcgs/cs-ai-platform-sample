@@ -4,14 +4,14 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from agent_framework import FunctionTool, tool
 
-from cs_platform.episodes import InMemoryEpisodeStore
+from cs_platform.episodes import Episode, InMemoryEpisodeStore
 from cs_platform.settings import PlatformSettings, SettingsError
 from cs_platform.testing import ScriptedChatClient, call, text
 from diagnostics_domain.dataset import load_seed
 from diagnostics_mcp.tools import TOOL_NAMES, DiagnosticsTools, telemetry_ref
 from rca_agent import main as hosted
 from rca_agent.agent import create_agent, load_rca_spec
-from rca_agent.local import render
+from rca_agent.local import episode_summary, render
 from rca_agent.report import RcaReport
 
 if TYPE_CHECKING:
@@ -168,3 +168,12 @@ def test_render_shows_ranked_hypotheses_with_refs() -> None:
     assert "1. Stage cooling drift [FM-01] confidence 0.75" in output
     assert "EV-000001" in output
     assert "Flow rate" in output
+
+
+async def test_episode_summary_survives_a_store_outage() -> None:
+    class UnreachableStore(InMemoryEpisodeStore):
+        async def get(self, episode_id: str) -> Episode:
+            raise ConnectionError("store down")
+
+    summary = await episode_summary(UnreachableStore(), "abc123")
+    assert summary == "Episode abc123 not available: ConnectionError: store down"

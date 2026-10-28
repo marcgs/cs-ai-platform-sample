@@ -40,6 +40,7 @@ class ToolCall(BaseModel):
     name: str
     arguments: dict[str, Any]
     result: str | None = None
+    result_truncated: bool = False
     error: str | None = None
     started_at: datetime
     duration_ms: float

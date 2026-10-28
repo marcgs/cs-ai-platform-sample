@@ -51,6 +51,14 @@ def render_episode(episode: Episode) -> str:
     )
 
 
+async def episode_summary(store: EpisodeStore, episode_id: str) -> str:
+    """Render the run's episode; capture is best-effort, so a missing one doesn't fail the run."""
+    try:
+        return render_episode(await store.get(episode_id))
+    except Exception as error:
+        return f"Episode {episode_id} not available: {type(error).__name__}: {error}"
+
+
 async def run(incident: str) -> int:
     settings = PlatformSettings.from_env()
     configure_telemetry(settings, service_name="rca-agent-local")
@@ -64,7 +72,7 @@ async def run(incident: str) -> int:
         print(render(report) if isinstance(report, RcaReport) else response.text)
         episode_id = response.additional_properties.get(EPISODE_ID_KEY)
         if episode_id:
-            print("\n" + render_episode(await store.get(episode_id)))
+            print("\n" + await episode_summary(store, episode_id))
             if isinstance(store, InMemoryEpisodeStore):
                 print("(in-memory store: set COSMOS_ENDPOINT to keep episodes)")
     return 0

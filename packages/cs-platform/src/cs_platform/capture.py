@@ -30,7 +30,9 @@ logger = logging.getLogger(__name__)
 
 RECORDER_KEY = "cs_platform_episode_recorder"
 EPISODE_ID_KEY = "episode_id"
-MAX_RESULT_CHARS = 4000
+# Tool results are evidence, so episodes keep them whole. The cap only keeps an episode well
+# below the Cosmos DB item limit (2 MB); a cut result is flagged with result_truncated.
+MAX_RESULT_CHARS = 50_000
 
 
 class EpisodeRecorder:
@@ -133,17 +135,21 @@ class EpisodeCaptureFunctionMiddleware(FunctionMiddleware):
         started_at = datetime.now(UTC)
         start = perf_counter()
         error: str | None = None
+        result: str | None = None
         try:
             await call_next()
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"
             raise
+        else:
+            result = _result_text(context.result)
         finally:
             recorder.add_tool_call(
                 ToolCall(
                     name=context.function.name,
                     arguments=_arguments(context.arguments),
-                    result=None if error else _result_text(context.result),
+                    result=result[:MAX_RESULT_CHARS] if result else result,
+                    result_truncated=result is not None and len(result) > MAX_RESULT_CHARS,
                     error=error,
                     started_at=started_at,
                     duration_ms=round((perf_counter() - start) * 1000, 2),
@@ -175,7 +181,7 @@ def _result_text(result: object) -> str | None:
         text = "\n".join(str(getattr(item, "text", None) or item) for item in result)  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
     else:
         text = json.dumps(result, default=str)
-    return text[:MAX_RESULT_CHARS]
+    return text
 
 
 def _usage(response: AgentResponse) -> Usage | None:
