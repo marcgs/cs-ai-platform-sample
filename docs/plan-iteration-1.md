@@ -154,11 +154,11 @@ Each step ends green: lint, type check and tests pass, and the step is committed
 - `docs/ci-cd.md` maps the local gates to a pipeline: quality checks and `csai eval` on pull requests, `azd provision` + `azd deploy` with OIDC on merge, plus a smoke test. Nothing is wired up in this repo.
 
 **10. Docs**
-- README quickstart (prerequisites, `azd up`, demo script).
-- `architecture.md` with a mermaid diagram mapping each component to a platform outcome.
-- `onboarding-an-agent.md`.
-- ADRs for hosting, IaC and Python version.
-- `iteration-2-backlog.md`.
+- README quickstart (prerequisites, `azd up`, demo with `csai`, clean-up).
+- `architecture.md`: component diagram, capability mapping (C1–C9), request flow, identities, network, deployment order.
+- `onboarding-an-agent.md`: package, tools, eval suite, `csai` registration, deployment, checklist.
+- ADRs: Python version (0001), local lock files (0002), private data stores (0003), agent hosting (0004), infrastructure as code (0005).
+- `iteration-2-backlog.md`: findings from iteration 1 plus the scope the specification defers.
 
 ## Risks / verify early
 

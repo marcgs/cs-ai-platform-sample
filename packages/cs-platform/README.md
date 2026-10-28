@@ -9,6 +9,7 @@ The reusable agent harness. An agent is declared by a spec and built by the plat
 | `factory.py` | `build_agent()`, plus `foundry_client()` and `episode_store()` for the Azure-backed defaults |
 | `capture.py` | Middleware that records every run as an episode: input, tool calls (arguments, result, duration, errors), structured output, token usage, trace ID |
 | `episodes.py` | `Episode`, `ToolCall`, `Feedback`; the `EpisodeStore` protocol with in-memory and Cosmos DB implementations |
+| `evals.py` | Eval harness: `EvalCase`, `EvalSuite` (cases, thresholds, evaluators), `run_suite()` with concurrency and retries, `SuiteResult` with metrics and gate failures |
 | `evidence.py` | `Evidence`: the cited unit (source, ref, excerpt) agents put in their output and evaluators verify |
 | `telemetry.py` | `configure_telemetry()` for processes outside Foundry hosting: Azure Monitor export plus agent instrumentation |
 

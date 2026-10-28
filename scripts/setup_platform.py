@@ -2,7 +2,7 @@
 
     uv run python scripts/setup_platform.py seed-search     # postprovision
     uv run python scripts/setup_platform.py connect-tools   # postdeploy of diagnostics-mcp
-    uv run python scripts/setup_platform.py grant-agent     # postdeploy of rca-agent
+    uv run python scripts/setup_platform.py grant-agent     # postdeploy of each agent
 
 Each step is idempotent and reads its inputs from the azd environment (azd passes it to
 hooks as environment variables). Authentication uses the developer's azd/Azure CLI sign-in.
@@ -295,8 +295,10 @@ COSMOS_DATA_CONTRIBUTOR = "00000000-0000-0000-0000-000000000002"
 
 
 def grant_agent(credential: DefaultAzureCredential) -> None:
-    # azd records the deployed agent's instance identity in the environment.
-    principal_id = env("AGENT_RCA_AGENT_INSTANCE_IDENTITY_PRINCIPAL_ID")
+    # azd records each deployed agent's instance identity as AGENT_<SERVICE>_..._PRINCIPAL_ID;
+    # the agent's postdeploy hook passes its service name in AZD_AGENT_SERVICE.
+    service = os.environ.get("AZD_AGENT_SERVICE", "rca-agent").upper().replace("-", "_")
+    principal_id = env(f"AGENT_{service}_INSTANCE_IDENTITY_PRINCIPAL_ID")
     account_id = (
         f"/subscriptions/{env('AZURE_SUBSCRIPTION_ID')}/resourceGroups/{env('AZURE_RESOURCE_GROUP')}"
         f"/providers/Microsoft.DocumentDB/databaseAccounts/{env('COSMOS_ACCOUNT_NAME')}"

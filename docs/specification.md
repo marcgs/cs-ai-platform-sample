@@ -175,7 +175,7 @@ The sample demonstrates the **mechanisms** for measuring success. The targets be
 
 - Outer learning loop: proposals, SME approval workflow, replay validation
 - AI gateway (API Management) in front of models and tools
-- Private networking
+- Full private networking (iteration 1 makes the data stores private; Foundry, registry and search stay public)
 - Ingestion of unstructured documents (PDFs, emails) with content extraction
 - Real-time telemetry analytics store
 - Additional channels (e.g. Teams), additional agents and multi-agent workflows (e.g. action planning, repair and recovery)

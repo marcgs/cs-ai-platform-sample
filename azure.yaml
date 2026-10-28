@@ -84,4 +84,4 @@ services:
       postdeploy:
         posix:
           shell: sh
-          run: uv run python ../../scripts/setup_platform.py grant-agent
+          run: AZD_AGENT_SERVICE=rca-agent uv run python ../../scripts/setup_platform.py grant-agent
