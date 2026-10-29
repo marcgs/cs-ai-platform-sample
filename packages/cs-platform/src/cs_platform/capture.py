@@ -18,6 +18,7 @@ from opentelemetry import trace
 from pydantic import BaseModel
 
 from cs_platform.episodes import Episode, ToolCall, Usage, fit_to_budget
+from cs_platform.hosting import HOSTED_RESPONSE_ID_OPTION, hosted_episode_id
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -102,12 +103,18 @@ class EpisodeCaptureAgentMiddleware(AgentMiddleware):
         call_next: Callable[[], Awaitable[None]],
         span: trace.Span,
     ) -> None:
+        options = dict(context.options or {})
+        response_id = options.pop(HOSTED_RESPONSE_ID_OPTION, None)
+        context.options = options
         episode = Episode(
             agent=self._spec.name,
             agent_version=self._spec.version,
             input=_input_text(context.messages),
             trace_id=_current_trace_id(),
         )
+        if isinstance(response_id, str):
+            episode.id = hosted_episode_id(response_id)
+            episode.hosted_response_id = response_id
         trace.get_current_span().set_attribute("cs_platform.episode_id", episode.id)
         recorder = EpisodeRecorder(episode, self._store, span)
         context.function_invocation_kwargs = {

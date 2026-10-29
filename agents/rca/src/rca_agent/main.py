@@ -12,6 +12,7 @@ from agent_framework import Agent  # noqa: TC002
 from agent_framework_foundry_hosting import ResponsesHostServer
 from azure.identity.aio import DefaultAzureCredential
 
+from cs_platform.hosting import prepare_episode_options
 from cs_platform.settings import PlatformSettings
 from rca_agent.agent import create_agent
 
@@ -29,7 +30,7 @@ async def agent_factory() -> Agent[Any]:
 
 
 def main() -> None:
-    ResponsesHostServer(agent_factory).run()
+    ResponsesHostServer(agent_factory, prepare_options=prepare_episode_options).run()
 
 
 if __name__ == "__main__":

@@ -56,6 +56,11 @@ uv run csai diagnose "M-0007: Pressure excursions in the chamber, purge flow loo
 
 That prints the agent's ranked hypotheses with their evidence, and the episode ID. [`docs/walkthrough.md`](docs/walkthrough.md) takes it from there: questioning the answer in the playground, reviewing the episode, recording an expert verdict and running the eval gate.
 
+Hosted diagnoses also print the Responses ID and verify the exact stored episode,
+including failed runs. If persistence is delayed or unavailable, the CLI says the
+episode is unverified rather than selecting a similar incident.
+`csai episodes show <episode-id>` displays the stored Response ID (absent on older episodes).
+
 ### Clean up
 
 ```bash

@@ -77,7 +77,7 @@ flowchart LR
 3. The harness opens an episode, then Agent Framework runs the model loop: the model calls `get_machine_context`, `get_error_events`, `lookup_error_code`, `get_telemetry_window`, `get_logbook` (and optionally `azure_ai_search`) through the toolbox; the capture middleware records every call.
 4. The model returns an `RcaReport` (strict structured output): ranked hypotheses, each with cited refs.
 5. The harness completes the episode and writes it to Cosmos DB over its private endpoint, as the agent's identity.
-6. `csai` prints the report and finds the episode through the platform API; an expert attaches a verdict with `csai feedback`.
+6. `csai` prints the report and derives the episode's point-read key from the host-issued Responses ID. It uses bounded polling through the platform API and verifies the stored `hosted_response_id`; it never selects an episode by incident text, time or session. An expert attaches a verdict with `csai feedback`.
 
 ## Identities and access
 

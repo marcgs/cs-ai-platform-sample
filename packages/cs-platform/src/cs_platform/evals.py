@@ -38,6 +38,8 @@ class RunOutput(BaseModel):
     error: str | None = None
     duration_s: float = 0.0
     attempts: int = 1
+    episode_id: str | None = None
+    response_id: str | None = None
 
 
 type Evaluator = Callable[[EvalCase, RunOutput], Mapping[str, float]]
