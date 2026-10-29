@@ -287,6 +287,8 @@ async def run(
                 "post",
                 "--url",
                 f"https://management.azure.com{app_id}/host/default/listkeys?api-version=2024-04-01",
+                "--output",
+                "json",
             ],
             text=True,
         )
