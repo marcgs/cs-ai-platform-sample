@@ -136,8 +136,9 @@ the episode size budget and with all truncation flags false. Model usage was
 These are episode capture durations, not separately measured handler or transport
 spans. Calls may overlap: **do not sum them or subtract them from either total**
 to claim model latency. CLI wall time and the episode interval have different
-boundaries; their difference is not proven model or toolbox time. A verified
-model/tool critical-path breakdown remains outstanding. This smoke used a
+boundaries; their difference is not proven model or toolbox time. This smoke
+does not provide a verified model/tool critical-path breakdown; the combined
+trace below does. This smoke used a
 diagnosis tool mix, not the probe's identical-argument single-tool workload.
 
 ## Combined-release baseline and causal span evidence
@@ -219,6 +220,14 @@ need explicit concurrency authorization and must account for additional
 initialization/session cost. The remaining multi-second RPC time is still not
 localized within the client/network/toolbox/Functions boundary; a missing handler
 join is not proof of proxy or cold-start delay. No always-ready proposal follows.
+
+Adding a changing `traceparent` through the public header provider is not a safe
+shortcut: the SDK includes every header name/value in its session identity, and
+an identity change reconnects the session. That would alter the very lifecycle
+being measured. A3 also verified that the MCP writer task need not retain the
+episode's current context. Use the existing operation-boundary W3C `_meta`
+propagation for investigation; supported per-call header context needs upstream
+coordination, not an authentication-lock bypass.
 
 ## Repeat the comparison
 
