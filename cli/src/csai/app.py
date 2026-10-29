@@ -182,7 +182,10 @@ def describe_correlation(output: RunOutput) -> str:
     except (SettingsError, PlatformApiError) as error:
         return f"{prefix} (unverified: {error})"
     if episode is None:
-        return f"{prefix} (not persisted yet; retry `csai episodes show {output.episode_id}`)"
+        return (
+            f"{prefix} (unverified: episode not found; persistence may be delayed or failed; "
+            f"check agent logs or retry `csai episodes show {output.episode_id}`)"
+        )
     return f"{prefix} ({episode.status}, exact response verified)"
 
 

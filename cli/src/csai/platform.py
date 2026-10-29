@@ -88,9 +88,12 @@ def _request_function_key(
 
 class PlatformClient:
     def __init__(self, endpoint: str, key: str) -> None:
-        self._http = httpx.Client(
-            base_url=endpoint.rstrip("/") + "/", headers={"x-functions-key": key}, timeout=60
-        )
+        try:
+            self._http = httpx.Client(
+                base_url=endpoint.rstrip("/") + "/", headers={"x-functions-key": key}, timeout=60
+            )
+        except httpx.InvalidURL as error:
+            raise PlatformApiError("Invalid platform API endpoint") from error
 
     @classmethod
     def from_env(cls) -> PlatformClient:
@@ -118,7 +121,7 @@ class PlatformClient:
             response = self._http.request(
                 method, path, params=params, content=json_body, headers=headers
             )
-        except httpx.HTTPError as error:
+        except (httpx.HTTPError, httpx.InvalidURL) as error:
             raise PlatformApiError(f"{method} {path}: {type(error).__name__}") from error
         if response.is_error:
             if response.status_code == 404 and missing_episode_id is not None:
