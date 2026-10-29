@@ -13,6 +13,7 @@ from azure.identity.aio import DefaultAzureCredential
 from cs_platform.episodes import Verdict  # noqa: TC001 - typer reads annotations at runtime
 from cs_platform.evals import EvalCase, EvalSuite, RunOutput, run_suite
 from cs_platform.settings import PlatformSettings, SettingsError
+from cs_platform.telemetry import flush_telemetry
 from csai import foundry
 from csai.environment import load_environment
 from csai.platform import PlatformApiError, PlatformClient
@@ -267,4 +268,7 @@ def feedback(
 
 
 def main() -> None:
-    app()
+    try:
+        app()
+    finally:
+        flush_telemetry()

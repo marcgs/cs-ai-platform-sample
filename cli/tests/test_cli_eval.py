@@ -1,11 +1,17 @@
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
+from unittest.mock import Mock
 
 import pytest
 from typer.testing import CliRunner
 
 from cs_platform.evals import RunOutput
 from cs_platform.evidence import Evidence
+from cs_platform.factory import build_agent
+from cs_platform.spec import AgentSpec
+from cs_platform.testing import ScriptedChatClient, text
 from csai import app as cli
+from csai import targets
 from diagnostics_domain.dataset import load_seed
 from diagnostics_mcp.tools import TOOL_NAMES
 from rca_agent.report import Hypothesis, RcaReport
@@ -101,3 +107,29 @@ def test_hosted_target_needs_a_deployed_endpoint(monkeypatch: pytest.MonkeyPatch
     result = runner.invoke(cli.app, ["--no-azd", "eval", "rca", "--target", "hosted"])
     assert result.exit_code == 2
     assert "AGENT_RCA_AGENT_RESPONSES_ENDPOINT is not set" in result.output
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["diagnose", "M-0001: check", "--target", "local"],
+        ["eval", "rca", "--target", "local", "--case", "SC-001"],
+    ],
+)
+def test_local_commands_bootstrap_telemetry(
+    monkeypatch: pytest.MonkeyPatch, arguments: list[str]
+) -> None:
+    def create(*_: object, **kwargs: Any) -> Any:
+        return build_agent(
+            AgentSpec(name="test", version="1", description="test", instructions="test"),
+            client=ScriptedChatClient([[text("done")]]),
+            store=kwargs["store"],
+        )
+
+    configure = Mock()
+    monkeypatch.setattr(targets, "configure_telemetry", configure)
+    monkeypatch.setitem(targets.AGENTS, "rca", replace(targets.AGENTS["rca"], create=create))
+    result = runner.invoke(cli.app, ["--no-azd", *arguments])
+    assert result.exit_code in {0, 1}, result.output
+    configure.assert_called_once()
+    assert configure.call_args.kwargs["service_name"] == "rca-agent-local"

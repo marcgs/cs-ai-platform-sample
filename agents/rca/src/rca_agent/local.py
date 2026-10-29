@@ -19,7 +19,7 @@ from cs_platform.capture import EPISODE_ID_KEY
 from cs_platform.episodes import InMemoryEpisodeStore
 from cs_platform.factory import episode_store
 from cs_platform.settings import PlatformSettings, SettingsError
-from cs_platform.telemetry import configure_telemetry
+from cs_platform.telemetry import configure_telemetry, flush_telemetry
 from rca_agent.agent import create_agent
 from rca_agent.report import RcaReport
 
@@ -89,6 +89,8 @@ def main() -> None:
         sys.exit(asyncio.run(run(args.incident)))
     except SettingsError as error:
         sys.exit(f"Configuration error: {error}")
+    finally:
+        flush_telemetry()
 
 
 if __name__ == "__main__":

@@ -51,6 +51,11 @@ of `1.0` average to `0.9`, but naive floating-point summation can report
 `0.8999999999999999`. Comparisons remain strict: no tolerance, rounding of case scores,
 or relaxed threshold makes a genuinely lower score pass.
 
+Local startup creates a real episode span, enables HTTP propagation when exporting,
+and flushes owned exporters on exit. Streaming context is attached per iterator pull;
+hosted telemetry stays owned by the hosting library. See [trace continuity](../../docs/tracing.md)
+for sampling, query templates, historical evidence and the unverified managed MCP boundary.
+
 ## Tests
 
 `tests/conftest.py` provides `ScriptedChatClient`, a chat client that returns scripted model turns while Agent Framework's real tool-invocation loop runs the tools. The capture tests cover streaming and non-streaming runs, tool failures, model failures, invalid structured output and store outages, all without Azure.
