@@ -5,6 +5,7 @@ A reference sample that shows the path from **an agent prototype** to **an agent
 > All data in this repository is **synthetic and fictional**. It contains no customer data, names or machine types.
 
 - What and why: [`docs/specification.md`](docs/specification.md) · [`docs/architecture.md`](docs/architecture.md)
+- Exploring a deployed environment, step by step: [`docs/walkthrough.md`](docs/walkthrough.md)
 - How it was built: [`docs/plan-iteration-1.md`](docs/plan-iteration-1.md) · decisions in [`docs/adr/`](docs/adr/)
 - Adding an agent: [`docs/onboarding-an-agent.md`](docs/onboarding-an-agent.md)
 - What's next: [`docs/iteration-2-backlog.md`](docs/iteration-2-backlog.md)
