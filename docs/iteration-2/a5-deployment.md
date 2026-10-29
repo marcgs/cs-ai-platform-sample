@@ -165,6 +165,10 @@ identifier in the process environment rather than this document:
 uv run --frozen csai diagnose \
   "M-0007: Pressure excursions; purge flow looks lower than normal. UNIQUE_SYNTHETIC_RELEASE_MARKER." \
   --target hosted
+printf 'Paste the episode ID printed by this diagnosis: '
+read -r A5_EPISODE_ID
+export A5_EPISODE_ID
+: "${A5_EPISODE_ID:?An episode ID from this diagnosis is required}"
 uv run --frozen csai episodes show "$A5_EPISODE_ID"
 uv run --frozen python - <<'PY'
 import json
@@ -186,16 +190,29 @@ methods = {
 }
 assert episode.status == "succeeded"
 assert len(episode.model_dump_json().encode()) <= EPISODE_MAX_BYTES
+assert not episode.truncated, "Full-payload verification requires an untruncated episode"
 assert episode.tool_calls
+diagnostic_calls = 0
+search_calls = 0
 for call in episode.tool_calls:
     assert call.error is None
     assert call.result is not None
-    if call.result_truncated:
-        assert "tool_calls.result" in episode.truncated
-    else:
-        expected = methods[call.name.split("___")[-1]](**call.arguments)
-        assert json.loads(call.result) == expected.model_dump(mode="json")
-print("Full stored diagnostic payload checks passed")
+    assert not call.result_truncated, f"{call.name}: stored result was truncated"
+    name = call.name.rpartition("___")[2]
+    if name == "azure_ai_search":
+        search_calls += 1
+        continue
+    assert name in methods, f"Unexpected tool: {call.name}"
+    expected = methods[name](**call.arguments)
+    assert json.loads(call.result) == expected.model_dump(mode="json")
+    diagnostic_calls += 1
+assert diagnostic_calls, "No diagnostic payloads were compared"
+print(f"Full stored diagnostic payload checks passed ({diagnostic_calls} calls)")
+if search_calls:
+    print(
+        f"{search_calls} search payload(s) present and untruncated; "
+        "retrieval contents require a separate comparison, not diagnostic seed equality"
+    )
 PY
 ```
 
