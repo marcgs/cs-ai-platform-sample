@@ -52,13 +52,13 @@ def function_key(subscription: str, resource_group: str, app: str) -> str:
     try:
         with DefaultAzureCredential() as credential:
             token = credential.get_token(f"{ARM}/.default").token
-    except AzureError as error:
+    except (AzureError, ValueError) as error:
         raise PlatformApiError(
             f"Can't acquire the platform API credential ({type(error).__name__})"
         ) from error
     try:
         response = _request_function_key(subscription, resource_group, app, token)
-    except httpx.HTTPError as error:
+    except (httpx.HTTPError, httpx.InvalidURL) as error:
         raise PlatformApiError(
             f"Can't read the platform API key ({type(error).__name__})"
         ) from error

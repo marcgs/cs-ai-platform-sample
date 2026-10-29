@@ -271,10 +271,12 @@ def test_route_and_configuration_404s_are_unverified_not_pending(
     "failure",
     [
         "credential-init",
+        "credential-config",
         "credential-unavailable",
         "credential-auth",
         "credential-network",
         "arm-network",
+        "arm-invalid-url",
         "arm-status",
         "key-invalid-json",
         "key-missing",
@@ -296,6 +298,7 @@ def test_client_failures_preserve_both_ids_and_original_host_error(
     if failure.startswith("credential-"):
         error_type = {
             "credential-init": CredentialUnavailableError,
+            "credential-config": ValueError,
             "credential-unavailable": CredentialUnavailableError,
             "credential-auth": ClientAuthenticationError,
             "credential-network": ServiceRequestError,
@@ -305,6 +308,8 @@ def test_client_failures_preserve_both_ids_and_original_host_error(
     def create_credential() -> MagicMock:
         if failure == "credential-init":
             raise CredentialUnavailableError("private credential details")
+        if failure == "credential-config":
+            raise ValueError("private credential configuration")
         return credential
 
     monkeypatch.setattr(client_module, "DefaultAzureCredential", create_credential)
@@ -312,6 +317,8 @@ def test_client_failures_preserve_both_ids_and_original_host_error(
     def key_response(*_: object, **__: object) -> httpx.Response:
         if failure == "arm-network":
             raise httpx.ConnectError("private ARM details")
+        if failure == "arm-invalid-url":
+            raise httpx.InvalidURL("private ARM URL details")
         if failure == "arm-status":
             return httpx.Response(403)
         if failure == "key-invalid-json":
