@@ -48,13 +48,14 @@ Azure resources (one resource group, default `swedencentral`; all resources in t
 - Cosmos DB NoSQL (serverless)
 - Function App (Flex Consumption) + storage
 - User-assigned identities where needed
+- Virtual network with private endpoints and private DNS for Storage and Cosmos DB; the function app and the hosted agents join it through delegated subnets
 
-Access is Entra/RBAC only: no keys in code, and `disableLocalAuth` where the service supports it.
+Access is Entra/RBAC only: no keys in code, and `disableLocalAuth` where the service supports it. Storage and Cosmos DB are private (ADR 0003); Foundry, the registry and AI Search stay public so developers can deploy and run from outside the network.
 
 Deferred to iteration 2:
 
 - APIM AI gateway
-- Private networking
+- Private endpoints for Foundry, the registry, AI Search and Application Insights (needs in-network deployment runners)
 - Outer feedback loop (SME approval and replay via Logic Apps, agent optimizer)
 - Content Understanding ingestion
 - Fabric / ADX telemetry
@@ -103,9 +104,9 @@ Each step ends green: lint, type check and tests pass, and the step is committed
 - Tests call the tool functions directly; run locally with `func start` and the MCP inspector.
 
 **3. Platform harness (`cs-platform`)**
-- `AgentSpec` (YAML): name, instructions file, model deployment, toolbox name, output schema, eval suite.
+- `AgentSpec` (YAML): name, version, instructions file, tool sources, eval suite. The model deployment comes from platform settings, and the output schema from the agent's code.
 - Telemetry bootstrap (Microsoft OpenTelemetry distro, MAF spans).
-- `RcaReport` output schema: ranked hypotheses with confidence, evidence items (source, ref, excerpt) and recommended checks.
+- Generic `Evidence` item (source, ref, excerpt) for agents to cite. The RCA-specific `RcaReport` lives with the agent (step 4).
 - Episode model and `EpisodeStore` protocol, with Cosmos and in-memory implementations.
 - MAF middleware that records tool calls, evidence and the final report into an episode, deterministically and outside the LLM's control.
 - Tests use the in-memory store and a fake chat client.
@@ -113,44 +114,51 @@ Each step ends green: lint, type check and tests pass, and the step is committed
 **4. RCA agent (`agents/rca`)**
 - MAF agent built through the harness, served with the hosted-agent Responses host.
 - Instructions require cited evidence and a structured `RcaReport`.
-- Runs locally with `azd ai agent run` against a local MCP server.
-- Uses **container deploy mode**, with a uv-based Dockerfile, so the workspace packages build reliably.
+- Runs locally with `rca-local` against a local MCP server (any Foundry model deployment); `azd ai agent run` once `azure.yaml` exists (step 5).
+- Uses **container deploy mode**, with a uv-based Dockerfile, so the workspace packages build reliably. The image is built remotely in ACR (step 5); a package mirror can be passed as a BuildKit secret for local builds.
 
 **5. Infrastructure (`infra/`, `azure.yaml`)**
-- Bicep modules for all the resources above. RBAC:
-  - project MI: Foundry User, ACR pull, Log Analytics reader
-  - dev user: Foundry User / Project Manager, Cosmos data contributor, Search index contributor
-  - Functions MI: storage access
-- azd hooks:
-  - `postprovision`: create and seed the AI Search index (logbooks and cases, with integrated vectorization or script embeddings)
-  - `postdeploy`: grant the hosted agent's identity the Cosmos data role, using its object ID after deployment
+- Bicep for every resource (azd's standard Bicep provider). The Foundry part is based on the layer `azd ai agent init --infra=bicep` generates: AIServices account, project, model deployments, registry with project connection and AcrPull, plus an Application Insights connection.
+- RBAC, no keys (local auth disabled on Foundry, Cosmos DB, AI Search, Storage):
+  - project MI: AcrPull, Log Analytics Reader, Search Index Data Reader
+  - dev user: Azure AI User, AcrPush, Cosmos data contributor, Search service and index data contributor
+  - Functions identity: storage blob/queue/table data roles, Monitoring Metrics Publisher
+- The function apps deploy without a remote build: `scripts/package_function.sh` (azd `prepackage` hook) installs the locked third-party versions and the workspace packages as Linux wheels into `.python_packages`.
+- Networking (ADR 0003): a virtual network with subnets for private endpoints, Flex VNet integration and Foundry agent network injection. Storage (blob, queue, table) and Cosmos DB have public access disabled and private endpoints. Agent network injection only applies when the Foundry account is created.
 - Goal: `azd up` works from a clean subscription.
 
-**6. Toolbox wiring**
-- An `azure.ai.toolbox` service in `azure.yaml` bundles the MCP server connection and the `azure_ai_search` tool. The agent consumes it via `uses:` or `TOOLBOX_ENDPOINT`.
-- MCP auth: start with a key-based project connection (secret held by Foundry), then harden to Entra (project MI + Functions built-in auth) as the last task of this step if feasible. Otherwise move it to the iteration 2 backlog.
+**6. Agent deployment and toolbox wiring**
+- The hosted agent is an `azure.ai.agent` service in `azure.yaml`: a container built remotely in ACR from the repository root, injected into the agent subnet. A `prepackage` hook exports the local `uv.lock` to a hashed requirements file (no index URLs), so the image runs the locally tested versions.
+- `scripts/setup_platform.py` holds the setup steps, run as azd hooks:
+  - `seed-search` (`postprovision`): creates the `diagnostics-cases` index (keyword, semantic and vector search; a Foundry vectorizer embeds queries) and loads the historical cases.
+  - `connect-tools` (`postdeploy` of the MCP server): stores the function key in a `diagnostics-mcp` project connection and publishes the `diagnostics` toolbox (MCP server + `azure_ai_search`); sets `TOOLBOX_ENDPOINT`.
+  - `grant-agent` (`postdeploy` of the agent): gives the agent identity the Cosmos DB data role.
+- The AI Search connection is Entra-based (Bicep). The Foundry account and project identities get the Search roles; the search service's identity may call the embedding deployment.
+- MCP auth stays key-based, with the key held only by Foundry. Entra (built-in auth on the function app) needs an app registration and moves to the iteration 2 backlog.
 
-**7. Evaluation gate (`evals/rca`)**
-- `cases.jsonl`: about 15–20 synthetic cases with the expected root cause.
-- Evaluators:
-  - code-based: root-cause hit@1 and hit@3, evidence present and citing real refs, schema validity
-  - built-in Foundry: task adherence, tool-call accuracy, groundedness
-- `thresholds.yaml` sets the pass criteria. `csai eval` runs the suite against a local or deployed agent, publishes the run to Foundry, and exits non-zero on regression.
+**7. Evaluation gate (`evals/rca`, `csai eval`)**
+- Generic harness in `cs_platform.evals`: case manifest, evaluators (plain functions), thresholds, a runner with concurrency, retries with backoff for transient failures, and a gate that reports errored cases separately from metric failures.
+- `evals/rca` (package `rca-evals`): `cases.jsonl` derived from the 18 seed scenarios (regenerated with `python -m rca_evals.manifest`, checked by a test), `thresholds.yaml`, and code-based evaluators: `schema_valid`, `hit_at_1`, `hit_at_3`, `evidence_grounded` (cited refs exist and belong to the machine), `tool_coverage` (diagnostic tools called), and `used_knowledge` (informational).
+- `csai eval rca --target local|hosted` runs the suite against the in-process agent or the deployed hosted agent and exits 1 below a threshold. `--publish` also creates a Foundry eval run scored by built-in evaluators (task adherence, intent resolution, coherence), with the code metrics as columns; publishing reports, the code metrics gate.
+- Baseline (gpt-5.4-mini, toolbox, 18 cases): 1.00 on every gated metric except `tool_coverage` 0.97, locally and hosted. With the investigation steps removed from the instructions, `hit_at_1` fell to 0.67 and `tool_coverage` to 0.77, failing the gate.
+- Publishing to Foundry Evaluations is blocked in this environment: with agent network injection, cloud evaluations need account- and project-level capability hosts (and evaluation storage), which can only be set when the project is created. `--publish` reports the failure as a warning; the code-based gate is unaffected. Moved to the iteration 2 backlog.
+- Findings: about 1 in 6 hosted runs fail on the first attempt (model rate limit inside the agent; the 50k TPM deployment is shared by parallel runs); the agent almost never searches historical cases (`used_knowledge` 0.00-0.06).
 
-**8. CLI (`cli/`)**
-- `csai diagnose <machine-id> "<symptom>"` renders the hypotheses and evidence and prints the episode ID.
-- `csai episodes list/show`.
-- `csai feedback <episode-id> --verdict --actual-root-cause --note` writes the expert correction to Cosmos.
+**8. Platform API and CLI (`services/platform-api`, `cli/`)**
+- Cosmos DB is private, so episodes are read and annotated through a platform API: a second Flex Consumption function app in the functions subnet (same private storage, no extra private endpoints) with its own identity holding the Cosmos data role. `GET /api/episodes`, `GET /api/episodes/{id}`, `POST /api/episodes/{id}/feedback`, protected by a function key that `csai` fetches with the caller's Azure sign-in (so access follows Azure RBAC).
+- `csai diagnose "<machine>: <symptom>" [--target hosted|local]` prints the report and, for hosted runs, the episode ID.
+- `csai episodes list/show` lists recent runs and shows one with tool calls, arguments, durations and the report.
+- `csai feedback <episode-id> --verdict --actual-root-cause --note --reviewer` attaches the expert's assessment to the episode.
 
 **9. CI/CD (documented, not active)**
 - `docs/ci-cd.md` maps the local gates to a pipeline: quality checks and `csai eval` on pull requests, `azd provision` + `azd deploy` with OIDC on merge, plus a smoke test. Nothing is wired up in this repo.
 
 **10. Docs**
-- README quickstart (prerequisites, `azd up`, demo script).
-- `architecture.md` with a mermaid diagram mapping each component to a platform outcome.
-- `onboarding-an-agent.md`.
-- ADRs for hosting, IaC and Python version.
-- `iteration-2-backlog.md`.
+- README quickstart (prerequisites, `azd up`, demo with `csai`, clean-up).
+- `architecture.md`: component diagram, capability mapping (C1–C9), request flow, identities, network, deployment order.
+- `onboarding-an-agent.md`: package, tools, eval suite, `csai` registration, deployment, checklist.
+- ADRs: Python version (0001), local lock files (0002), private data stores (0003), agent hosting (0004), infrastructure as code (0005).
+- `iteration-2-backlog.md`: findings from iteration 1 plus the scope the specification defers.
 
 ## Risks / verify early
 

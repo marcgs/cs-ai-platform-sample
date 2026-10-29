@@ -1,0 +1,22 @@
+{
+  "version": "2.0",
+  "extensions": {
+    "mcp": {
+      "serverName": "diagnostics",
+      "serverVersion": "0.1.0",
+      "instructions": "Read-only diagnostic data for a fleet of fictional machines. Cite the ref of every record you use as evidence."
+    }
+  },
+  "logging": {
+    "applicationInsights": {
+      "samplingSettings": {
+        "isEnabled": true,
+        "excludedTypes": "Request"
+      }
+    }
+  },
+  "extensionBundle": {
+    "id": "Microsoft.Azure.Functions.ExtensionBundle",
+    "version": "[4.*, 5.0.0)"
+  }
+}

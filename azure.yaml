@@ -1,0 +1,87 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+name: cs-ai-platform-sample
+requiredVersions:
+  azd: ">=1.37.0"
+  extensions:
+    azure.ai.agents: ">=1.0.0-beta.22"
+
+infra:
+  provider: bicep
+  path: infra
+
+hooks:
+  # Create and seed the AI Search index of historical cases.
+  postprovision:
+    posix:
+      shell: sh
+      run: uv run python scripts/setup_platform.py seed-search
+
+services:
+  diagnostics-mcp:
+    project: services/diagnostics-mcp
+    language: python
+    host: function
+    # Workspace packages aren't on a package index, so dependencies are installed locally as
+    # Linux wheels (scripts/package_function.sh) and the package is deployed as-is.
+    remoteBuild: false
+    hooks:
+      prepackage:
+        posix:
+          shell: sh
+          run: ../../scripts/package_function.sh diagnostics-mcp diagnostics-domain
+      # Register the MCP server as a project connection and publish the "diagnostics"
+      # toolbox (MCP server + AI Search); sets TOOLBOX_ENDPOINT for the agent.
+      postdeploy:
+        posix:
+          shell: sh
+          run: uv run python ../../scripts/setup_platform.py connect-tools
+
+  # Episodes and feedback over the private episode store, for `csai episodes` and `csai feedback`.
+  platform-api:
+    project: services/platform-api
+    language: python
+    host: function
+    remoteBuild: false
+    hooks:
+      prepackage:
+        posix:
+          shell: sh
+          run: ../../scripts/package_function.sh platform-api cs-platform
+
+  rca-agent:
+    host: azure.ai.agent
+    project: agents/rca
+    language: docker
+    # The image installs workspace packages, so the build context is the repository root.
+    docker:
+      path: Dockerfile
+      context: ../..
+      remoteBuild: true
+    kind: hosted
+    name: rca-agent
+    description: Root-cause analysis for machine incidents, with evidence-backed hypotheses.
+    protocols:
+      - protocol: responses
+        version: 2.0.0
+    env:
+      PYTHONNOUSERSITE: "1"
+      AZURE_AI_MODEL_DEPLOYMENT_NAME: ${FOUNDRY_MODEL_DEPLOYMENT_NAME}
+      TOOLBOX_ENDPOINT: ${TOOLBOX_ENDPOINT}
+      COSMOS_ENDPOINT: ${COSMOS_ENDPOINT}
+      COSMOS_DATABASE: ${COSMOS_DATABASE}
+      COSMOS_EPISODES_CONTAINER: ${COSMOS_EPISODES_CONTAINER}
+    container:
+      resources:
+        cpu: "1.0"
+        memory: 2Gi
+    hooks:
+      # Pin the image to the locally tested versions (uv.lock itself stays local).
+      prepackage:
+        posix:
+          shell: sh
+          run: uv export --frozen --package rca-agent --no-dev --no-emit-workspace --no-header --quiet -o requirements.lock.txt
+      # The agent identity exists only after deployment; give it the episode store role.
+      postdeploy:
+        posix:
+          shell: sh
+          run: AZD_AGENT_SERVICE=rca-agent uv run python ../../scripts/setup_platform.py grant-agent
