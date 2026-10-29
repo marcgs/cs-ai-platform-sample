@@ -85,8 +85,39 @@ telemetry pipeline has been added.
 The local HTTP propagation path is covered offline with a real instrumented
 HTTPX client, an in-memory exporter and a simulated server extracting W3C headers.
 It is **not** a deployed toolbox-to-Functions propagation proof. That managed hop
-remains an explicit live-verification blocker; no feature deployment was authorized.
-The current data does not localize latency inside that boundary.
+remains an explicit live-verification blocker after the subsequently approved
+combined deployment below. The data does not localize latency inside that boundary.
+
+After the approved combined feature deployment, A4's single hosted verification
+produced 33 retained spans in the episode's exact operation. It included one
+`cs_platform.episode` with the exact episode-ID attribute, a framework invocation
+parented to that span, four model spans and eight tool RPCs. The episode span
+lasted 43.680 seconds; its lifetime includes persistence after the stored episode
+completion timestamp. All rows had `ItemCount == 1`. There were still no
+diagnostic Functions handler spans in that operation. This proves fresh hosted
+episode/root continuity, not end-to-end managed-hop propagation.
+
+The same-operation query returned 110 log rows and no rate-limit messages or
+rate-limit events. No throttling was induced, and live retry recovery was not
+exercised by this request.
+
+A2's first serialized local evaluation case also supplied its actual in-memory
+episode record. Exact trace lookup found 24 spans: one episode span with the
+matching episode-ID attribute and local service role, three model spans, eight
+tool RPCs and three model HTTP requests. All 23 descendant parent links resolved
+inside that graph, including framework invocation to episode span. All rows had
+`ItemCount == 1`. There were no diagnostic handler requests in this local graph
+either. This establishes a real local episode/export match without another model
+call from A3.
+
+The MCP transport can send from a writer task with context captured before the
+current tool invocation. The SDK's `_meta` injection is therefore important;
+enabling HTTPX alone does not establish per-invocation HTTP continuity. In the
+installed SDK, all effective headers participate in session identity, and a
+changed identity reconnects the session. Adding a different per-RPC `traceparent`
+through `header_provider` could consequently force reconnects. That is not a
+safe workaround without upstream SDK support. Missing handler joins do not prove
+which transport or managed hop loses context.
 
 For A6, `tools/call` is the client RPC duration, `execute_tool` includes framework
 execution, and a Functions handler request measures a different server interval.
@@ -131,11 +162,12 @@ values, not input text or approximate timestamps. Inspect `ItemCount` and
 ## Verification still required
 
 Offline gates and in-memory exporter tests pass. No model calls or Azure writes
-were made for A3. The Azure-backed local eval, a fresh local exported diagnosis,
-and a fresh hosted diagnosis with this middleware remain pending. A coordinated
-feature deployment must precede hosted acceptance. Verify the episode/trace
-match and one real diagnostic MCP parent chain; if the managed service strips
-context, retain the boundary limitation and obtain service-side evidence.
+were made by A3; the approved combined deployment and A4/A2's requests supplied
+the fresh hosted and local evidence above. Completion of A2's serialized full
+local evals remains pending. A real diagnostic MCP parent chain remains
+unverified. Retain the transport/managed-boundary limitation until supported
+per-call propagation or service-side evidence resolves it; do not claim that a
+particular service stripped context based only on the absent joins.
 
 References: [Functions OpenTelemetry configuration](https://learn.microsoft.com/azure/azure-functions/opentelemetry-howto)
 and [MCP tool trigger](https://learn.microsoft.com/azure/azure-functions/functions-bindings-mcp-tool-trigger).
