@@ -12,6 +12,7 @@ from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.sdk.trace.sampling import ALWAYS_ON
 from opentelemetry.trace import StatusCode
 
 from cs_platform.episodes import InMemoryEpisodeStore
@@ -31,7 +32,7 @@ class TracedChatClient(ChatTelemetryLayer, ScriptedChatClient):  # pyright: igno
 @pytest.fixture
 def spans(monkeypatch: pytest.MonkeyPatch) -> Iterator[InMemorySpanExporter]:
     exporter = InMemorySpanExporter()
-    provider = TracerProvider()
+    provider = TracerProvider(sampler=ALWAYS_ON)
     provider.add_span_processor(SimpleSpanProcessor(exporter))
     monkeypatch.setattr(trace, "_TRACER_PROVIDER", provider)
     yield exporter

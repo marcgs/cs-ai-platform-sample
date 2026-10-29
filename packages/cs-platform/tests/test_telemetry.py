@@ -3,7 +3,10 @@ from unittest.mock import Mock
 
 import pytest
 from microsoft import opentelemetry as distro
-from opentelemetry import trace
+from opentelemetry import metrics, trace
+from opentelemetry._logs import NoOpLoggerProvider
+from opentelemetry.sdk._logs import LoggerProvider
+from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
@@ -115,3 +118,67 @@ def test_azure_export_bootstrap_preserves_explicit_sampling(
     with provider.get_tracer(__name__).start_as_current_span("unsampled") as span:
         assert not span.is_recording()
     provider.shutdown()
+
+
+@pytest.mark.parametrize(
+    ("existing_meter", "existing_logger"),
+    [(True, False), (False, True), (True, True), (False, False)],
+)
+def test_flush_only_owns_newly_installed_providers(
+    monkeypatch: pytest.MonkeyPatch, existing_meter: bool, existing_logger: bool
+) -> None:
+    tracer = TracerProvider(shutdown_on_exit=False)
+    meter = MeterProvider(shutdown_on_exit=False)
+    log = LoggerProvider(shutdown_on_exit=False)
+    previous_tracer = trace.ProxyTracerProvider()
+    previous_meter = meter if existing_meter else metrics.NoOpMeterProvider()
+    previous_logger = log if existing_logger else NoOpLoggerProvider()
+    configured = False
+
+    def install(**_: object) -> None:
+        nonlocal configured
+        configured = True
+
+    monkeypatch.setattr(
+        trace, "get_tracer_provider", lambda: tracer if configured else previous_tracer
+    )
+    monkeypatch.setattr(
+        metrics, "get_meter_provider", lambda: meter if configured else previous_meter
+    )
+    monkeypatch.setattr(
+        telemetry, "get_logger_provider", lambda: log if configured else previous_logger
+    )
+    configure = Mock(side_effect=install)
+    monkeypatch.setattr(distro, "use_microsoft_opentelemetry", configure)
+    register = Mock()
+    monkeypatch.setattr(atexit, "register", register)
+    tracer_flush = Mock(wraps=tracer.force_flush)
+    meter_flush = Mock(wraps=meter.force_flush)
+    logger_flush = Mock(wraps=log.force_flush)
+    monkeypatch.setattr(tracer, "force_flush", tracer_flush)
+    monkeypatch.setattr(meter, "force_flush", meter_flush)
+    monkeypatch.setattr(log, "force_flush", logger_flush)
+    settings = PlatformSettings(
+        foundry_project_endpoint="https://example.test",
+        applicationinsights_connection_string="test-connection",
+    )
+    try:
+        telemetry.configure_telemetry(settings, service_name="test-local")
+        telemetry.configure_telemetry(settings, service_name="ignored-second-bootstrap")
+        telemetry.flush_telemetry()
+
+        configure.assert_called_once()
+        register.assert_called_once_with(telemetry.flush_telemetry)
+        tracer_flush.assert_called_once_with(timeout_millis=10_000)
+        if existing_meter:
+            meter_flush.assert_not_called()
+        else:
+            meter_flush.assert_called_once_with(timeout_millis=10_000)
+        if existing_logger:
+            logger_flush.assert_not_called()
+        else:
+            logger_flush.assert_called_once_with(timeout_millis=10_000)
+    finally:
+        tracer.shutdown()
+        meter.shutdown()
+        log.shutdown()

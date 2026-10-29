@@ -37,12 +37,15 @@ def configure_telemetry(settings: PlatformSettings, service_name: str) -> None:
     if _configured:
         return
     # A host or embedding application may already own the global provider.
-    if isinstance(trace.get_tracer_provider(), trace.ProxyTracerProvider):
+    previous_tracer_provider = trace.get_tracer_provider()
+    if isinstance(previous_tracer_provider, trace.ProxyTracerProvider):
         os.environ.setdefault("OTEL_TRACES_SAMPLER", "parentbased_always_on")
         resource = Resource.create({"service.name": service_name})
         if settings.applicationinsights_connection_string:
             from microsoft.opentelemetry import use_microsoft_opentelemetry
 
+            previous_meter_provider = metrics.get_meter_provider()
+            previous_logger_provider = get_logger_provider()
             use_microsoft_opentelemetry(
                 enable_azure_monitor=True,
                 azure_monitor_connection_string=settings.applicationinsights_connection_string,
@@ -51,15 +54,20 @@ def configure_telemetry(settings: PlatformSettings, service_name: str) -> None:
             )
             meter_provider = metrics.get_meter_provider()
             logger_provider = get_logger_provider()
-            if isinstance(meter_provider, MeterProvider):
+            if meter_provider is not previous_meter_provider and isinstance(
+                meter_provider, MeterProvider
+            ):
                 _owned_providers.append(meter_provider)
-            if isinstance(logger_provider, LoggerProvider):
+            if logger_provider is not previous_logger_provider and isinstance(
+                logger_provider, LoggerProvider
+            ):
                 _owned_providers.append(logger_provider)
         else:
             trace.set_tracer_provider(TracerProvider(resource=resource))
         provider = trace.get_tracer_provider()
-        if isinstance(provider, TracerProvider):
+        if provider is not previous_tracer_provider and isinstance(provider, TracerProvider):
             _owned_providers.append(provider)
+        if _owned_providers:
             atexit.register(flush_telemetry)
     enable_instrumentation()
     _configured = True
