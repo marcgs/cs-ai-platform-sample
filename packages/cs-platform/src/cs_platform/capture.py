@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from time import perf_counter
 from typing import TYPE_CHECKING, Any
 
-from agent_framework import AgentMiddleware, AgentResponse, FunctionMiddleware
+from agent_framework import AgentMiddleware, AgentResponse, FunctionMiddleware, ResponseStream
 from opentelemetry import trace
 from pydantic import BaseModel
 
@@ -36,9 +36,10 @@ EPISODE_ID_KEY = "episode_id"
 class EpisodeRecorder:
     """Collects one run's tool calls and outcome, then saves the episode once."""
 
-    def __init__(self, episode: Episode, store: EpisodeStore) -> None:
+    def __init__(self, episode: Episode, store: EpisodeStore, span: trace.Span) -> None:
         self.episode = episode
         self._store = store
+        self.span = span
 
     def add_tool_call(self, call: ToolCall) -> None:
         self.episode.tool_calls.append(call)
@@ -65,6 +66,9 @@ class EpisodeRecorder:
             episode.error = f"{type(error).__name__}: {error}"
         else:
             episode.status = "succeeded"
+        if error is not None:
+            self.span.record_exception(error)
+            self.span.set_status(trace.StatusCode.ERROR, str(error))
         # Tool results are evidence, so they're kept whole unless the episode wouldn't fit.
         fit_to_budget(episode)
         try:
@@ -82,6 +86,22 @@ class EpisodeCaptureAgentMiddleware(AgentMiddleware):
     async def process(
         self, context: AgentContext, call_next: Callable[[], Awaitable[None]]
     ) -> None:
+        span = trace.get_tracer(__name__).start_span("cs_platform.episode")
+        # Middleware precedes the framework's agent span. Keep this parent alive across
+        # lazy stream consumption, without leaving context attached between iterator pulls.
+        try:
+            with trace.use_span(span, end_on_exit=False, record_exception=False):
+                await self._process(context, call_next, span)
+        except BaseException:
+            span.end()
+            raise
+
+    async def _process(
+        self,
+        context: AgentContext,
+        call_next: Callable[[], Awaitable[None]],
+        span: trace.Span,
+    ) -> None:
         episode = Episode(
             agent=self._spec.name,
             agent_version=self._spec.version,
@@ -89,7 +109,7 @@ class EpisodeCaptureAgentMiddleware(AgentMiddleware):
             trace_id=_current_trace_id(),
         )
         trace.get_current_span().set_attribute("cs_platform.episode_id", episode.id)
-        recorder = EpisodeRecorder(episode, self._store)
+        recorder = EpisodeRecorder(episode, self._store, span)
         context.function_invocation_kwargs = {
             **(context.function_invocation_kwargs or {}),
             RECORDER_KEY: recorder,
@@ -102,6 +122,10 @@ class EpisodeCaptureAgentMiddleware(AgentMiddleware):
             raise
 
         if context.stream:
+            if isinstance(context.result, ResponseStream):
+                context.result.with_pull_context_manager(
+                    lambda: trace.use_span(span, end_on_exit=False, record_exception=False)
+                )
 
             async def on_result(response: AgentResponse[Any]) -> AgentResponse[Any]:
                 await recorder.finish(response, None)
@@ -109,11 +133,13 @@ class EpisodeCaptureAgentMiddleware(AgentMiddleware):
                 return response
 
             async def on_cleanup() -> None:
-                # The framework invokes cleanup while handling the provider exception.
-                await recorder.finish(
-                    None,
-                    sys.exception() or RuntimeError("stream ended without a final response"),
-                )
+                try:
+                    await recorder.finish(
+                        None,
+                        sys.exception() or RuntimeError("stream ended without a final response"),
+                    )
+                finally:
+                    span.end()
 
             context.stream_result_hooks.append(on_result)
             context.stream_cleanup_hooks.append(on_cleanup)
@@ -124,6 +150,7 @@ class EpisodeCaptureAgentMiddleware(AgentMiddleware):
         await recorder.finish(response, None)
         if response is not None:
             response.additional_properties[EPISODE_ID_KEY] = episode.id
+        span.end()
 
 
 class EpisodeCaptureFunctionMiddleware(FunctionMiddleware):

@@ -15,6 +15,7 @@ from pydantic import BaseModel, ValidationError
 from cs_platform.capture import EPISODE_ID_KEY
 from cs_platform.episodes import InMemoryEpisodeStore
 from cs_platform.evals import RunOutput
+from cs_platform.telemetry import configure_telemetry
 from rca_agent.agent import create_agent
 from rca_agent.local import render
 from rca_agent.report import RcaReport
@@ -66,6 +67,8 @@ def parse(output_type: type[BaseModel], text: str | None) -> BaseModel | None:
 def local_target(
     entry: AgentEntry, settings: PlatformSettings, credential: AsyncTokenCredential
 ) -> Target:
+    configure_telemetry(settings, service_name=f"{entry.service}-local")
+
     async def run(case: EvalCase) -> RunOutput:
         store = InMemoryEpisodeStore()
         async with entry.create(settings, credential, store=store) as agent:

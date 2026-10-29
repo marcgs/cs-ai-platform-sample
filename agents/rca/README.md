@@ -37,6 +37,10 @@ uv run rca-local "M-0001: overlay getting worse, stage temperature alarm this mo
 
 The output shows the ranked hypotheses with their evidence, then the episode: tool calls with durations, token usage and trace ID. Episodes stay in memory locally; Cosmos DB is private (ADR 0003).
 
+Both local entry points configure telemetry. Set `APPLICATIONINSIGHTS_CONNECTION_STRING`
+to export it; without that setting, a valid local trace ID is not queryable in Azure.
+See [trace continuity](../../docs/tracing.md) for sampling and outstanding hosted verification.
+
 ## Historical cases
 
 When the toolbox supplies `azure_ai_search`, the instructions require a historical-case
