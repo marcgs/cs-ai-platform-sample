@@ -62,7 +62,7 @@ A new workspace package goes in the root `pyproject.toml` too: in `dependencies`
 - **Settings come from the environment.** Bicep outputs become azd environment values, which `azure.yaml`, the hooks and `csai` read (`cli/src/csai/environment.py`). Add a Bicep output instead of hard-coding a name.
 - **Tests are offline.** Use `cs_platform.testing.ScriptedChatClient` to run the real tool loop with scripted model turns, the in-memory episode store, and the seed data. Don't mock what you can run.
 - Match the surrounding style: small modules, docstrings on public functions, comments that explain *why*. Ruff's rule set is in the root `pyproject.toml`.
-- Docs are plain and specific: short sentences, real commands, no marketing. Record a decision with real trade-offs as a new ADR in `docs/adr/` (next number, same format). Put findings and deferred work in [`docs/iteration-2-backlog.md`](docs/iteration-2-backlog.md).
+- Docs are plain and specific: short sentences, real commands, no marketing. Record a decision with real trade-offs as a new ADR in `docs/adr/` (next number, same format). Put findings, deferred work and new ideas in [`docs/backlog.md`](docs/backlog.md), with the next free ID in the theme they fit.
 
 ## Azure and deployment, the non-obvious parts
 
@@ -87,5 +87,5 @@ A new workspace package goes in the root `pyproject.toml` too: in `dependencies`
 
 - [`docs/specification.md`](docs/specification.md): what the platform must do and what's out of scope.
 - [`docs/plan-iteration-1.md`](docs/plan-iteration-1.md): how iteration 1 was built, step by step, with what was verified.
-- [`docs/iteration-2-backlog.md`](docs/iteration-2-backlog.md): known issues and next work, in priority order. Start here when asked "what's next".
+- [`docs/backlog.md`](docs/backlog.md): every idea and known issue, by theme, with IDs; the current iteration's plan says which ones it takes. Start here when asked "what's next".
 - [`docs/adr/`](docs/adr/): decisions and their consequences. Read the relevant ADR before reversing one of them.
