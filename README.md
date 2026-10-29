@@ -82,6 +82,9 @@ uv run csai diagnose "M-0001: ..." --target local  # one run, episode kept in me
 
 `csai` reads its settings from the active azd environment. To run the agent against the MCP server on your machine instead of the toolbox, see [`agents/rca/README.md`](agents/rca/README.md).
 
+For a low-sample, model-free comparison of authenticated toolbox, direct MCP and
+in-process tool latency, see [the A6 measurement command and baseline](docs/iteration-2/a6-latency.md).
+
 There's no CI pipeline in this exploration repository: pre-commit hooks and `csai eval` are the gates. [`docs/ci-cd.md`](docs/ci-cd.md) maps them onto a pipeline.
 
 ## Repository layout
