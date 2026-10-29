@@ -135,6 +135,40 @@ separately. This is a verified correlation gap, not evidence that the toolbox
 spent the difference in time. Those retained traces are not the baseline probe's
 invocations. Sampling also limits conclusions from missing records.
 
+A broader A3 query on 2026-10-29 checked agent roots in both request and dependency
+tables, including versioned names:
+
+```kusto
+let agents = union AppRequests, AppDependencies
+    | where TimeGenerated > ago(2d) and Name startswith "invoke_agent"
+    | distinct OperationId;
+AppRequests
+| where TimeGenerated > ago(2d) and Name == "get_machine_context"
+| summarize handlerRows=count(), handlerOperations=dcount(OperationId),
+    joinedRows=countif(OperationId in (agents))
+```
+
+Result: **159 handler rows, 159 handler operations, zero joined rows**. Exact
+`invoke_agent rca-agent` dependency roots numbered 81 rows / 81 operations;
+versioned dependency roots numbered 299 rows / 80 operations. Agent request
+roots numbered 82 rows / 82 operations. These retained-record counts are not
+latency sample sizes.
+
+One retained successful agent/toolbox graph had 38 spans, including `execute_tool`
+and `tools/call diagnostics___get_machine_context`, but no handler spans. To inspect
+one graph, use its private operation ID rather than matching unrelated timestamps:
+
+```kusto
+union AppRequests, AppDependencies
+| where OperationId == "<trace-id>"
+| project TimeGenerated, Type, Name, Id, ParentId, DurationMs
+```
+
+The installed Agent Framework injects W3C trace keys into MCP request `_meta`.
+Functions exposes its trigger payload through `MCPToolContext`, but whether the
+managed toolbox forwards those keys remains unproven. This identifies where to
+verify propagation; it does not locate the observed seconds of delay.
+
 The probe does not currently inject a traceparent or export a client span; UTC
 windows alone cannot establish causal parentage. A later trace-enabled comparison
 must use A3's verified propagation path without silently changing session reuse.
