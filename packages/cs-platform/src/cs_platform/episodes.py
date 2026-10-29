@@ -66,6 +66,8 @@ class Episode(BaseModel):
     error: str | None = None
     usage: Usage | None = None
     trace_id: str | None = None
+    hosted_response_id: str | None = None
+    """Host-issued Responses ID; absent on local runs and legacy records."""
     feedback: Feedback | None = None
     truncated: list[str] = Field(default_factory=list[str])
     """The parts cut to fit the store, in the order they were cut (see ``fit_to_budget``)."""

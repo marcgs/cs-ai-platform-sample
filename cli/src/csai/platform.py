@@ -6,6 +6,7 @@ the API, and nobody else.
 """
 
 import os
+import time
 from typing import TYPE_CHECKING
 
 import httpx
@@ -29,7 +30,9 @@ REQUIRED = (
 
 
 class PlatformApiError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 def function_key(subscription: str, resource_group: str, app: str) -> str:
@@ -74,11 +77,17 @@ class PlatformClient:
         json_body: str | None = None,
     ) -> httpx.Response:
         headers = {"Content-Type": "application/json"} if json_body is not None else None
-        response = self._http.request(
-            method, path, params=params, content=json_body, headers=headers
-        )
+        try:
+            response = self._http.request(
+                method, path, params=params, content=json_body, headers=headers
+            )
+        except httpx.HTTPError as error:
+            raise PlatformApiError(f"{method} {path}: {type(error).__name__}") from error
         if response.is_error:
-            raise PlatformApiError(f"{method} {path}: {response.status_code} {response.text}")
+            raise PlatformApiError(
+                f"{method} {path}: {response.status_code} {response.text}",
+                status_code=response.status_code,
+            )
         return response
 
     def list_episodes(self, *, agent: str | None = None, limit: int = 20) -> list[EpisodeSummary]:
@@ -90,6 +99,26 @@ class PlatformClient:
 
     def get_episode(self, episode_id: str) -> Episode:
         return Episode.model_validate_json(self._send("GET", f"episodes/{episode_id}").content)
+
+    def wait_for_episode(
+        self, episode_id: str, response_id: str, *, attempts: int = 5, interval_s: float = 0.5
+    ) -> Episode | None:
+        """Bounded point reads, retrying only not-yet-persisted episodes (HTTP 404)."""
+        if attempts < 1 or interval_s < 0:
+            raise ValueError("Polling requires positive attempts and a nonnegative interval")
+        for attempt in range(attempts):
+            try:
+                episode = self.get_episode(episode_id)
+            except PlatformApiError as error:
+                if error.status_code != 404:
+                    raise
+            else:
+                if episode.id != episode_id or episode.hosted_response_id != response_id:
+                    raise PlatformApiError("Episode identity does not match the hosted response")
+                return episode
+            if attempt + 1 < attempts:
+                time.sleep(interval_s)
+        return None
 
     def add_feedback(self, episode_id: str, feedback: FeedbackRequest) -> Episode:
         response = self._send(

@@ -10,6 +10,7 @@ The reusable agent harness. An agent is declared by a spec and built by the plat
 | `retry.py` | A bounded, asynchronous 429-only retry policy for one Foundry model turn |
 | `capture.py` | Middleware that records every run as an episode: input, tool calls (arguments, result, duration, errors), structured output, token usage, trace ID |
 | `episodes.py` | `Episode`, `ToolCall`, `Feedback`; the `EpisodeStore` protocol with in-memory and Cosmos DB implementations |
+| `hosting.py` | Bind each host-issued Responses ID to its exact episode, independently of input, timing or session |
 | `evals.py` | Eval harness: `EvalCase`, `EvalSuite` (cases, thresholds, evaluators), `run_suite()` with concurrency and retries, `SuiteResult` with metrics and gate failures |
 | `evidence.py` | `Evidence`: the cited unit (source, ref, excerpt) agents put in their output and evaluators verify |
 | `telemetry.py` | `configure_telemetry()` for processes outside Foundry hosting: Azure Monitor export plus agent instrumentation |
@@ -55,6 +56,34 @@ Local startup creates a real episode span, enables HTTP propagation when exporti
 and flushes owned exporters on exit. Streaming context is attached per iterator pull;
 hosted telemetry stays owned by the hosting library. See [trace continuity](../../docs/tracing.md)
 for sampling, query templates, historical evidence and the unverified managed MCP boundary.
+
+## Hosted response identity
+
+The installed `agent-framework-foundry-hosting` adapter (`1.0.0b261015`) does not
+project `AgentResponse.additional_properties["episode_id"]` into Responses metadata.
+Its public `prepare_options` hook does expose `HostedResponseRequest.response_id`.
+The hosted entry point uses `prepare_episode_options` to pass that trusted ID in
+per-run options. Capture removes it before the model or tools run.
+
+A hosted episode records `hosted_response_id` and uses `hosted_episode_id(response_id)`
+as its point-read key: UUID5 with `NAMESPACE_OID` and
+`cs-platform:hosted-response:<response_id>`. The host and CLI share this mapping.
+Neither incident text, creation time nor session affinity determines identity.
+Failed runs retain the same binding when execution reaches capture. A failure before
+agent execution, a process crash or a store outage may leave no episode.
+
+`RunOutput` carries both IDs, including terminal hosted failures. The CLI retries
+only HTTP 404, at most five point reads with half-second intervals, and verifies both
+stored IDs before claiming a match. Missing records, missing identifiers and API
+failures are reported explicitly, without falling back to recent-episode listings.
+Legacy episodes keep their existing IDs and default `hosted_response_id` to `None`;
+local runs still receive a random episode ID. The agent report schema is unchanged.
+
+Offline tests exercise the real adapter and OpenAI client, including concurrent
+identical inputs in one hosting session, out-of-order completion, streamed and failed
+responses, and delayed persistence. A deployed end-to-end check remains required:
+run `csai diagnose`, then `csai episodes show <episode-id>` and compare the displayed
+Response ID with the diagnosis. Offline adapter tests do not establish gateway behavior.
 
 ## Tests
 

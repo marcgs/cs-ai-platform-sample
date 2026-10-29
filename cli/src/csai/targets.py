@@ -15,6 +15,7 @@ from pydantic import BaseModel, ValidationError
 from cs_platform.capture import EPISODE_ID_KEY
 from cs_platform.episodes import InMemoryEpisodeStore
 from cs_platform.evals import RunOutput
+from cs_platform.hosting import hosted_episode_id
 from cs_platform.telemetry import configure_telemetry
 from rca_agent.agent import create_agent
 from rca_agent.local import render
@@ -31,10 +32,6 @@ if TYPE_CHECKING:
     from cs_platform.settings import PlatformSettings
 
 AI_SCOPE = "https://ai.azure.com/.default"
-
-
-class HostedRunError(RuntimeError):
-    pass
 
 
 @dataclass(frozen=True)
@@ -82,6 +79,7 @@ def local_target(
             if isinstance(value, entry.output_type)
             else parse(entry.output_type, response.text),
             tool_calls=[call.name for call in episode.tool_calls] if episode else [],
+            episode_id=episode.id if episode else None,
         )
 
     return run
@@ -96,12 +94,20 @@ def hosted_target(entry: AgentEntry, endpoint: str, credential: AsyncTokenCreden
 
     async def run(case: EvalCase) -> RunOutput:
         response = await client.responses.create(input=case.input)
+        response_id = response.id if response.id and response.id.strip() else None
+        episode_id = hosted_episode_id(response_id) if response_id else None
         if response.status != "completed" or response.error is not None:
             # Failed runs (e.g. the model rate-limited inside the agent) don't raise.
             detail = response.error or response.incomplete_details
-            raise HostedRunError(f"response {response.id} {response.status}: {detail}")
+            return RunOutput(
+                error=f"response {response.id} {response.status}: {detail}",
+                response_id=response_id,
+                episode_id=episode_id,
+            )
         text = response.output_text
         return RunOutput(
+            response_id=response_id,
+            episode_id=episode_id,
             text=text,
             value=parse(entry.output_type, text),
             tool_calls=[

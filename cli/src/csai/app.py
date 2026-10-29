@@ -151,7 +151,6 @@ def diagnose(
 ) -> None:
     """Ask an agent to diagnose an incident and print its report."""
     entry = agent_entry(agent)
-    started = datetime.now(UTC)
 
     async def run() -> RunOutput:
         async with DefaultAzureCredential() as credential:
@@ -167,18 +166,24 @@ def diagnose(
     tools = ", ".join(output.tool_calls) or "none"
     typer.echo(f"\nTool calls: {tools}")
     if target is TargetKind.HOSTED:
-        episode = find_episode(entry.service, incident, since=started)
-        typer.echo(f"Episode: {episode or 'not found yet; see `csai episodes list`'}")
+        typer.echo(describe_correlation(output))
+    if output.error:
+        typer.echo(f"error: {output.error}", err=True)
+        raise typer.Exit(1)
 
 
-def find_episode(agent: str, incident: str, *, since: datetime) -> str | None:
-    """The hosted run's episode: the newest one for this input recorded since ``since``."""
+def describe_correlation(output: RunOutput) -> str:
+    """Resolve only this response's episode, never a similar incident or session."""
+    if not output.response_id or not output.episode_id:
+        return "Episode: unavailable (host response identifier missing)"
+    prefix = f"Response: {output.response_id}\nEpisode: {output.episode_id}"
     try:
-        recent = PlatformClient.from_env().list_episodes(agent=agent, limit=10)
-    except SettingsError, PlatformApiError:
-        return None
-    matches = [e for e in recent if e.input == incident and e.created_at >= since]
-    return matches[0].id if matches else None
+        episode = PlatformClient.from_env().wait_for_episode(output.episode_id, output.response_id)
+    except (SettingsError, PlatformApiError) as error:
+        return f"{prefix} (unverified: {error})"
+    if episode is None:
+        return f"{prefix} (not persisted yet; retry `csai episodes show {output.episode_id}`)"
+    return f"{prefix} ({episode.status}, exact response verified)"
 
 
 # --- episodes and feedback -----------------------------------------------------------------
@@ -213,6 +218,7 @@ def describe_episode(episode: Episode) -> list[str]:
     lines = [
         f"Episode {episode.id}: {episode.agent} {episode.agent_version}, {episode.status}",
         f"Created {episode.created_at:%Y-%m-%d %H:%M:%S} UTC, trace {episode.trace_id or 'n/a'}",
+        *([f"Response: {episode.hosted_response_id}"] if episode.hosted_response_id else []),
         f"Input: {episode.input}",
         "",
         "Tool calls:",
