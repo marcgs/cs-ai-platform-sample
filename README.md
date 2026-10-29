@@ -8,7 +8,7 @@ A reference sample that shows the path from **an agent prototype** to **an agent
 - Using it, one case end to end: [`docs/walkthrough.md`](docs/walkthrough.md) · each part in Azure: [`docs/platform-tour.md`](docs/platform-tour.md)
 - How it was built: [`docs/plan-iteration-1.md`](docs/plan-iteration-1.md) · decisions in [`docs/adr/`](docs/adr/)
 - Adding an agent: [`docs/onboarding-an-agent.md`](docs/onboarding-an-agent.md)
-- What's next: [`docs/iteration-2-backlog.md`](docs/iteration-2-backlog.md)
+- Ideas and what's next: [`docs/backlog.md`](docs/backlog.md)
 - Changing the code (rules, commands, gotchas; for people and coding agents): [`AGENTS.md`](AGENTS.md)
 
 ## What runs where
