@@ -196,7 +196,9 @@ def test_missing_persistence_is_not_claimed_as_verified(monkeypatch: pytest.Monk
 
     monkeypatch.setattr(PlatformClient, "from_env", classmethod(lambda _: Missing()))
     message = cli.describe_correlation(RunOutput(episode_id=EPISODE_ID, response_id=RESPONSE_ID))
-    assert "not persisted yet" in message
+    assert "unverified:" in message
+    assert "persistence may be delayed or failed" in message
+    assert "agent logs" in message
     assert "exact response verified" not in message
     assert f"csai episodes show {EPISODE_ID}" in message
 
@@ -352,3 +354,30 @@ def test_client_failures_preserve_both_ids_and_original_host_error(
     assert "Tool calls: unavailable" in result.output
     assert "private" not in result.output
     assert "not persisted yet" not in result.output
+
+
+@pytest.mark.parametrize(
+    "endpoint", ["https://example.invalid:invalid", "https://example.invalid/\n"]
+)
+def test_invalid_endpoint_preserves_ids_and_original_host_error(
+    monkeypatch: pytest.MonkeyPatch, endpoint: str
+) -> None:
+    for name in client_module.REQUIRED:
+        monkeypatch.setenv(name, "offline")
+    monkeypatch.setenv("PLATFORM_API_ENDPOINT", endpoint)
+    monkeypatch.setattr(client_module, "function_key", lambda *_: "offline")
+
+    async def run(_: EvalCase) -> RunOutput:
+        return RunOutput(
+            error="original hosted failure",
+            response_id=RESPONSE_ID,
+            episode_id=EPISODE_ID,
+        )
+
+    monkeypatch.setattr(cli, "make_target", lambda *_: run)
+    result = CliRunner().invoke(cli.app, ["--no-azd", "diagnose", "M-0001: identical input"])
+    assert result.exit_code == 1, result.output
+    assert f"Response: {RESPONSE_ID}" in result.output
+    assert f"Episode: {EPISODE_ID}" in result.output
+    assert "unverified: Invalid platform API endpoint" in result.output
+    assert "original hosted failure" in result.output
