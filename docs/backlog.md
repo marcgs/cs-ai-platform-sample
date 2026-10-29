@@ -1,12 +1,12 @@
 # Backlog
 
-Every idea for the platform in one place: findings from running it, scope the [specification](specification.md) defers, and new directions. Items are grouped by theme and have a stable ID (`B3`), so iteration plans can refer to them.
+Open work for the platform: findings from running it, scope the [specification](specification.md) defers, and new directions. Items are grouped by theme and have a stable ID (`B3`), so iteration plans can refer to them.
 
 ## How to use it
 
 - **Add an idea** to the theme it fits, with the next free ID. IDs are never reused or renumbered.
 - **Size** is a rough first guess: **S** up to a day, **M** a few days, **L** a week or more.
-- **Target** is empty until an iteration takes the item; then it names the iteration (`it2`). When an item is done, write `done it2` and link the pull request in the notes.
+- **Target** is empty until an iteration takes the item; then it names the iteration (`it2`). Remove completed items from the backlog; keep their completion evidence and pull request links in the iteration record.
 - An iteration's scope and order live in its plan (`docs/plan-iteration-N.md`), which lists the IDs it takes.
 
 ## Themes
@@ -30,16 +30,10 @@ Feature names and preview status in the notes were checked against Microsoft Lea
 
 ## A. Trustworthy results
 
-Most of these came from running iteration 1. Without them, eval scores move for reasons unrelated to the change being tested.
+Open findings that affect confidence in diagnostic results and evaluation gates.
 
 | ID | Item | Why | Notes | Size | Target |
 |---|---|---|---|---|---|
-| A1 | **Rate-limit handling** | About 1 in 6 hosted runs fail on the first attempt when parallel runs exceed the 50k TPM deployment; the hosted agent returns an empty failed response instead of retrying. | [PR #5](https://github.com/marcgs/cs-ai-platform-sample/pull/5): bounded, observable 429-only retries per model turn, honoring server delays without replaying streamed output or tools; terminal errors remain in failed episodes. The hosted normal path and all 54 local runs passed. No live 429 was observed or induced; recovery and exhaustion are covered by offline SDK tests. No capacity change. | S | done it2 |
-| A2 | **Knowledge search is almost never used** | `used_knowledge` is 0.00–0.06 across eval runs, although the toolbox's `azure_ai_search` tool works and returns relevant historical cases. | Completed in [PR #4](https://github.com/marcgs/cs-ai-platform-sample/pull/4): diagnostic search metadata, conditional required search instructions and a measured citation gate. Three full suites cited history in 16/18, 16/18 and 14/18 reports; the 0.70 minimum retains one-case margin. Search omissions and citation limitations are documented in the agent README. | S | done it2 |
-| A3 | **Trace gaps** | Local span lifetime/bootstrap is fixed with exporter-backed offline tests. Read-only lookup finds all 81 historical and all 54 fresh local episode traces; the earlier gap's cause cannot be established. Fresh hosted/local evidence matches actual episodes and their span/model/tool descendants. | **Done, with documented boundary limitation.** [Evidence, sampling and queries](tracing.md). Offline gates and all three full local suites/replays pass. Diagnostic handler continuity remains a transport/managed-boundary limitation, not claimed fixed. | S | it2 |
-| A4 | **Episode–response correlation** | `csai diagnose` finds a hosted run's episode by input and time. | Exact host-issued response identity and verified episode point reads; legacy records preserved. Offline concurrency/failure tests and a real hosted check passed. [PR #6](https://github.com/marcgs/cs-ai-platform-sample/pull/6). | S | done it2 |
-| A5 | **Deploy the review fixes** | The deployed agent and function apps predate the PR #1 review fixes: full tool results within an episode size budget, nested `.env` files excluded from the image. | Verified pinned-main release, all three services and full API episode payloads. [Evidence](iteration-2/a5-deployment.md); [PR #8](https://github.com/marcgs/cs-ai-platform-sample/pull/8). | S | done it2 |
-| A6 | **Toolbox call latency** | 4–18 s per tool call through the toolbox versus about 50 ms against the MCP server directly; a diagnosis takes about a minute. | [Verified investigation and repeatable probe](iteration-2/a6-latency.md), [PR #7](https://github.com/marcgs/cs-ai-platform-sample/pull/7): unchanged warm toolbox/direct medians 5.811/2.774 s (three samples each). Same-call spans and offline reproduction verify identity-protecting SDK serialization; stable 1.23.0 retains it. No supported safe remedy or improvement claimed; RPC internals remain unobservable. | M | done it2 |
 | A7 | **Diagnostic tool-selection reliability** | A fresh 18-case local suite skipped `get_telemetry_window` in 10 cases: coverage 80/90, below the unchanged 0.90 gate. Earlier suites already skipped it in 8, 7 and 8 cases, plus one logbook omission. Valid, accurate reports can still omit required evidence and describe unattempted telemetry as unavailable. | Found during the [PR #9](https://github.com/marcgs/cs-ai-platform-sample/pull/9) review; the author explicitly accepted this recorded live-gate failure to resume the merge sequence, not as a passing result. The advertised telemetry tool returned seed-identical data for a failing case through authenticated toolbox access. Investigate verifiable evidence acquisition and truthful missing-information reporting; the numbered instruction alone is insufficient. Keep the failed run and thresholds unchanged; do not rerun merely to obtain a pass. | M | |
 
 ## B. Controlled learning
