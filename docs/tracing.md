@@ -110,6 +110,16 @@ inside that graph, including framework invocation to episode span. All rows had
 either. This establishes a real local episode/export match without another model
 call from A3.
 
+After all three serialized local suites completed, exact lookup verified every
+one of their 54 actual episode traces and matching episode-ID attributes. All
+54 root spans had the local service role and `ItemCount == 1`; all episodes
+succeeded. The 1,362 retained spans included 199 model-turn spans and 428 tool
+RPCs, with no diagnostic handler requests. Across these exact operations there
+were no rate-limit logs or events. The third suite's raw gate reported a floating
+aggregation boundary (`0.8999999999999999` versus `0.9`); its exact diagnostic-tool
+coverage was 81/90. Do not silently relabel that original output as a pass:
+the shared gate still needs the validated aggregation fix and unchanged-score replay.
+
 The MCP transport can send from a writer task with context captured before the
 current tool invocation. The SDK's `_meta` injection is therefore important;
 enabling HTTPX alone does not establish per-invocation HTTP continuity. In the
@@ -183,9 +193,10 @@ values, not input text or approximate timestamps. Inspect `ItemCount` and
 
 Offline gates and in-memory exporter tests pass. No model calls or Azure writes
 were made by A3; the approved combined deployment and A4/A2's requests supplied
-the fresh hosted and local evidence above. Completion of A2's serialized full
-local evals remains pending. A real diagnostic MCP parent chain remains
-unverified. Retain the transport/managed-boundary limitation until supported
+the fresh hosted and local evidence above. All three full local suites completed;
+confirmation of the shared aggregation-boundary fix/replay remains pending.
+A real diagnostic MCP parent chain remains unverified. Retain the documented,
+plan-permitted transport/managed-boundary limitation until supported
 per-call propagation or service-side evidence resolves it; do not claim that a
 particular service stripped context based only on the absent joins.
 
