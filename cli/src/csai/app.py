@@ -163,7 +163,7 @@ def diagnose(
         typer.echo(f"error: {error}", err=True)
         raise typer.Exit(2) from error
     typer.echo(entry.render(output.value) if output.value is not None else output.text or "")
-    tools = ", ".join(output.tool_calls) or "none"
+    tools = ", ".join(output.tool_calls) or ("unavailable" if output.error else "none")
     typer.echo(f"\nTool calls: {tools}")
     if target is TargetKind.HOSTED:
         typer.echo(describe_correlation(output))

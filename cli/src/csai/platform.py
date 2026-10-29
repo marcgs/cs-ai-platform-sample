@@ -10,8 +10,9 @@ import time
 from typing import TYPE_CHECKING
 
 import httpx
+from azure.core.exceptions import AzureError
 from azure.identity import DefaultAzureCredential
-from pydantic import TypeAdapter
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
 from cs_platform.episodes import Episode
 from cs_platform.settings import SettingsError
@@ -35,9 +36,46 @@ class PlatformApiError(RuntimeError):
         self.status_code = status_code
 
 
+class PlatformEpisodeNotFoundError(PlatformApiError):
+    """The API confirmed that this exact episode is not stored."""
+
+
+class _FunctionKeys(BaseModel):
+    default: str = Field(min_length=1)
+
+
+class _FunctionKeyResponse(BaseModel):
+    function_keys: _FunctionKeys = Field(alias="functionKeys")
+
+
 def function_key(subscription: str, resource_group: str, app: str) -> str:
-    with DefaultAzureCredential() as credential:
-        token = credential.get_token(f"{ARM}/.default").token
+    try:
+        with DefaultAzureCredential() as credential:
+            token = credential.get_token(f"{ARM}/.default").token
+    except AzureError as error:
+        raise PlatformApiError(
+            f"Can't acquire the platform API credential ({type(error).__name__})"
+        ) from error
+    try:
+        response = _request_function_key(subscription, resource_group, app, token)
+    except httpx.HTTPError as error:
+        raise PlatformApiError(
+            f"Can't read the platform API key ({type(error).__name__})"
+        ) from error
+    if response.is_error:
+        raise PlatformApiError(
+            f"Can't read the platform API key ({response.status_code})",
+            status_code=response.status_code,
+        )
+    try:
+        return _FunctionKeyResponse.model_validate_json(response.content).function_keys.default
+    except ValidationError as error:
+        raise PlatformApiError("Invalid platform API key response") from error
+
+
+def _request_function_key(
+    subscription: str, resource_group: str, app: str, token: str
+) -> httpx.Response:
     response = httpx.post(
         f"{ARM}/subscriptions/{subscription}/resourceGroups/{resource_group}"
         f"/providers/Microsoft.Web/sites/{app}/host/default/listkeys",
@@ -45,9 +83,7 @@ def function_key(subscription: str, resource_group: str, app: str) -> str:
         headers={"Authorization": f"Bearer {token}"},
         timeout=30,
     )
-    if response.is_error:
-        raise PlatformApiError(f"Can't read the platform API key ({response.status_code})")
-    return response.json()["functionKeys"]["default"]
+    return response
 
 
 class PlatformClient:
@@ -75,6 +111,7 @@ class PlatformClient:
         *,
         params: dict[str, str | int] | None = None,
         json_body: str | None = None,
+        missing_episode_id: str | None = None,
     ) -> httpx.Response:
         headers = {"Content-Type": "application/json"} if json_body is not None else None
         try:
@@ -84,6 +121,15 @@ class PlatformClient:
         except httpx.HTTPError as error:
             raise PlatformApiError(f"{method} {path}: {type(error).__name__}") from error
         if response.is_error:
+            if response.status_code == 404 and missing_episode_id is not None:
+                try:
+                    payload = response.json()
+                except ValueError:
+                    payload = None
+                if payload == {"error": f"episode {missing_episode_id} not found"}:
+                    raise PlatformEpisodeNotFoundError(
+                        f"Episode {missing_episode_id} not found", status_code=404
+                    )
             raise PlatformApiError(
                 f"{method} {path}: {response.status_code} {response.text}",
                 status_code=response.status_code,
@@ -98,20 +144,23 @@ class PlatformClient:
         return TypeAdapter(list[EpisodeSummary]).validate_json(response.content)
 
     def get_episode(self, episode_id: str) -> Episode:
-        return Episode.model_validate_json(self._send("GET", f"episodes/{episode_id}").content)
+        response = self._send("GET", f"episodes/{episode_id}", missing_episode_id=episode_id)
+        try:
+            return Episode.model_validate_json(response.content)
+        except ValidationError as error:
+            raise PlatformApiError("Invalid episode response") from error
 
     def wait_for_episode(
         self, episode_id: str, response_id: str, *, attempts: int = 5, interval_s: float = 0.5
     ) -> Episode | None:
-        """Bounded point reads, retrying only not-yet-persisted episodes (HTTP 404)."""
+        """Bounded point reads, retrying only the API's exact episode-not-found reply."""
         if attempts < 1 or interval_s < 0:
             raise ValueError("Polling requires positive attempts and a nonnegative interval")
         for attempt in range(attempts):
             try:
                 episode = self.get_episode(episode_id)
-            except PlatformApiError as error:
-                if error.status_code != 404:
-                    raise
+            except PlatformEpisodeNotFoundError:
+                pass
             else:
                 if episode.id != episode_id or episode.hosted_response_id != response_id:
                     raise PlatformApiError("Episode identity does not match the hosted response")

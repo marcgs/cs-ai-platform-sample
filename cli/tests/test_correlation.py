@@ -1,10 +1,14 @@
 import time
 from typing import Any
+from unittest.mock import MagicMock
 
 import httpx
 import pytest
 from agent_framework_foundry_hosting import ResponsesHostServer
 from azure.ai.agentserver.responses import InMemoryResponseProvider
+from azure.core.credentials import AccessToken
+from azure.core.exceptions import ClientAuthenticationError, ServiceRequestError
+from azure.identity import CredentialUnavailableError
 from azure.identity.aio import DefaultAzureCredential
 from openai import AsyncOpenAI
 from typer.testing import CliRunner
@@ -16,6 +20,7 @@ from cs_platform.hosting import hosted_episode_id, prepare_episode_options
 from cs_platform.spec import AgentSpec
 from cs_platform.testing import ScriptedChatClient, text
 from csai import app as cli
+from csai import platform as client_module
 from csai import targets
 from csai.platform import PlatformApiError, PlatformClient
 
@@ -43,7 +48,7 @@ def test_point_reads_handle_delayed_and_missing_persistence(
     def handle(request: httpx.Request) -> httpx.Response:
         calls.append(request)
         if available_after is None or len(calls) <= available_after:
-            return httpx.Response(404, json={"error": "not found"})
+            return httpx.Response(404, json={"error": f"episode {EPISODE_ID} not found"})
         return httpx.Response(200, json=recorded().model_dump(mode="json"))
 
     monkeypatch.setattr(time, "sleep", sleeps.append)
@@ -136,14 +141,16 @@ async def test_hosted_target_carries_real_protocol_identity(
 
 
 @pytest.mark.parametrize("failed", [False, True])
+@pytest.mark.parametrize("tool_calls", [[], ["get_logbook"]])
 def test_diagnose_displays_verified_identity_for_success_and_failure(
-    monkeypatch: pytest.MonkeyPatch, failed: bool
+    monkeypatch: pytest.MonkeyPatch, failed: bool, tool_calls: list[str]
 ) -> None:
     output = RunOutput(
         text=None if failed else "report",
         error="model unavailable" if failed else None,
         response_id=RESPONSE_ID,
         episode_id=EPISODE_ID,
+        tool_calls=tool_calls,
     )
 
     async def run(_: EvalCase) -> RunOutput:
@@ -168,6 +175,8 @@ def test_diagnose_displays_verified_identity_for_success_and_failure(
     assert f"Response: {RESPONSE_ID}" in result.output
     assert f"Episode: {EPISODE_ID}" in result.output
     assert "exact response verified" in result.output
+    expected_tools = ", ".join(tool_calls) or ("unavailable" if failed else "none")
+    assert f"Tool calls: {expected_tools}" in result.output
     if failed:
         assert "model unavailable" in result.output
 
@@ -222,3 +231,124 @@ def test_episode_details_show_host_identity_but_preserve_legacy_output() -> None
         line.startswith("Response:")
         for line in cli.describe_episode(recorded(hosted_response_id=None))
     )
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b"<html>Route not found</html>",
+        b"",
+        b'{"error":"not found"}',
+        b'{"error":"episode another-id not found"}',
+    ],
+)
+def test_route_and_configuration_404s_are_unverified_not_pending(
+    monkeypatch: pytest.MonkeyPatch, body: bytes
+) -> None:
+    calls = 0
+
+    def handle(_: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(404, content=body)
+
+    client = PlatformClient("http://test", "offline")
+    client._http.close()
+    with httpx.Client(transport=httpx.MockTransport(handle), base_url="http://test/") as http:
+        client._http = http
+        monkeypatch.setattr(PlatformClient, "from_env", classmethod(lambda _: client))
+        message = cli.describe_correlation(
+            RunOutput(episode_id=EPISODE_ID, response_id=RESPONSE_ID)
+        )
+    assert "unverified:" in message
+    assert "not persisted yet" not in message
+    assert calls == 1
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "credential-init",
+        "credential-unavailable",
+        "credential-auth",
+        "credential-network",
+        "arm-network",
+        "arm-status",
+        "key-invalid-json",
+        "key-missing",
+        "key-empty",
+        "episode-invalid-json",
+        "episode-invalid-schema",
+        "episode-network",
+    ],
+)
+def test_client_failures_preserve_both_ids_and_original_host_error(
+    monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    for name in client_module.REQUIRED:
+        monkeypatch.setenv(name, "offline")
+    monkeypatch.setenv("PLATFORM_API_ENDPOINT", "http://test/")
+    credential = MagicMock()
+    credential.__enter__.return_value = credential
+    credential.get_token.return_value = AccessToken("offline", 0)
+    if failure.startswith("credential-"):
+        error_type = {
+            "credential-init": CredentialUnavailableError,
+            "credential-unavailable": CredentialUnavailableError,
+            "credential-auth": ClientAuthenticationError,
+            "credential-network": ServiceRequestError,
+        }[failure]
+        credential.get_token.side_effect = error_type("private credential details")
+
+    def create_credential() -> MagicMock:
+        if failure == "credential-init":
+            raise CredentialUnavailableError("private credential details")
+        return credential
+
+    monkeypatch.setattr(client_module, "DefaultAzureCredential", create_credential)
+
+    def key_response(*_: object, **__: object) -> httpx.Response:
+        if failure == "arm-network":
+            raise httpx.ConnectError("private ARM details")
+        if failure == "arm-status":
+            return httpx.Response(403)
+        if failure == "key-invalid-json":
+            return httpx.Response(200, content=b"not json")
+        keys = (
+            {}
+            if failure == "key-missing"
+            else {"default": "" if failure == "key-empty" else "offline"}
+        )
+        return httpx.Response(200, json={"functionKeys": keys})
+
+    monkeypatch.setattr(httpx, "post", key_response)
+
+    async def run(_: EvalCase) -> RunOutput:
+        return RunOutput(
+            error="original hosted failure",
+            response_id=RESPONSE_ID,
+            episode_id=EPISODE_ID,
+        )
+
+    monkeypatch.setattr(cli, "make_target", lambda *_: run)
+
+    def episode_response(request: httpx.Request) -> httpx.Response:
+        if failure == "episode-network":
+            raise httpx.ReadTimeout("private episode network details", request=request)
+        if failure == "episode-invalid-json":
+            return httpx.Response(200, content=b"not json")
+        return httpx.Response(200, json={"id": EPISODE_ID, "private": "payload details"})
+
+    with httpx.Client(
+        transport=httpx.MockTransport(episode_response), base_url="http://test/"
+    ) as http:
+        monkeypatch.setattr(httpx, "Client", lambda **_: http)
+        result = CliRunner().invoke(cli.app, ["--no-azd", "diagnose", "M-0001: identical input"])
+    assert result.exit_code == 1, result.output
+    assert f"Response: {RESPONSE_ID}" in result.output
+    assert f"Episode: {EPISODE_ID}" in result.output
+    assert "unverified:" in result.output
+    assert "original hosted failure" in result.output
+    assert "Tool calls: unavailable" in result.output
+    assert "private" not in result.output
+    assert "not persisted yet" not in result.output
