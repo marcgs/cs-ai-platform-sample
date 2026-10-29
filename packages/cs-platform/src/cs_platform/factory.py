@@ -53,9 +53,9 @@ def foundry_client(
     settings: PlatformSettings, credential: AsyncTokenCredential
 ) -> FoundryChatClient:
     """Chat client for the project's model deployment, authenticated with Entra ID."""
-    from agent_framework.foundry import FoundryChatClient
+    from cs_platform.retry import RetryingFoundryChatClient
 
-    return FoundryChatClient(
+    return RetryingFoundryChatClient(
         project_endpoint=settings.foundry_project_endpoint,
         model=settings.model_deployment,
         credential=credential,
