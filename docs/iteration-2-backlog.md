@@ -14,6 +14,7 @@ Findings from building and running iteration 1, then the larger items the specif
 | **MCP authentication with Entra** | The MCP server uses a function key (held only by Foundry). | Functions built-in authentication with an app registration (Graph Bicep extension) and a project-managed-identity connection; disable key auth. |
 | **Platform API authentication with Entra** | `csai` fetches the API's function key with the caller's Azure RBAC. | Built-in authentication with an app registration; roles for SMEs (feedback) vs. readers. |
 | **Episode–response correlation** | `csai diagnose` finds a hosted run's episode by input and time. | Record the Responses `response_id` / session ID in the episode, or return the episode ID in response metadata. |
+| **Incidents without a machine ID** | Given "Overlay is drifting." with no machine, the agent picked M-0001 itself and diagnosed it. The report schema always demands a diagnosis, so the agent can't ask which machine. | Let the report express "need more information" (or validate the input before the run), and add eval cases for missing and ambiguous machine IDs. |
 | **Eval suite depth** | 18 synthetic cases, all solved at baseline: the suite checks regressions, not headroom. | Harder cases (ambiguous symptoms, misleading logbook entries, unknown machines, injected instructions), multi-turn follow-ups, per-failure-mode breakdowns. |
 
 ## Platform scope deferred by the specification
