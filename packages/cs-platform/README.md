@@ -81,9 +81,12 @@ local runs still receive a random episode ID. The agent report schema is unchang
 
 Offline tests exercise the real adapter and OpenAI client, including concurrent
 identical inputs in one hosting session, out-of-order completion, streamed and failed
-responses, and delayed persistence. A deployed end-to-end check remains required:
-run `csai diagnose`, then `csai episodes show <episode-id>` and compare the displayed
-Response ID with the diagnosis. Offline adapter tests do not establish gateway behavior.
+responses, and delayed persistence. On 2026-10-29, one successful hosted diagnosis
+against the combined iteration 2 release verified the gateway behavior: the real CLI
+printed the exact response binding, both IDs matched the stored episode through the
+API, and `csai episodes show <episode-id>` displayed the same Response ID. The episode
+contained eight tool calls. No live failure was forced; failed protocol responses
+remain covered offline. Repeat the hosted check when upgrading the hosting adapter.
 
 ## Tests
 
