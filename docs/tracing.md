@@ -119,6 +119,26 @@ through `header_provider` could consequently force reconnects. That is not a
 safe workaround without upstream SDK support. Missing handler joins do not prove
 which transport or managed hop loses context.
 
+Read-only inspection of the deployed toolbox confirmed a project-connection MCP
+source with no static headers or tracing settings. The Functions app had its
+Insights connection, but neither Python worker OpenTelemetry flag was set.
+Current [toolbox](https://learn.microsoft.com/azure/foundry/agents/how-to/tools/toolbox)
+and [MCP configuration](https://learn.microsoft.com/azure/foundry/agents/how-to/tools/model-context-protocol)
+documentation describes `FoundryToolbox`, authentication and static MCP headers;
+it provides no per-invocation metadata-forwarding switch for this managed hop.
+Changing Functions telemetry mode/worker instrumentation is separate from making
+the managed proxy forward the caller's context.
+
+Additional offline tests use real MCP client/server sessions over memory streams.
+They prove Agent Framework sends the episode's W3C context through `_meta` and
+that a server extracting it creates a valid child span, for streamed and
+non-streamed runs. In this SDK the metadata is assembled before the RPC span,
+so that server span's parent is `execute_tool`, not `tools/call`.
+Thus client metadata injection is verified, while deployed
+transport/proxy/host integration remains the identified boundary limitation.
+No custom session-header workaround, host-provider replacement, infrastructure
+change or extra live model call was used to conceal that limitation.
+
 For A6, `tools/call` is the client RPC duration, `execute_tool` includes framework
 execution, and a Functions handler request measures a different server interval.
 Do not subtract unrelated operations or sum overlapping/parallel tool spans.

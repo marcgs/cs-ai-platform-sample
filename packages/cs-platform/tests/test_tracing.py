@@ -3,7 +3,10 @@ from typing import TYPE_CHECKING
 
 import httpx
 import pytest
+from agent_framework import MCPStreamableHTTPTool
 from agent_framework.observability import ChatTelemetryLayer
+from mcp.server.fastmcp import Context, FastMCP
+from mcp.shared.memory import create_connected_server_and_client_session
 from opentelemetry import propagate, trace
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.sdk.trace import TracerProvider
@@ -165,3 +168,55 @@ async def test_closing_stream_ends_episode_span(
     assert episode.completed_at is not None
     assert root.end_time is not None
     assert not trace.get_current_span().get_span_context().is_valid
+
+
+@pytest.mark.parametrize("stream", [False, True])
+async def test_real_mcp_session_propagates_episode_context_in_metadata(
+    spec: AgentSpec, spans: InMemorySpanExporter, stream: bool
+) -> None:
+    server = FastMCP("diagnostics")
+
+    @server.tool()
+    def diagnostic_tool(ctx: Context) -> str:
+        """Return synthetic evidence from a real in-memory MCP server."""
+        meta = ctx.request_context.meta
+        assert meta is not None
+        with trace.get_tracer(__name__).start_as_current_span(
+            "mcp.server.diagnostic",
+            context=propagate.extract(meta.model_dump()),
+            kind=trace.SpanKind.SERVER,
+        ):
+            return "evidence"
+
+    store = InMemoryEpisodeStore()
+    async with (
+        create_connected_server_and_client_session(server) as session,
+        MCPStreamableHTTPTool(
+            "diagnostics", "https://example.test/mcp", session=session, load_prompts=False
+        ) as mcp_tool,
+    ):
+        agent = build_agent(
+            spec,
+            client=TracedChatClient([[call("diagnostic_tool")], [text("done")]]),
+            store=store,
+            tools=[mcp_tool],
+        )
+        if stream:
+            await agent.run("check", stream=True).get_final_response()
+        else:
+            await agent.run("check")
+
+    [episode] = await store.list()
+    exported = spans.get_finished_spans()
+    backend = next(s for s in exported if s.name == "mcp.server.diagnostic")
+    assert backend.context is not None
+    assert f"{backend.context.trace_id:032x}" == episode.trace_id
+    assert backend.parent is not None
+    parent = next(
+        s
+        for s in exported
+        if s.context is not None
+        and s.context.span_id == backend.parent.span_id
+        and s.context.trace_id == backend.parent.trace_id
+    )
+    assert parent.name.startswith("execute_tool ")
