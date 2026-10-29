@@ -1,8 +1,9 @@
 import pytest
 
-from cs_platform.evals import EvalCase, RunOutput
+from cs_platform.evals import CaseResult, EvalCase, RunOutput, SuiteResult, score
 from cs_platform.evidence import Evidence
 from diagnostics_domain.dataset import load_seed
+from diagnostics_mcp.tools import TOOL_NAMES
 from rca_agent.report import Hypothesis, RcaReport
 from rca_evals import load_suite
 from rca_evals.evaluators import (
@@ -116,6 +117,38 @@ def test_fabricated_history_is_used_but_not_grounded() -> None:
     assert outcome(CASE, result)["used_knowledge"] == 1.0
     assert evidence_grounded(CASE, result) == {"evidence_grounded": 0.0}
     assert knowledge_search(CASE, result) == {"knowledge_search_called": 0.0}
+
+
+@pytest.mark.parametrize(("citing_reports", "passes"), [(13, True), (12, False)])
+def test_measured_knowledge_gate_allows_one_case_below_the_observed_minimum(
+    citing_reports: int, passes: bool
+) -> None:
+    suite = load_suite()
+    dataset = load_seed()
+    results = []
+    for index, case in enumerate(suite.cases):
+        history = next(
+            item
+            for item in dataset.historical_cases
+            if item.confirmed_failure_mode == case.expected["failure_mode"]
+        )
+        observed = output(
+            hypothesis(
+                1,
+                case.expected["failure_mode"],
+                history.id if index < citing_reports else "EC-2101",
+            ),
+            machine_id=case.expected["machine_id"],
+        )
+        observed.tool_calls = [*TOOL_NAMES, "azure_ai_search"]
+        results.append(
+            CaseResult(case_id=case.id, scores=score(suite, case, observed), output=observed)
+        )
+    failures = SuiteResult(suite=suite.name, cases=results).failures(suite.thresholds)
+    assert (not failures) == passes
+    if not passes:
+        assert len(failures) == 1
+        assert failures[0].startswith("used_knowledge:")
 
 
 def test_refs_must_exist_and_belong_to_the_machine() -> None:

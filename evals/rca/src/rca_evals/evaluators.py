@@ -9,7 +9,8 @@ Each evaluator scores one case's output from 0 to 1 per metric:
   (or to shared reference data: error codes, historical cases).
 - ``tool_coverage``: share of the diagnostic tools the agent called; an investigation
   without error events, telemetry or the logbook is guesswork, however plausible it reads.
-- ``used_knowledge``: whether the report cites a historical case. Informational, no gate.
+- ``used_knowledge``: whether the report cites a historical case. A measured citation
+  regression gate, not proof of search compliance or relevance.
 - ``knowledge_search_called``: whether historical search ran, independently of citations.
   Informational, no gate; direct-MCP runs have no search tool.
 """

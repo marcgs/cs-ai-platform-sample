@@ -6,6 +6,7 @@ from typer.testing import CliRunner
 from cs_platform.evals import RunOutput
 from cs_platform.evidence import Evidence
 from csai import app as cli
+from diagnostics_domain.dataset import load_seed
 from diagnostics_mcp.tools import TOOL_NAMES
 from rca_agent.report import Hypothesis, RcaReport
 
@@ -15,12 +16,22 @@ if TYPE_CHECKING:
 runner = CliRunner()
 
 
-def answering(correct: bool) -> Any:
+def answering(correct: bool, *, knowledge: bool = True) -> Any:
     """A local_target replacement that answers every case right (or wrong) with real refs."""
 
     def factory(*_: object) -> Target:
         async def run(case: EvalCase) -> RunOutput:
             mode = case.expected["failure_mode"] if correct else "FM-99"
+            evidence = [Evidence(source="lookup_error_code", ref="EC-2101", excerpt="...")]
+            if knowledge:
+                history = next(
+                    item
+                    for item in load_seed().historical_cases
+                    if item.confirmed_failure_mode == case.expected["failure_mode"]
+                )
+                evidence.append(
+                    Evidence(source="azure_ai_search", ref=history.id, excerpt=history.resolution)
+                )
             report = RcaReport(
                 machine_id=case.expected["machine_id"],
                 summary="...",
@@ -31,15 +42,16 @@ def answering(correct: bool) -> Any:
                         title=mode,
                         root_cause="...",
                         confidence=0.9,
-                        evidence=[
-                            Evidence(source="lookup_error_code", ref="EC-2101", excerpt="...")
-                        ],
+                        evidence=evidence,
                         recommended_checks=[],
                     )
                 ],
                 missing_information=[],
             )
-            return RunOutput(value=report, tool_calls=list(TOOL_NAMES))
+            calls: list[str] = list(TOOL_NAMES)
+            if knowledge:
+                calls.append("azure_ai_search")
+            return RunOutput(value=report, tool_calls=calls)
 
         return run
 
@@ -72,6 +84,16 @@ def test_gate_fails_with_exit_code_1(monkeypatch: pytest.MonkeyPatch, tmp_path: 
     assert result.exit_code == 1
     assert "hit_at_1: 0.00 < 0.80" in result.output
     assert '"case_id": "SC-001"' in results.read_text()
+
+
+def test_gate_rejects_correct_answers_without_historical_citations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(cli, "local_target", answering(correct=True, knowledge=False))
+    result = runner.invoke(cli.app, ["--no-azd", "eval", "rca", "--case", "SC-001"])
+    assert result.exit_code == 1
+    assert "used_knowledge: 0.00 < 0.70" in result.output
+    assert "hit_at_1: 0.00" not in result.output
 
 
 def test_hosted_target_needs_a_deployed_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:

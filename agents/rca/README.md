@@ -63,24 +63,77 @@ model turns for relevant, irrelevant, empty, failed and unavailable historical s
 that supplied refs can be cited and irrelevant results can remain uncited; they do not
 measure a model's adherence to the instructions.
 
-The eval suite reports two separate informational metrics:
+The eval suite reports two separate knowledge metrics:
 
 - `used_knowledge`: a report cites an `HC-…` ref, unchanged. It does not prove a search
-  occurred, that the ref exists, or that the case is relevant.
+  occurred, that the ref exists, or that the case is relevant. Its measured mean
+  regression gate is 0.70 for toolbox-backed evaluation.
 - `knowledge_search_called`: an `azure_ai_search` call was recorded, including a
   toolbox-prefixed name. It flags attempts, not successful retrieval or relevant citations.
-  Direct-MCP runs normally score zero.
+  It remains informational. Direct-MCP runs normally score zero on both metrics;
+  they can diagnose without search but cannot satisfy the toolbox knowledge gate.
 
-**A2 remains incomplete pending live acceptance.** No new knowledge threshold is set;
-every existing gate is unchanged. Before selecting a minimum, run repeated complete
-`uv run csai eval rca --target local` suites in a serialized live slot against the same
-model, data and toolbox. Retain per-case results, search calls/results and cited refs,
-compare existing gates with the unchanged baseline, and inspect relevance rather than
-forcing citations. A stable measured baseline must justify any future minimum. After an
-approved coordinated deployment, inspect the hosted agent's discovered search description
-and a fresh hosted investigation to confirm that metadata reaches the agent and relevant
-citations resolve to returned cases. Neither live measurement nor feature deployment was
-performed for the offline implementation.
+On 2026-10-29, after the approved combined feature deployment, three sequential complete
+18-case local suites ran at concurrency 1 against the same snapshot
+(`4afdaa4d2f923c2ac0d66aea9779a1091f13bbbb`), model, seed data and deployed toolbox.
+The driver reused the CLI's evaluation path and saved actual in-memory episodes, complete
+tool results, reports, timestamps and per-case scores. No case errored; all attempts were
+first attempts. Accuracy (`hit_at_1`, `hit_at_3`), schema validity and evidence grounding
+were 1.0 in all three suites.
+
+| Repeat | Search calls / cases | Reports citing history / cases | Distinct diagnostic calls / opportunities | Replayed coverage |
+|---|---|---|---|---|
+| 1 | 16 / 18 | 16 / 18 | 82 / 90 | 0.9111111111111111 |
+| 2 | 16 / 18 | 16 / 18 | 83 / 90 | 0.9222222222222223 |
+| 3 | 15 / 18 | 14 / 18 | 81 / 90 | 0.9 |
+
+The original third suite **failed** with `tool_coverage: 0.90 < 0.90`: naive float
+summation produced `0.8999999999999999` for the exact count `81 / 90`. Its original
+results and failed summary were retained, not rewritten. Replaying all 54 unchanged
+case scores with the shared harness's `statistics.mean` fix passes every existing gate.
+The fix changes arithmetic only: no scores, thresholds or comparisons were relaxed, and
+regression tests check both the exact boundary and the next representable float below it.
+No new model runs were needed for this replay.
+
+The citation audit found no unknown or unreturned `HC-` refs. All 46 reports citing
+history had returned, existing historical cases; 45 also cited a case confirmed for
+the expected primary failure mode. The other report cited a plausible secondary mode.
+Existence is not relevance: five citations were attached to a different or `unknown`
+hypothesis; two explicitly described the historical pattern as not matching this incident
+(repeat 2, `SC-003` and `SC-011`). Those should not be treated as positive grounding.
+They were not required to achieve the score, and the instructions must not encourage
+their inclusion.
+
+Actual toolbox discovery after deployment returned all six tools, including
+`azure_ai_search` with a description exactly matching the updated source. The existing
+hosted correlation check also searched and cited returned `HC-0007` for the matching
+`FM-07` hypothesis; its search result was untruncated. No additional hosted model call
+was made for this audit. Nevertheless,
+seven investigations skipped search and incorrectly disclosed it as unavailable:
+repeat 1 `SC-009`, `SC-014`; repeat 2 `SC-004`, `SC-007`; repeat 3 `SC-001`, `SC-014`,
+`SC-018`. These are recorded instruction-compliance failures, not successful fallback
+tests. Repeat 3 `SC-010` searched and acknowledged a matching case but did not cite it.
+
+Removing all five different/unknown-hypothesis citations leaves the measured citation
+counts unchanged at 16/18, 16/18 and 14/18: every counted report still cites at least one
+returned case confirmed for a stated hypothesis. Thus questionable secondary citations
+do not inflate this binary baseline. Across these three repeated, fixed-configuration
+runs, citation use stayed within a two-case range and every existing gate passed after
+the arithmetic correction. This supports a conservative **citation regression** minimum,
+not a 100% instruction-compliance claim.
+
+The new `used_knowledge` minimum is **0.70**, requiring 13 of these 18 reports to cite
+history. That allows one fewer report than the measured worst run (14/18), while a drop
+to 12/18 fails. All three retained suites pass this additional gate without changing
+case scores, instructions or any existing threshold. This small baseline is not a
+statistical guarantee for other models, toolboxes or data; behavior changes need another
+serialized repeated evaluation and relevance review.
+
+**A2's instruction, metadata and measured-gate scope is verified.** Search omissions and
+irrelevant secondary citations remain explicit model-behavior limitations; no deterministic
+required-tool middleware was added, and no citation is required for irrelevant results.
+Private raw results, episodes, discovery metadata and arithmetic/gate replays remain
+outside version control.
 
 ## Deploy
 
