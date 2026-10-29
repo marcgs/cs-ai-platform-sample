@@ -5,6 +5,7 @@ import pytest
 from agent_framework import FunctionTool, tool
 
 from cs_platform.episodes import Episode, InMemoryEpisodeStore
+from cs_platform.evidence import Evidence
 from cs_platform.settings import PlatformSettings, SettingsError
 from cs_platform.testing import ScriptedChatClient, call, text
 from diagnostics_domain.dataset import load_seed
@@ -57,7 +58,8 @@ def test_instructions_name_every_diagnostics_tool() -> None:
         assert f"`{name}`" in instructions, name
 
 
-async def test_golden_path_produces_an_evidence_backed_report() -> None:
+@pytest.mark.parametrize("knowledge", ["unavailable", "relevant", "irrelevant", "empty", "failed"])
+async def test_golden_path_produces_an_evidence_backed_report(knowledge: str) -> None:
     data = load_seed()
     scenario = data.scenario("SC-001")
     mode = data.failure_mode(scenario.expected_failure_mode)
@@ -91,32 +93,76 @@ async def test_golden_path_produces_an_evidence_backed_report() -> None:
         ],
         "missing_information": [],
     }
-    client = ScriptedChatClient(
-        [
-            [call("get_error_events", machine_id=machine, hours=168)],
-            [call("get_telemetry_window", "call-2", machine_id=machine, signal=signal, hours=168)],
-            [call("get_logbook", "call-3", machine_id=machine)],
-            [text(json.dumps(report))],
-        ]
-    )
+    structured = RcaReport.model_validate(report)
+    history = [
+        case
+        for case in data.historical_cases
+        if (case.confirmed_failure_mode == mode.id) == (knowledge == "relevant")
+    ][:1]
+
+    @tool
+    def azure_ai_search(query: str) -> str:
+        """Historical diagnostic cases matching the incident symptom and subsystem."""
+        if knowledge == "failed":
+            raise ConnectionError("Historical-case search is temporarily unavailable.")
+        return json.dumps([case.model_dump(mode="json") for case in history])
+
+    turns = [
+        [call("get_error_events", machine_id=machine, hours=168)],
+        [call("get_telemetry_window", "call-2", machine_id=machine, signal=signal, hours=168)],
+        [call("get_logbook", "call-3", machine_id=machine)],
+    ]
+    tools = diagnostics_function_tools()
+    if knowledge != "unavailable":
+        tools.append(azure_ai_search)
+        turns.append(
+            [call("azure_ai_search", "call-4", query=f"{scenario.symptom} {mode.subsystem}")]
+        )
+    if knowledge == "empty":
+        history = []
+    if knowledge == "relevant":
+        structured.hypotheses[0].evidence.append(
+            Evidence(
+                source="azure_ai_search",
+                ref=history[0].id,
+                excerpt=history[0].resolution,
+            )
+        )
+    elif knowledge == "unavailable":
+        structured.missing_information.append("Historical-case search is unavailable.")
+    elif knowledge == "failed":
+        structured.missing_information.append("Historical-case search failed.")
+    else:
+        structured.missing_information.append("No relevant historical case was found.")
+    turns.append([text(structured.model_dump_json())])
+    client = ScriptedChatClient(turns)
     store = InMemoryEpisodeStore()
-    agent = create_agent(
-        SETTINGS, CREDENTIAL, client=client, store=store, tools=diagnostics_function_tools()
-    )
+    agent = create_agent(SETTINGS, CREDENTIAL, client=client, store=store, tools=tools)
 
     response: Any = await agent.run(f"{machine}: {scenario.symptom}")
 
     assert isinstance(response.value, RcaReport)
     [episode] = await store.list()
     assert episode.status == "succeeded"
-    assert [c.name for c in episode.tool_calls] == [
+    expected_calls = [
         "get_error_events",
         "get_telemetry_window",
         "get_logbook",
     ]
+    if knowledge != "unavailable":
+        expected_calls.append("azure_ai_search")
+    assert [c.name for c in episode.tool_calls] == expected_calls
     tool_output = " ".join(c.result or "" for c in episode.tool_calls)
     cited = [e.ref for h in response.value.hypotheses for e in h.evidence]
     assert all(ref in tool_output for ref in cited), "every cited ref comes from a tool result"
+    assert any(ref.startswith("HC-") for ref in cited) == (knowledge == "relevant")
+    if knowledge != "relevant":
+        assert response.value.missing_information
+    if knowledge == "irrelevant":
+        assert history[0].id in tool_output
+        assert history[0].id not in cited
+    if knowledge == "failed":
+        assert episode.tool_calls[-1].error
     assert response.value.hypotheses[0].failure_mode_id == scenario.expected_failure_mode
 
 

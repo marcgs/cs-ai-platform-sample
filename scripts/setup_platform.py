@@ -243,6 +243,12 @@ def toolbox_definition() -> dict[str, Any]:
             },
             {
                 "type": "azure_ai_search",
+                "description": (
+                    "Search historical diagnostic cases by symptom and suspected subsystem. "
+                    "Returns HC- identifiers, symptoms, confirmed failure modes and resolutions. "
+                    "Compare relevant cases with current machine evidence; cite returned HC- refs "
+                    "only when they support the diagnosis."
+                ),
                 "azure_ai_search": {
                     "indexes": [
                         {

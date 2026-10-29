@@ -10,6 +10,8 @@ Each evaluator scores one case's output from 0 to 1 per metric:
 - ``tool_coverage``: share of the diagnostic tools the agent called; an investigation
   without error events, telemetry or the logbook is guesswork, however plausible it reads.
 - ``used_knowledge``: whether the report cites a historical case. Informational, no gate.
+- ``knowledge_search_called``: whether historical search ran, independently of citations.
+  Informational, no gate; direct-MCP runs have no search tool.
 """
 
 from functools import cache
@@ -90,3 +92,9 @@ def tool_coverage(case: EvalCase, output: RunOutput) -> Mapping[str, float]:
     # Toolboxes prefix tool names with the server label (e.g. diagnostics___get_logbook).
     called = {name.rpartition("___")[2] for name in output.tool_calls}
     return {"tool_coverage": len(called & set(TOOL_NAMES)) / len(TOOL_NAMES)}
+
+
+def knowledge_search(case: EvalCase, output: RunOutput) -> Mapping[str, float]:
+    """Track search calls separately: irrelevant results need not become citations."""
+    called = {name.rpartition("___")[2] for name in output.tool_calls}
+    return {"knowledge_search_called": float("azure_ai_search" in called)}
