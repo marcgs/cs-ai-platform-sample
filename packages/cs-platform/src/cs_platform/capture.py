@@ -8,6 +8,7 @@ strips the recorder before the tool runs, so it never reaches tool arguments.
 
 import json
 import logging
+import sys
 from datetime import UTC, datetime
 from time import perf_counter
 from typing import TYPE_CHECKING, Any
@@ -108,7 +109,11 @@ class EpisodeCaptureAgentMiddleware(AgentMiddleware):
                 return response
 
             async def on_cleanup() -> None:
-                await recorder.finish(None, RuntimeError("stream ended without a final response"))
+                # The framework invokes cleanup while handling the provider exception.
+                await recorder.finish(
+                    None,
+                    sys.exception() or RuntimeError("stream ended without a final response"),
+                )
 
             context.stream_result_hooks.append(on_result)
             context.stream_cleanup_hooks.append(on_cleanup)

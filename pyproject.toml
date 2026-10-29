@@ -20,6 +20,7 @@ dev = [
     "azure-ai-projects>=2.7.0",
     "azure-identity>=1.27.0",
     "httpx>=0.28.1",
+    "httpx2>=2.12.0",
     "openai>=3.35.1",
     "pre-commit>=4.7.0",
     "pyright>=1.1.414",
