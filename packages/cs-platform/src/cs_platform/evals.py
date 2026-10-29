@@ -10,6 +10,7 @@ import asyncio
 import json
 import time
 from dataclasses import dataclass
+from statistics import mean
 from typing import TYPE_CHECKING, Any
 
 import yaml
@@ -85,10 +86,7 @@ class SuiteResult(BaseModel):
         names = sorted({name for case in self.cases for name in case.scores})
         if not self.cases:
             return dict.fromkeys(names, 0.0)
-        return {
-            name: sum(case.scores.get(name, 0.0) for case in self.cases) / len(self.cases)
-            for name in names
-        }
+        return {name: mean(case.scores.get(name, 0.0) for case in self.cases) for name in names}
 
     @property
     def errored(self) -> list[str]:

@@ -45,6 +45,12 @@ This does not change model capacity. Hosted validation and the live eval gate re
 a separately approved feature deployment and serialized model traffic; offline checks
 do not establish those acceptance results.
 
+Metric means use `statistics.mean`, which preserves summation accuracy before converting
+the mean to a float. This matters at exact gate boundaries: nine scores of `0.8` and nine
+of `1.0` average to `0.9`, but naive floating-point summation can report
+`0.8999999999999999`. Comparisons remain strict: no tolerance, rounding of case scores,
+or relaxed threshold makes a genuinely lower score pass.
+
 ## Tests
 
 `tests/conftest.py` provides `ScriptedChatClient`, a chat client that returns scripted model turns while Agent Framework's real tool-invocation loop runs the tools. The capture tests cover streaming and non-streaming runs, tool failures, model failures, invalid structured output and store outages, all without Azure.
