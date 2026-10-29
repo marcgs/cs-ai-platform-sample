@@ -67,43 +67,71 @@ class Episode(BaseModel):
     usage: Usage | None = None
     trace_id: str | None = None
     feedback: Feedback | None = None
-    truncated: bool = False
-    """Set when the episode was cut to fit the store (see ``fit_to_budget``)."""
+    truncated: list[str] = Field(default_factory=list[str])
+    """The parts cut to fit the store, in the order they were cut (see ``fit_to_budget``)."""
 
 
 # Cosmos DB rejects items over 2 MB; leave room for system properties and feedback added later.
 EPISODE_MAX_BYTES = 1_500_000
+MAX_ERROR_CHARS = 1_000
 
 
 def _json_size(episode: Episode) -> int:
     return len(episode.model_dump_json().encode())
 
 
+def _cut(text: str, excess: int) -> str:
+    # Every character is at least one byte of JSON, so this frees at least `excess` bytes.
+    return text[: max(0, len(text) - excess)]
+
+
 def fit_to_budget(episode: Episode, max_bytes: int = EPISODE_MAX_BYTES) -> None:
     """Shrink an episode in place until its JSON fits ``max_bytes``.
 
-    Tool results go first, largest first, each flagged with ``result_truncated``; then the output
-    text and the input. Every character is at least one byte of JSON, so cutting ``excess``
-    characters frees at least ``excess`` bytes.
+    Parts are cut in order of how little the record loses, re-measuring after each step: tool
+    results (largest first, each flagged with ``result_truncated``), the output text, tool
+    arguments, error messages, the input, the structured output, and finally the tool calls
+    themselves. After that only fixed metadata is left, so any budget of a few kilobytes holds.
+    ``episode.truncated`` lists what was cut.
     """
-    excess = _json_size(episode) - max_bytes
-    while excess > 0:
-        calls = [c for c in episode.tool_calls if c.result]
-        if not calls:
-            break
+
+    def excess() -> int:
+        return _json_size(episode) - max_bytes
+
+    def mark(part: str) -> None:
+        # Flags add bytes too, so they're set before the cut is measured.
+        if part not in episode.truncated:
+            episode.truncated.append(part)
+
+    while excess() > 0 and (calls := [c for c in episode.tool_calls if c.result]):
         largest = max(calls, key=lambda c: len(c.result or ""))
-        result = largest.result or ""
-        largest.result = result[: max(0, len(result) - excess)]
         largest.result_truncated = True
-        episode.truncated = True
-        excess = _json_size(episode) - max_bytes
-    if excess > 0 and episode.output_text:
-        episode.output_text = episode.output_text[: max(0, len(episode.output_text) - excess)]
-        episode.truncated = True
-        excess = _json_size(episode) - max_bytes
-    if excess > 0:
-        episode.input = episode.input[: max(0, len(episode.input) - excess)]
-        episode.truncated = True
+        mark("tool_calls.result")
+        largest.result = _cut(largest.result or "", max(0, excess()))
+    if excess() > 0 and episode.output_text:
+        mark("output_text")
+        episode.output_text = _cut(episode.output_text, max(0, excess()))
+    if excess() > 0 and any(c.arguments for c in episode.tool_calls):
+        for c in episode.tool_calls:
+            c.arguments = {}
+        mark("tool_calls.arguments")
+    if excess() > 0:
+        for c in episode.tool_calls:
+            if c.error and len(c.error) > MAX_ERROR_CHARS:
+                c.error = c.error[:MAX_ERROR_CHARS]
+                mark("tool_calls.error")
+        if episode.error and len(episode.error) > MAX_ERROR_CHARS:
+            episode.error = episode.error[:MAX_ERROR_CHARS]
+            mark("error")
+    if excess() > 0 and episode.input:
+        mark("input")
+        episode.input = _cut(episode.input, max(0, excess()))
+    if excess() > 0 and episode.output is not None:
+        episode.output = None
+        mark("output")
+    if excess() > 0 and episode.tool_calls:
+        episode.tool_calls = []
+        mark("tool_calls")
 
 
 class EpisodeNotFoundError(LookupError):

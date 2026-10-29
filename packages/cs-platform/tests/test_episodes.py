@@ -5,6 +5,7 @@ import pytest
 from azure.cosmos.exceptions import CosmosResourceNotFoundError
 
 from cs_platform.episodes import (
+    EPISODE_MAX_BYTES,
     CosmosEpisodeStore,
     Episode,
     EpisodeNotFoundError,
@@ -161,4 +162,38 @@ def test_input_is_cut_when_results_are_not_enough() -> None:
     fit_to_budget(episode, max_bytes=1000)
     assert _size(episode) <= 1000
     assert episode.tool_calls[0].result == ""
-    assert episode.truncated
+    assert episode.truncated == ["tool_calls.result", "input"]
+
+
+def test_oversized_structured_output_still_fits() -> None:
+    episode = _with_results("r" * 100)
+    episode.output = {"summary": "s" * 2_100_000}
+    fit_to_budget(episode)
+    assert _size(episode) <= EPISODE_MAX_BYTES
+    assert episode.output is None
+    assert episode.truncated[-1] == "output"
+
+
+def test_arguments_and_errors_are_reduced_before_input_and_output() -> None:
+    episode = _with_results("r" * 100, input="i" * 100)
+    episode.output = {"summary": "kept"}
+    episode.tool_calls[0].arguments = {"blob": "a" * 50_000}
+    episode.tool_calls.append(
+        ToolCall(name="t9", arguments={}, error="e" * 50_000, started_at=T0, duration_ms=1)
+    )
+    fit_to_budget(episode, max_bytes=5_000)
+
+    assert _size(episode) <= 5_000
+    assert episode.truncated == ["tool_calls.result", "tool_calls.arguments", "tool_calls.error"]
+    assert episode.input == "i" * 100
+    assert episode.output == {"summary": "kept"}
+
+
+def test_budget_holds_when_every_part_is_oversized() -> None:
+    episode = _with_results(*(["r" * 10_000] * 5), input="i" * 10_000)
+    episode.output = {"summary": "s" * 10_000}
+    episode.output_text = "o" * 10_000
+    episode.error = "e" * 10_000
+    fit_to_budget(episode, max_bytes=2_000)
+    assert _size(episode) <= 2_000
+    assert "output" in episode.truncated
