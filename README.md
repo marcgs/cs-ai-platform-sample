@@ -51,19 +51,10 @@ azd up        # about 20 minutes on an empty subscription
 ### Try it
 
 ```bash
-# Diagnose an incident with the hosted agent; prints the report and the episode ID
 uv run csai diagnose "M-0007: Pressure excursions in the chamber, purge flow looks lower than normal."
-
-# Review what happened, then record the expert's verdict
-uv run csai episodes list
-uv run csai episodes show <episode-id>
-uv run csai feedback <episode-id> --verdict correct --actual-root-cause FM-07 --reviewer "field engineer"
-
-# Run the quality gate against the deployed agent (exit 1 below thresholds)
-uv run csai eval rca --target hosted
 ```
 
-Or chat with `rca-agent` in the Foundry portal's playground (link in the `azd deploy` output). The 18 scenarios in [`cases.jsonl`](evals/rca/src/rca_evals/cases.jsonl) are good prompts; each lists the expected failure mode.
+That prints the agent's ranked hypotheses with their evidence, and the episode ID. [`docs/walkthrough.md`](docs/walkthrough.md) takes it from there: questioning the answer in the playground, reviewing the episode, recording an expert verdict and running the eval gate.
 
 ### Clean up
 

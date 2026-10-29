@@ -1,8 +1,6 @@
 # Platform tour
 
-A guided tour of a deployed environment. Each stop explains one platform capability, shows where to look in Azure and in the code, and gives you something to run. Plan about two hours for the whole tour; each part also works on its own.
-
-The tour only reads things in Azure. The one experiment that changes something (Stop 9) changes a file on your machine and is undone with `git restore`.
+A guided tour of a deployed environment: what each platform capability is for, and where to find it in Azure and in the code. It complements the [walkthrough](walkthrough.md), which shows how to *use* the sample; run that first, since the tour refers to its steps. Plan about an hour and a half; each part also works on its own. The tour only reads things in Azure.
 
 ## Before you start
 
@@ -110,10 +108,9 @@ az cognitiveservices account deployment list -g $RG -n $AZURE_AI_ACCOUNT_NAME \
 
 ```bash
 azd ai agent show rca-agent
-uv run csai diagnose "M-0001: Recurring stage temperature errors and overlay correction warnings since yesterday."
 ```
 
-Then read the agent's code. Its behavior lives in three files:
+Run a diagnosis ([walkthrough step 2](walkthrough.md#2-diagnose-it)), then read the agent's code. Its behavior lives in three files:
 
 - [`instructions.md`](../agents/rca/src/rca_agent/instructions.md): how the agent investigates, and the rules for its answer.
 - [`report.py`](../agents/rca/src/rca_agent/report.py): the `RcaReport` schema, enforced as strict structured output.
@@ -139,13 +136,9 @@ Then read the agent's code. Its behavior lives in three files:
 ```bash
 # What the agent gets: the toolbox definition the deployment hook publishes
 sed -n '/^def toolbox_definition/,/^def /p' scripts/setup_platform.py
-
-# Tool names arrive prefixed with the server label, and every call's duration is recorded
-uv run csai episodes list
-uv run csai episodes show <episode-id>
 ```
 
-The durations in an episode show the cost of the toolbox hop: each call takes several seconds through the toolbox, against about 50 ms when the agent calls the MCP server directly. It's in the [backlog](iteration-2-backlog.md).
+Then open an episode ([walkthrough step 4](walkthrough.md#4-review-the-episode)). Tool names arrive prefixed with the server label, and every call's duration is recorded. The durations show the cost of the toolbox hop: each call takes several seconds through the toolbox, against about 50 ms when the agent calls the MCP server directly. It's in the [backlog](iteration-2-backlog.md).
 
 To work with the tools themselves, run the MCP server locally and open it in the MCP Inspector ([`services/diagnostics-mcp/README.md`](../services/diagnostics-mcp/README.md#run-locally)). Call `get_telemetry_window` for `M-0007` and `purge_gas_flow_slm`, and look for the trend and the first out-of-tolerance reading.
 
@@ -192,16 +185,7 @@ Then check how often the agent actually searches. `csai eval` reports `used_know
 - In the Azure portal, open the Cosmos DB account and then **Data Explorer**. It can't read the data: public network access is disabled (**Settings → Networking**), so only clients inside the virtual network reach it. That's intentional ([ADR 0003](adr/0003-private-data-stores.md)).
 - So episodes are read through the **platform API**, a function app inside the network. In the Azure portal, open it and look at **Functions** (`list_episodes`, `get_episode`, `add_feedback`) and **Settings → Networking**.
 
-**Try.**
-
-```bash
-uv run csai diagnose "M-0007: Pressure excursions in the chamber, purge flow looks lower than normal."
-uv run csai episodes show <episode-id>                 # the full record: calls, arguments, durations
-uv run csai feedback <episode-id> --verdict correct --actual-root-cause FM-07 --reviewer "you"
-uv run csai episodes list                              # the verdict column is filled in now
-```
-
-Feedback is a patch of one field (`/feedback`). The record the platform wrote is never rewritten.
+**Try.** Review an episode and record a verdict ([walkthrough steps 4 and 5](walkthrough.md#4-review-the-episode)). Behind `csai`, the API reads Cosmos DB as its own managed identity, and feedback is a patch of one field (`/feedback`), so the record the platform wrote is never rewritten.
 
 **Check yourself.** (6) A diagnosis succeeds, but Cosmos DB is unreachable at that moment. What does the user see, and where would you notice the problem?
 
@@ -258,15 +242,7 @@ union requests, dependencies, traces
 | summarize items = count() by cloud_RoleName, itemType
 ```
 
-```kusto
-// Everything for one run: the trace ID comes from `csai episodes show`
-union requests, dependencies, traces, exceptions
-| where operation_Id == "<trace-id>"
-| project timestamp, itemType, cloud_RoleName, name, duration
-| order by timestamp asc
-```
-
-The second query shows the run step by step: the `invoke_agent` request, `chat <model>` for each model turn, and `execute_tool` and `tools/call` for each tool. The durations show where the time goes. Model turns take a few seconds, and toolbox calls often take longer.
+Then follow a single run with the query in [walkthrough step 4](walkthrough.md#4-review-the-episode). It shows the run step by step: the `invoke_agent` request, `chat <model>` for each model turn, and `execute_tool` and `tools/call` for each tool. The durations show where the time goes. Model turns take a few seconds, and toolbox calls often take longer. Across runs:
 
 ```kusto
 // Average time per model turn and per tool, across runs
@@ -280,34 +256,11 @@ dependencies
 
 ### Stop 9: Evaluation as a quality gate
 
-**The idea.** Quality is measured, not assumed. A versioned **case manifest** ([`cases.jsonl`](../evals/rca/src/rca_evals/cases.jsonl), 18 synthetic incidents with the expected root cause) is scored by code-based evaluators:
+**The idea.** Quality is measured, not assumed. A versioned **case manifest** ([`cases.jsonl`](../evals/rca/src/rca_evals/cases.jsonl), 18 synthetic incidents with the expected root cause) is scored by plain-code evaluators ([`evaluators.py`](../evals/rca/src/rca_evals/evaluators.py)), run by the platform's harness (`cs_platform/evals.py`). Each gated metric has a minimum in [`thresholds.yaml`](../evals/rca/src/rca_evals/thresholds.yaml), and `csai eval` exits 1 below any of them, so any pipeline can enforce it ([`docs/ci-cd.md`](ci-cd.md)). The same suite runs against the agent in-process (`--target local`) or the deployed one (`--target hosted`). The harness runs three cases at a time and retries cases that fail on rate limits.
 
-| Metric | What it checks |
-|---|---|
-| `schema_valid` | The answer is a valid report |
-| `hit_at_1`, `hit_at_3` | The expected root cause is ranked first, or in the top three |
-| `evidence_grounded` | Every cited ref exists and belongs to the machine |
-| `tool_coverage` | The diagnostic tools were used |
-| `used_knowledge` | Historical cases were searched (reported, not gated yet) |
+**Look.** Nothing to see in the portal yet. Publishing eval runs to Foundry's evaluation view (`csai eval --publish`) is parked: it needs capability hosts, which this network-injected project doesn't have ([backlog](iteration-2-backlog.md)).
 
-Each gated metric has a minimum in [`thresholds.yaml`](../evals/rca/src/rca_evals/thresholds.yaml), and `csai eval` exits 1 below any of them. Any pipeline can enforce that exit code ([`docs/ci-cd.md`](ci-cd.md)). The same suite runs against the agent in-process (`--target local`) or the deployed one (`--target hosted`).
-
-**Try.** Run a single case first, then the full suite. The full suite takes a few minutes and uses about 200k tokens.
-
-```bash
-uv run csai eval rca --target local --case SC-007
-uv run csai eval rca --target hosted --output results.jsonl
-```
-
-Read the per-case lines and the summary table, then open `results.jsonl` to see one case's scores and tool calls.
-
-**Experiment: prove the gate works.** Break the agent on your machine and watch the gate catch it.
-
-1. In [`instructions.md`](../agents/rca/src/rca_agent/instructions.md), delete the "How to investigate" steps.
-2. Run `uv run csai eval rca --target local`. When this was tried, `hit_at_1` fell to 0.67 and `tool_coverage` to 0.77, and the command exited 1.
-3. Restore the file with `git restore agents/rca/src/rca_agent/instructions.md`.
-
-The local target runs the edited instructions in-process, so nothing deployed changes. This is the check to run before every `azd deploy`.
+**Try.** Run the gate and the experiment that breaks it ([walkthrough steps 6 and 7](walkthrough.md#6-check-quality-with-the-eval-gate)). Then compare `--output results.jsonl` from a good run and a broken one: the per-case scores and tool calls show which cases failed and why.
 
 **Check yourself.** (9) Why are thresholds set from a measured baseline rather than at 1.0 across the board, and why isn't a passing suite proof that the agent is good?
 
@@ -315,7 +268,7 @@ The local target runs the edited instructions in-process, so nothing deployed ch
 
 ## Where to go next
 
-- **Change something and follow it through:** improve an instruction, run the local eval, deploy with `azd deploy rca-agent`, run the hosted eval, and compare episodes and traces before and after.
+- **Change something and follow it through** ([walkthrough step 7](walkthrough.md#7-change-the-agent-and-check-it-again)), then compare episodes and traces before and after.
 - **Add an agent:** [`docs/onboarding-an-agent.md`](onboarding-an-agent.md).
 - **See what's missing:** [`docs/iteration-2-backlog.md`](iteration-2-backlog.md).
 - **Clean up** when you're done: `azd down --purge` (and set `AZURE_LOCATION` again before the next `azd up`).
