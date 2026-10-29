@@ -138,7 +138,7 @@ Run a diagnosis ([walkthrough step 2](walkthrough.md#2-diagnose-it)), then read 
 sed -n '/^def toolbox_definition/,/^def /p' scripts/setup_platform.py
 ```
 
-Then open an episode ([walkthrough step 4](walkthrough.md#4-review-the-episode)). Tool names arrive prefixed with the server label, and every call's duration is recorded. The durations show the cost of the toolbox hop: each call takes several seconds through the toolbox, against about 50 ms when the agent calls the MCP server directly. It's backlog item [A6](backlog.md#a-trustworthy-results).
+Then open an episode ([walkthrough step 4](walkthrough.md#4-review-the-episode)). Tool names arrive prefixed with the server label, and every call's duration is recorded. The durations show the cost of the toolbox hop: each call takes several seconds through the toolbox, against about 50 ms when the agent calls the MCP server directly. Iteration 2 measured it ([A6](iteration-2/a6-latency.md)); no supported remedy was found.
 
 To work with the tools themselves, run the MCP server locally and open it in the MCP Inspector ([`services/diagnostics-mcp/README.md`](../services/diagnostics-mcp/README.md#run-locally)). Call `get_telemetry_window` for `M-0007` and `purge_gas_flow_slm`, and look for the trend and the first out-of-tolerance reading.
 
@@ -172,7 +172,7 @@ az rest --method post --resource https://search.azure.com \
   --query "value[].[failure_mode_id,title]" -o tsv
 ```
 
-Then check how often the agent actually searches. `csai eval` reports `used_knowledge`, which is close to 0. The tool works, but the model rarely chooses to call it. Getting it used reliably is backlog item [A2](backlog.md#a-trustworthy-results).
+Then check how often the agent actually searches. `csai eval` reports `used_knowledge`. Before iteration 2 it was close to 0: the tool worked, but the model rarely chose to call it. Iteration 2 made historical search required when the tool is available ([A2](plan-iteration-2.md#a2-knowledge-search)).
 
 **Check yourself.** (5) The search service needs a role on the Foundry account, and the Foundry project needs roles on the search service. What is each one for?
 
@@ -258,7 +258,7 @@ dependencies
 
 **The idea.** Quality is measured, not assumed. A versioned **case manifest** ([`cases.jsonl`](../evals/rca/src/rca_evals/cases.jsonl), 18 synthetic incidents with the expected root cause) is scored by plain-code evaluators ([`evaluators.py`](../evals/rca/src/rca_evals/evaluators.py)), run by the platform's harness (`cs_platform/evals.py`). Each gated metric has a minimum in [`thresholds.yaml`](../evals/rca/src/rca_evals/thresholds.yaml), and `csai eval` exits 1 below any of them, so any pipeline can enforce it ([`docs/ci-cd.md`](ci-cd.md)). The same suite runs against the agent in-process (`--target local`) or the deployed one (`--target hosted`). The harness runs three cases at a time and retries cases that fail on rate limits.
 
-**Look.** Nothing to see in the portal yet. Publishing eval runs to Foundry's evaluation view (`csai eval --publish`) is parked: it needs capability hosts, which this network-injected project doesn't have (backlog item [G3](backlog.md#g-measuring-quality)).
+**Look.** Nothing to see in the portal yet. Publishing eval runs to Foundry's evaluation view (`csai eval --publish`) is parked: it needs capability hosts, which this network-injected project doesn't have (see [Later](backlog.md#later) in the backlog).
 
 **Try.** Run the gate and the experiment that breaks it ([walkthrough steps 6 and 7](walkthrough.md#6-check-quality-with-the-eval-gate)). Then compare `--output results.jsonl` from a good run and a broken one: the per-case scores and tool calls show which cases failed and why.
 
@@ -281,6 +281,6 @@ dependencies
 4. **Refs.** They let the report cite exactly which record supports each claim. `evidence_grounded` checks that every cited ref exists in the data and belongs to the machine, and the episode keeps the tool results the refs came from.
 5. **Search roles.** The search service calls the embedding model to vectorize queries, so it needs Cognitive Services OpenAI User on the Foundry account. The project and account identities call the search service when the toolbox's `azure_ai_search` tool runs, so they need Search Service Contributor and Search Index Data Contributor on it.
 6. **Store outage.** The user gets the diagnosis as usual: saving the episode is best effort and never fails the request. The agent logs "Could not save episode …" to Application Insights, and the episode is missing from `csai episodes list`.
-7. **Keys.** The MCP server's function key, held only by the Foundry connection `diagnostics-mcp`. And the platform API's function key, which `csai` fetches at run time with your Azure sign-in, so access follows Azure RBAC. Both are in the backlog to replace with Entra (H1, H2).
+7. **Keys.** The MCP server's function key, held only by the Foundry connection `diagnostics-mcp`. And the platform API's function key, which `csai` fetches at run time with your Azure sign-in, so access follows Azure RBAC. Both are in the backlog to replace with Entra ([S1](backlog.md#s-security-and-operations)).
 8. **Trace ID.** Traces are telemetry: they can be sampled, and they're kept only for the workspace's retention period. Episodes are the durable, reviewable record. The trace ID connects the two, so from an expert's verdict you can go straight to the full trace while it's still kept.
-9. **Thresholds.** Thresholds sit just below what a known-good agent achieves, so normal model variation doesn't fail the gate but a real regression does. A passing suite only shows that the agent handles these 18 cases. All of them are solved at baseline, so the suite catches regressions but can't show improvement; harder cases are backlog item G1.
+9. **Thresholds.** Thresholds sit just below what a known-good agent achieves, so normal model variation doesn't fail the gate but a real regression does. A passing suite only shows that the agent handles these 18 cases. All of them are solved at baseline, so the suite catches regressions but can't show improvement; harder cases are backlog item [Q3](backlog.md#q-evaluation-you-can-trust).
