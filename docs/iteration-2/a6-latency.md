@@ -17,8 +17,7 @@ Captured on 2026-10-29 before A5, with measuring checkout revision `85a1e4d`, us
 the existing active deployment, region, toolbox version and synthetic dataset.
 That checkout revision is not a verified deployed-source revision: the deployed
 agent predates the review fixes. A5 owns the private release/rollback inventory.
-The probe ran on
-one developer machine, concurrency **1**, with no model requests. The same
+The probe ran on one developer machine, concurrency **1**, with no model requests. The same
 `get_machine_context(machine_id="M-0007")` was used on all paths. The toolbox tool
 has its server prefix; direct MCP has the unprefixed name.
 
@@ -128,6 +127,17 @@ They retain exact private timing windows/configuration for trace investigation.
 The first two used a scratch probe; only the last uses the checked-in command.
 
 ## Trace attribution and remaining work
+
+A3's read-only investigation found **zero same-operation joins** between retained
+`invoke_agent rca-agent` dependencies and `get_machine_context` requests over two
+days. Agent/model spans share an operation, while Function root spans exist
+separately. This is a verified correlation gap, not evidence that the toolbox
+spent the difference in time. Those retained traces are not the baseline probe's
+invocations. Sampling also limits conclusions from missing records.
+
+The probe does not currently inject a traceparent or export a client span; UTC
+windows alone cannot establish causal parentage. A later trace-enabled comparison
+must use A3's verified propagation path without silently changing session reuse.
 
 1. Use A3's verified trace queries and join MCP handler spans to the **same**
    measured invocation. Initialization/client timing alone cannot separate TLS,
