@@ -5,7 +5,13 @@ from cs_platform.evidence import Evidence
 from diagnostics_domain.dataset import load_seed
 from rca_agent.report import Hypothesis, RcaReport
 from rca_evals import load_suite
-from rca_evals.evaluators import evidence_grounded, outcome, ref_exists, tool_coverage
+from rca_evals.evaluators import (
+    evidence_grounded,
+    knowledge_search,
+    outcome,
+    ref_exists,
+    tool_coverage,
+)
 from rca_evals.manifest import cases_from_seed, render
 
 CASE = EvalCase(
@@ -46,6 +52,7 @@ def test_thresholds_gate_the_metrics_the_evaluators_produce() -> None:
         **outcome(CASE, output(hypothesis(1, "FM-01", "EC-2101"))),
         **evidence_grounded(CASE, output(hypothesis(1, "FM-01", "EC-2101"))),
         **tool_coverage(CASE, RunOutput()),
+        **knowledge_search(CASE, RunOutput()),
     }
     assert set(suite.thresholds.minimums) <= set(produced)
 
@@ -91,6 +98,24 @@ def test_missing_report_scores_zero() -> None:
 
 def test_citing_a_historical_case_counts_as_using_knowledge() -> None:
     assert outcome(CASE, output(hypothesis(1, "FM-01", "HC-0006")))["used_knowledge"] == 1.0
+
+
+@pytest.mark.parametrize("name", ["azure_ai_search", "diagnostics___azure_ai_search"])
+def test_search_without_citations_is_not_used_knowledge(name: str) -> None:
+    result = output(hypothesis(1, "FM-01", "EC-2101"))
+    result.tool_calls = [name, name]
+    assert knowledge_search(CASE, result) == {"knowledge_search_called": 1.0}
+    assert outcome(CASE, result)["used_knowledge"] == 0.0
+    assert knowledge_search(CASE, RunOutput(tool_calls=["get_logbook"])) == {
+        "knowledge_search_called": 0.0
+    }
+
+
+def test_fabricated_history_is_used_but_not_grounded() -> None:
+    result = output(hypothesis(1, "FM-01", "HC-invented"))
+    assert outcome(CASE, result)["used_knowledge"] == 1.0
+    assert evidence_grounded(CASE, result) == {"evidence_grounded": 0.0}
+    assert knowledge_search(CASE, result) == {"knowledge_search_called": 0.0}
 
 
 def test_refs_must_exist_and_belong_to_the_machine() -> None:

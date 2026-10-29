@@ -4,7 +4,7 @@ from importlib import resources
 from pathlib import Path
 
 from cs_platform.evals import EvalSuite
-from rca_evals.evaluators import evidence_grounded, outcome, tool_coverage
+from rca_evals.evaluators import evidence_grounded, knowledge_search, outcome, tool_coverage
 
 __all__ = ["load_suite"]
 
@@ -15,5 +15,5 @@ def load_suite() -> EvalSuite:
         "rca",
         cases=data / "cases.jsonl",
         thresholds=data / "thresholds.yaml",
-        evaluators=(outcome, evidence_grounded, tool_coverage),
+        evaluators=(outcome, evidence_grounded, tool_coverage, knowledge_search),
     )
