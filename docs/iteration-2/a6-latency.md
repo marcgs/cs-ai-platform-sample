@@ -2,16 +2,18 @@
 
 ## Status
 
-Baseline and a repeatable, model-free probe are available. **Acceptance is pending.**
-No performance change or Azure write was made. Connection reuse is already present
-in the measured warm calls, so adding a cache is not a justified remedy.
+**Investigation deliverable complete; no performance improvement is claimed.**
+The baseline, repeatable authenticated probe, same-invocation attribution and
+supported-remedy investigation are verified below. No safe supported runtime
+remedy was found in the installed SDK or the current stable release. No
+performance change or Azure write was made.
 
 A3's verified trace path is needed before attributing time to the managed toolbox,
 Functions startup, MCP session setup or the tool handler. The combined release's
 same-invocation spans now demonstrate client-side queueing and separate model/RPC
-time, but not handler or managed-service internals. A controlled remedy comparison
-remains outstanding. The post-release measurements below are new baselines, not
-an A6 improvement.
+time, but not handler or managed-service internals. This is a documented SDK and
+observability limitation, not an unexplained claim of a fix. The post-release
+measurements below are new baselines, not an A6 improvement.
 
 ## Unchanged baseline
 
@@ -229,6 +231,74 @@ episode's current context. Use the existing operation-boundary W3C `_meta`
 propagation for investigation; supported per-call header context needs upstream
 coordination, not an authentication-lock bypass.
 
+### Supported-remedy investigation
+
+The public constructors and lifecycle implementations were inspected on
+2026-10-29. The latest stable upstream Python release was **1.23.0**, published
+2026-10-22; the installed version is **1.22.0**. The stable release still holds
+the identity lock across the RPC, and its `FoundryToolbox` still always supplies
+the provider:
+
+- [Stable release](https://github.com/microsoft/agent-framework/releases/tag/python-1.23.0)
+- [Authenticated call lock, release-tagged source](https://github.com/microsoft/agent-framework/blob/python-1.23.0/python/packages/core/agent_framework/_mcp.py#L4526-L4564)
+- [Toolbox constructor, release-tagged source](https://github.com/microsoft/agent-framework/blob/python-1.23.0/python/packages/foundry_hosting/agent_framework_foundry_hosting/_toolbox.py#L215-L295)
+
+The upstream main branch was also checked and retained this guard. No dependency
+upgrade was applied: upgrading solely to 1.23.0 would not remove the observed
+serialization, and unrelated dependency changes are not a measured remedy.
+
+| Supported option inspected | Verified constraint |
+|---|---|
+| Reuse one client/session | Already measured; one initialization serves multiple warm calls. The identity lock still encloses every RPC. |
+| HTTP client, transport or connection limits | The lock is acquired before the base RPC call. Increasing HTTP capacity cannot admit another guarded call. |
+| Caller-supplied MCP session | The guard remains; unknown or changed header identity is rejected rather than silently reused. |
+| `static_headers` / caller `header_provider` | The toolbox still adds its platform provider. Changing headers can reconnect; removing the provider would bypass platform identity handling, not tune a supported concurrency setting. |
+| `load_prompts`, `load_tools`, progressive discovery | Discovery/lifecycle settings do not change the guarded RPC path. Prompts are already disabled; removing discovery would not preserve the agent's existing tool contract. |
+| Timeout, task and close options | These control deadlines, task handling or teardown, not parallel admission. Skipping session termination is not a queueing fix. |
+| Model parallel-call option | It changes tool scheduling, not the SDK lock. Serial wrappers could look faster individually without improving diagnosis wall time. |
+| Latest stable SDK | 1.23.0 retains both the guard and mandatory toolbox provider. No supported concurrent same-identity fast path was found in these public interfaces. |
+
+This is deliberately scoped to verified versions and interfaces, not a claim that
+no future upstream solution is possible. A pool, private-state override or raw
+transport replacement was not implemented: none is a minimal, verified remedy
+preserving all existing platform identity and session semantics.
+
+### Offline causal reproduction and safeguard checks
+
+An isolated experiment used the **real public `MCPStreamableHTTPTool`**, its
+`header_provider` and `http_client` parameters, and an authenticated synthetic MCP
+server over `httpx.MockTransport`. No SDK methods or private state were patched.
+There were no sockets, model requests or Azure calls.
+
+Four simultaneously scheduled calls with identical caller identity and a 40 ms
+synthetic handler delay took **0.167 s** wall time. Maximum server concurrency
+was **1**, with exactly **one initialization**. Thus serialization persists with
+session reuse and without a slow network or managed service.
+
+The synthetic server bound each session ID to its authenticated principal and
+rejected an unauthorized request with HTTP **401**. Three sequential principal
+changes returned the correct principal each time and caused three terminations
+and reinitializations; final close left no live sessions. A queued cancellation
+propagated, never reached the server, and left the same session usable for the
+next call. These checks reproduce the guard's purpose, not just its cost.
+No replacement cancellation or authorization implementation was introduced.
+
+The experiment's source and machine-readable result remain in ignored
+`.azure/a6-sdk-repro.py` and `.azure/a6-sdk-offline-repro.json`. Upstream version,
+source hashes and public-interface observations are in
+`.azure/a6-upstream-options.json`. The live, developer-facing reproduction remains
+the checked-in command below; no framework-behavior regression tests were added
+to the product suite.
+
+**Concrete outcome:** inflated wrapper durations include verified SDK queueing.
+Current supported toolbox/session APIs preserve this serialization to protect
+identity. The remaining RPC envelope cannot be separated into network, managed
+toolbox and handler time with the deployed trace path; A3 verified client `_meta`
+propagation offline but found no documented managed forwarding switch or same-call
+handler join. This is the boundary of the investigation, not evidence that
+Functions cold starts or the proxy caused every slow RPC. No cache, pool,
+authentication bypass or infrastructure change is justified by these results.
+
 ## Repeat the comparison
 
 Use the isolated workspace's dependencies and an existing signed-in azd
@@ -277,7 +347,7 @@ Combined-release artifacts are `a6-combined-baseline.json`,
 `a6-combined-hosted-trace.json` and `a6-combined-critical-path.json`. The latter two
 derive from A3's private same-invocation handoff; no extra model run was made.
 
-## Trace attribution and remaining work
+## Trace attribution and future optimization work
 
 A3's read-only investigation found **zero same-operation joins** between retained
 `invoke_agent rca-agent` dependencies and `get_machine_context` requests over two
@@ -344,8 +414,10 @@ The combined hosted analysis above instead uses A4's already correlated invocati
 Offline verification: full ruff, formatting, pyright and pytest (115 tests).
 Seven focused tests cover payload normalization, protocol/domain errors, session
 reuse, failure accounting, teardown and successful-sample distributions.
-No live agent eval was run: this adds measurement tooling, not agent instructions,
-schemas, tools, capture or eval data. Full A6 acceptance remains blocked on the
-safe controlled remedy comparison or verified limitation for remaining RPC latency.
-Client queueing and the hosted model/RPC critical path are now verified; managed
-toolbox-to-handler propagation and per-RPC internal localization remain unproven.
+No live agent eval was run by A6: this adds measurement tooling, not agent
+instructions, schemas, tools, capture or eval data. Client queueing, its supported
+SDK limitation and the hosted model/RPC critical path are verified. No runtime
+remedy or controlled improvement is claimed. Future optimization needs a supported
+identity-safe SDK change and a separately authorized controlled comparison;
+managed toolbox-to-handler propagation and per-RPC internal localization remain
+unproven. They are documented investigation limits, not invented causal findings.
