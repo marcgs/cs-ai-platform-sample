@@ -68,14 +68,22 @@ per-run options. Capture removes it before the model or tools run.
 A hosted episode records `hosted_response_id` and uses `hosted_episode_id(response_id)`
 as its point-read key: UUID5 with `NAMESPACE_OID` and
 `cs-platform:hosted-response:<response_id>`. The host and CLI share this mapping.
+Deploy both the updated agent and `platform-api` for this contract: the API packages
+its own `cs-platform`. An older API's `Episode` model silently drops
+`hosted_response_id` when reading Cosmos DB, leaving new episodes unverifiable even
+when the updated agent recorded the field correctly.
 Neither incident text, creation time nor session affinity determines identity.
 Failed runs retain the same binding when execution reaches capture. A failure before
 agent execution, a process crash or a store outage may leave no episode.
 
 `RunOutput` carries both IDs, including terminal hosted failures. The CLI retries
-only HTTP 404, at most five point reads with half-second intervals, and verifies both
-stored IDs before claiming a match. Missing records, missing identifiers and API
+only the API's exact episode-not-found response, at most five point reads with
+half-second intervals, and verifies both stored IDs before claiming a match.
+Missing records, missing identifiers and API
 failures are reported explicitly, without falling back to recent-episode listings.
+Route/configuration 404s, credential/key acquisition failures and invalid episode
+payloads leave the identity explicitly unverified rather than claiming delayed
+persistence. Failed responses without tool details report calls as unavailable.
 Legacy episodes keep their existing IDs and default `hosted_response_id` to `None`;
 local runs still receive a random episode ID. The agent report schema is unchanged.
 

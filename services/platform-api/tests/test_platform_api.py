@@ -98,6 +98,7 @@ async def test_http_routes(
         request("GET", "/api/episodes/nope", {"episode_id": "nope"})
     )
     assert missing.status_code == 404
+    assert json.loads(missing.get_body()) == {"error": "episode nope not found"}
 
     added = await app_module.add_feedback(
         request(
