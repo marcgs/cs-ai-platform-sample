@@ -7,9 +7,9 @@ No performance change or Azure write was made. Connection reuse is already prese
 in the measured warm calls, so adding a cache is not a justified remedy.
 
 A3's verified trace path is needed before attributing time to the managed toolbox,
-Functions startup, MCP session setup or the tool handler. A controlled repeat and
-whole-diagnosis measurement remain outstanding. A5's release changes the baseline:
-do not describe a comparison across that deployment as an A6 improvement.
+Functions startup, MCP session setup or the tool handler. A controlled causal
+comparison remains outstanding. The post-A5 baseline and hosted smoke below
+provide separately labeled new measurements, not an A6 improvement.
 
 ## Unchanged baseline
 
@@ -88,6 +88,56 @@ Hold other workstreams fixed; record any deployment as a new baseline.
 The single 0.674 s check does not satisfy this objective. It is not a warm sample,
 not an intervention, and not a controlled comparison.
 
+## Post-A5 baseline, not an A6 after-fix result
+
+After A5's approved pinned-main release and its successful hosted smoke, the same
+checked-in command ran with `--warm-calls 3 --sessions 1`, same machine, tool,
+arguments, region, path order and client/session reuse. No A6 performance change
+was made. Every remote payload validated and matched the local seed: **8 / 8**,
+with zero initialization, call or teardown errors.
+
+| Path / phase | Successful / attempted | Min (s) | Median (s) | Nearest-rank p95 / max (s) |
+|---|---:|---:|---:|---:|
+| Toolbox initialization | 1 / 1 | 2.106 | 2.106 | 2.106 |
+| Toolbox first call | 1 / 1 | 0.682 | 0.682 | 0.682 |
+| Toolbox reused-session calls | 3 / 3 | 0.559 | 0.576 | 0.763 |
+| Toolbox close | 1 / 1 | 0.001 | 0.001 | 0.001 |
+| Direct MCP initialization | 1 / 1 | 0.892 | 0.892 | 0.892 |
+| Direct MCP first call | 1 / 1 | 0.587 | 0.587 | 0.587 |
+| Direct MCP reused-session calls | 3 / 3 | 0.185 | 2.836 | 2.836 |
+| Direct MCP close | 1 / 1 | 2.475 | 2.475 | 2.475 |
+| In-process first call | 1 / 1 | 0.000099 | 0.000099 | 0.000099 |
+| In-process subsequent calls | 3 / 3 | 0.000036 | 0.000040 | 0.000045 |
+
+This deployment and the preceding hosted smoke change the conditions, including
+possible server warmup. The lower toolbox median satisfies only the numerical
+part of the provisional objective. It is not a controlled A6 intervention, uses
+one session rather than three per arm, and does not establish a remedy or cause.
+Direct network calls still vary substantially despite session reuse.
+
+### A5's single hosted diagnosis
+
+A5 supplied its one authorized smoke measurement, from the new deployment:
+**70.032 s CLI wall time**, **41.101 s stored episode interval**. All nine complete
+tool payloads matched deterministic seed JSON, totaling **22,241 bytes**, within
+the episode size budget and with all truncation flags false. Model usage was
+10,345 input / 1,377 output tokens.
+
+| Captured tool | Calls | Min (s) | Median (s) | Max (s) |
+|---|---:|---:|---:|---:|
+| Machine context | 1 | 5.538 | 5.538 | 5.538 |
+| Error events | 1 | 11.150 | 11.150 | 11.150 |
+| Logbook | 1 | 13.608 | 13.608 | 13.608 |
+| Error-code lookup | 3 | 0.273 | 5.914 | 6.216 |
+| Telemetry window | 3 | 6.421 | 12.176 | 17.650 |
+
+These are episode capture durations, not separately measured handler or transport
+spans. Calls may overlap: **do not sum them or subtract them from either total**
+to claim model latency. CLI wall time and the episode interval have different
+boundaries; their difference is not proven model or toolbox time. A verified
+model/tool critical-path breakdown remains outstanding. This smoke used a
+diagnosis tool mix, not the probe's identical-argument single-tool workload.
+
 ## Repeat the comparison
 
 Use the isolated workspace's dependencies and an existing signed-in azd
@@ -125,6 +175,8 @@ The original raw artifacts remain in the measuring worktree's ignored `.azure/`:
 `a6-baseline.json`, `a6-direct-baseline.json` and `a6-correctness-baseline.json`.
 They retain exact private timing windows/configuration for trace investigation.
 The first two used a scratch probe; only the last uses the checked-in command.
+The separate post-release probe is `a6-post-a5-baseline.json`. A5 retains its
+hosted smoke and release inventory in its own ignored `.azure/a5-private/`.
 
 ## Trace attribution and remaining work
 
@@ -185,13 +237,14 @@ must use A3's verified propagation path without silently changing session reuse.
    support verification and ongoing cost analysis.
 4. If the time is inside an unobservable/uncontrollable managed boundary,
    document that specific evidence and limitation instead of claiming a fix.
-5. After A5, capture a separately labeled baseline and a serialized, low-cost
-   whole-diagnosis sample with model/tool/total durations. Do not run a heavy eval
-   suite solely for this task.
+5. The separately labeled post-A5 baseline and single hosted smoke are captured
+   above. Obtain the verified model/tool critical-path breakdown from correlated
+   spans; do not run a heavy eval suite solely for this task.
 
 Offline verification: full ruff, formatting, pyright and pytest (115 tests).
 Seven focused tests cover payload normalization, protocol/domain errors, session
 reuse, failure accounting, teardown and successful-sample distributions.
 No live agent eval was run: this adds measurement tooling, not agent instructions,
 schemas, tools, capture or eval data. Full A6 acceptance remains blocked on the
-trace attribution and controlled/live end-to-end evidence above.
+causal trace attribution, controlled comparison or verified service limitation,
+and model/tool critical-path evidence above.
