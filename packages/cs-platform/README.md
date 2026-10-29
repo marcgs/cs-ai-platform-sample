@@ -88,6 +88,13 @@ API, and `csai episodes show <episode-id>` displayed the same Response ID. The e
 contained eight tool calls. No live failure was forced; failed protocol responses
 remain covered offline. Repeat the hosted check when upgrading the hosting adapter.
 
+Shared local validation ran three full 18-case suites at concurrency one: all 54
+runs completed on their first attempt. All unchanged quality thresholds passed on
+replay with the arithmetic-only mean-aggregation fix in
+[PR #4](https://github.com/marcgs/cs-ai-platform-sample/pull/4). The third run's exact
+tool coverage was 81/90; naive float summation had incorrectly put it below 0.90.
+The replay changed no per-case score or threshold and made no additional model calls.
+
 ## Tests
 
 `tests/conftest.py` provides `ScriptedChatClient`, a chat client that returns scripted model turns while Agent Framework's real tool-invocation loop runs the tools. The capture tests cover streaming and non-streaming runs, tool failures, model failures, invalid structured output and store outages, all without Azure.
