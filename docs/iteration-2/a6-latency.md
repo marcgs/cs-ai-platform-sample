@@ -7,9 +7,11 @@ No performance change or Azure write was made. Connection reuse is already prese
 in the measured warm calls, so adding a cache is not a justified remedy.
 
 A3's verified trace path is needed before attributing time to the managed toolbox,
-Functions startup, MCP session setup or the tool handler. A controlled causal
-comparison remains outstanding. The post-A5 baseline and hosted smoke below
-provide separately labeled new measurements, not an A6 improvement.
+Functions startup, MCP session setup or the tool handler. The combined release's
+same-invocation spans now demonstrate client-side queueing and separate model/RPC
+time, but not handler or managed-service internals. A controlled remedy comparison
+remains outstanding. The post-release measurements below are new baselines, not
+an A6 improvement.
 
 ## Unchanged baseline
 
@@ -138,6 +140,86 @@ boundaries; their difference is not proven model or toolbox time. A verified
 model/tool critical-path breakdown remains outstanding. This smoke used a
 diagnosis tool mix, not the probe's identical-argument single-tool workload.
 
+## Combined-release baseline and causal span evidence
+
+The approved, unmerged integration snapshot
+`4afdaa4d2f923c2ac0d66aea9779a1091f13bbbb` was deployed separately. A4 performed one
+hosted correlation check, then handed the slot to A6. The same model-free
+single-session probe ran after that check, using A5's verified fresh environment
+with values **overwriting** inherited settings. The old root environment was not
+used. Eight remote calls validated and matched the seed; all phases had zero errors.
+
+| Path / phase | Successful / attempted | Min (s) | Median (s) | Nearest-rank p95 / max (s) |
+|---|---:|---:|---:|---:|
+| Toolbox initialization | 1 / 1 | 2.395 | 2.395 | 2.395 |
+| Toolbox first call | 1 / 1 | 0.661 | 0.661 | 0.661 |
+| Toolbox reused-session calls | 3 / 3 | 0.596 | 0.695 | 0.713 |
+| Toolbox close | 1 / 1 | 0.001 | 0.001 | 0.001 |
+| Direct MCP initialization | 1 / 1 | 0.797 | 0.797 | 0.797 |
+| Direct MCP first call | 1 / 1 | 0.204 | 0.204 | 0.204 |
+| Direct MCP reused-session calls | 3 / 3 | 0.207 | 0.213 | 0.295 |
+| Direct MCP close | 1 / 1 | 2.811 | 2.811 | 2.811 |
+| In-process first call | 1 / 1 | 0.000089 | 0.000089 | 0.000089 |
+| In-process subsequent calls | 3 / 3 | 0.000035 | 0.000043 | 0.000045 |
+
+This is another deployment/warmup-conditioned baseline, not a controlled A6 fix.
+The numerical objective alone is not sufficient for acceptance.
+
+### Same-invocation critical path
+
+A3 queried A4's exact hosted trace, not another diagnosis: 33 retained spans, all
+with `ItemCount=1`, including the episode and framework agent parent/child link,
+four model spans and eight MCP RPC spans. Every RPC's exact parent is the
+corresponding `execute_tool` span. The handler join still has zero Function spans.
+
+Using each span's timestamp and duration, merge overlapping intervals before
+calculating elapsed time. The nested hosted model span must not be added again:
+
+| Same-invocation measurement | Elapsed (s) |
+|---|---:|
+| A4 request-to-response wall interval | 68.753 |
+| Stored episode interval | 42.905 |
+| Episode trace span, including persistence | 43.680 |
+| Model-call span interval union: four spans, three disjoint intervals | 8.947 |
+| MCP RPC interval union: eight serial spans | 33.930 |
+| Model-or-RPC interval union | 42.877 |
+| Episode-span time outside those intervals, unclassified | 0.803 |
+
+These are measured envelopes, not pure model compute or tool-handler time. RPC
+duration includes the client/network/service boundary. The 0.803 s remainder is
+not attributed exclusively to storage. The broader CLI/request, stored episode
+and episode-span boundaries differ; do not infer a cause from their differences.
+
+### Observed cause of inflated per-tool durations: client queueing
+
+In each four-call batch, `execute_tool` wrappers start within about 4 ms of one
+another, but their child `tools/call` RPCs are serial, with no adjacent overlap
+at 5 ms tolerance. A3 independently verified the parent IDs and interval ordering.
+The wrapper includes time waiting before the RPC:
+
+| Four-call batch | Pre-RPC wait min / median / max (s) | RPC min / median / max (s) |
+|---|---:|---:|
+| First | 0.001 / 9.019 / 12.096 | 0.288 / 3.670 / 6.230 |
+| Second | 0.001 / 8.429 / 14.164 | 2.873 / 5.643 / 5.914 |
+
+This is same-invocation, parent/child evidence of queueing, unlike subtraction of
+unrelated requests. It explains why a captured tool duration can reach about
+20 s although its own RPC lasts about 6 s. Do not sum overlapping wrappers.
+
+The installed `agent-framework-core` **1.22.0** implementation explains this
+serialization: `FoundryToolbox` supplies a header provider, and
+`MCPStreamableHTTPTool.call_tool` holds `_call_headers_lock` across the awaited
+RPC when a provider exists. That lock protects session/header identity, not just
+connection creation. Existing connection reuse does not remove this queue.
+
+No lock bypass or concurrent-client pool was added. Preserving authentication
+identity isolation is mandatory, and neither a safe alternate lifecycle nor its
+before/after performance has been verified. A separate bounded experiment would
+need explicit concurrency authorization and must account for additional
+initialization/session cost. The remaining multi-second RPC time is still not
+localized within the client/network/toolbox/Functions boundary; a missing handler
+join is not proof of proxy or cold-start delay. No always-ready proposal follows.
+
 ## Repeat the comparison
 
 Use the isolated workspace's dependencies and an existing signed-in azd
@@ -158,6 +240,11 @@ via ARM `listkeys` (a read operation with a POST verb) and sends `x-functions-ke
 The toolbox uses an Entra credential. Neither credential is persisted. Do not
 disable authentication to obtain a measurement.
 
+For a separately staged release, use its approved azd project and refresh inherited
+environment values from its verified private handoff. Process values override azd
+values: merely changing `--azd-project` does not replace stale exported endpoints.
+Never use `setdefault` to load a newer deployment's environment.
+
 Use `--direct-first` to reverse path order in a separate coordinated run, and
 `--sessions 3` only when the shared measurement slot permits it. The CLI caps
 session/sample counts and always runs sequentially. The default makes eight
@@ -177,6 +264,9 @@ They retain exact private timing windows/configuration for trace investigation.
 The first two used a scratch probe; only the last uses the checked-in command.
 The separate post-release probe is `a6-post-a5-baseline.json`. A5 retains its
 hosted smoke and release inventory in its own ignored `.azure/a5-private/`.
+Combined-release artifacts are `a6-combined-baseline.json`,
+`a6-combined-hosted-trace.json` and `a6-combined-critical-path.json`. The latter two
+derive from A3's private same-invocation handoff; no extra model run was made.
 
 ## Trace attribution and remaining work
 
@@ -224,6 +314,7 @@ verify propagation; it does not locate the observed seconds of delay.
 The probe does not currently inject a traceparent or export a client span; UTC
 windows alone cannot establish causal parentage. A later trace-enabled comparison
 must use A3's verified propagation path without silently changing session reuse.
+The combined hosted analysis above instead uses A4's already correlated invocation.
 
 1. Use A3's verified trace queries and join MCP handler spans to the **same**
    measured invocation. Initialization/client timing alone cannot separate TLS,
@@ -237,14 +328,15 @@ must use A3's verified propagation path without silently changing session reuse.
    support verification and ongoing cost analysis.
 4. If the time is inside an unobservable/uncontrollable managed boundary,
    document that specific evidence and limitation instead of claiming a fix.
-5. The separately labeled post-A5 baseline and single hosted smoke are captured
-   above. Obtain the verified model/tool critical-path breakdown from correlated
-   spans; do not run a heavy eval suite solely for this task.
+5. The post-A5 and combined-release baselines and same-invocation model/RPC
+   interval breakdown are captured above. Preserve the client queue/RPC/handler
+   distinction in any follow-up; no heavy eval suite is needed solely for A6.
 
 Offline verification: full ruff, formatting, pyright and pytest (115 tests).
 Seven focused tests cover payload normalization, protocol/domain errors, session
 reuse, failure accounting, teardown and successful-sample distributions.
 No live agent eval was run: this adds measurement tooling, not agent instructions,
 schemas, tools, capture or eval data. Full A6 acceptance remains blocked on the
-causal trace attribution, controlled comparison or verified service limitation,
-and model/tool critical-path evidence above.
+safe controlled remedy comparison or verified limitation for remaining RPC latency.
+Client queueing and the hosted model/RPC critical path are now verified; managed
+toolbox-to-handler propagation and per-RPC internal localization remain unproven.
