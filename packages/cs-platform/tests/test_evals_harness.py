@@ -1,6 +1,17 @@
+from math import nextafter
 from typing import TYPE_CHECKING
 
-from cs_platform.evals import EvalCase, EvalSuite, RunOutput, SuiteResult, Thresholds, run_suite
+import pytest
+
+from cs_platform.evals import (
+    CaseResult,
+    EvalCase,
+    EvalSuite,
+    RunOutput,
+    SuiteResult,
+    Thresholds,
+    run_suite,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -70,6 +81,30 @@ async def test_transient_errors_are_retried() -> None:
 def test_missing_metric_counts_as_failure() -> None:
     result = SuiteResult(suite="demo", cases=[])
     assert result.failures(Thresholds(minimums={"exact": 0.1})) == ["exact: 0.00 < 0.10"]
+
+
+@pytest.mark.parametrize(
+    ("scores", "passes"),
+    [
+        ([0.8] * 9 + [1.0] * 9, True),
+        ([1.0] * 9 + [0.8] * 9, True),
+        ([1.0, 0.8] * 8 + [0.8, 0.8], False),
+        ([nextafter(0.9, 0.0)] * 18, False),
+    ],
+)
+def test_mean_preserves_exact_boundary_without_tolerating_lower_scores(
+    scores: list[float], passes: bool
+) -> None:
+    result = SuiteResult(
+        suite="demo",
+        cases=[
+            CaseResult(case_id=f"C-{i}", scores={"coverage": value}, output=RunOutput())
+            for i, value in enumerate(scores)
+        ],
+    )
+    if passes:
+        assert result.metrics["coverage"] == 0.9
+    assert (not result.failures(Thresholds(minimums={"coverage": 0.9}))) == passes
 
 
 def test_suite_loads_from_files(tmp_path: Path) -> None:
