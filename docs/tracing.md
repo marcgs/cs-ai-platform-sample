@@ -118,7 +118,12 @@ RPCs, with no diagnostic handler requests. Across these exact operations there
 were no rate-limit logs or events. The third suite's raw gate reported a floating
 aggregation boundary (`0.8999999999999999` versus `0.9`); its exact diagnostic-tool
 coverage was 81/90. Do not silently relabel that original output as a pass:
-the shared gate still needs the validated aggregation fix and unchanged-score replay.
+it is retained in the immutable evidence. The separately committed aggregation
+fix uses `statistics.mean`, without tolerance, rounding or threshold changes.
+Independent SHA-256 verification and unchanged-score replay confirmed all original
+gates pass in all three suites (coverage 82/90, 83/90 and 81/90). No model rerun was
+used to replace the original result. Replay uses A2's separate aggregation fix
+(`5f8f35e`); that fix is not duplicated on the A3 branch.
 
 The MCP transport can send from a writer task with context captured before the
 current tool invocation. The SDK's `_meta` injection is therefore important;
@@ -189,14 +194,17 @@ For historical evidence, join exact episode trace IDs to distinct `OperationId`
 values, not input text or approximate timestamps. Inspect `ItemCount` and
 `ingestion_time() - TimeGenerated` separately from trace presence.
 
-## Verification still required
+## Acceptance and known limitation
 
-Offline gates and in-memory exporter tests pass. No model calls or Azure writes
+Full ruff, format, pyright and offline pytest gates pass (123 tests). No model calls or Azure writes
 were made by A3; the approved combined deployment and A4/A2's requests supplied
 the fresh hosted and local evidence above. All three full local suites completed;
-confirmation of the shared aggregation-boundary fix/replay remains pending.
-A real diagnostic MCP parent chain remains unverified. Retain the documented,
-plan-permitted transport/managed-boundary limitation until supported
+the shared aggregation-boundary fix and unchanged-score replay were independently
+verified. A3 is ready with the plan-permitted boundary limitation, not a claim of
+complete end-to-end instrumentation.
+
+A real diagnostic MCP handler parent chain remains unverified. Retain the
+documented transport/managed-boundary limitation until supported
 per-call propagation or service-side evidence resolves it; do not claim that a
 particular service stripped context based only on the absent joins.
 
