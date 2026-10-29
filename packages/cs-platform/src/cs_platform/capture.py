@@ -90,7 +90,7 @@ class EpisodeCaptureAgentMiddleware(AgentMiddleware):
         # Middleware precedes the framework's agent span. Keep this parent alive across
         # lazy stream consumption, without leaving context attached between iterator pulls.
         try:
-            with trace.use_span(span, end_on_exit=False):
+            with trace.use_span(span, end_on_exit=False, record_exception=False):
                 await self._process(context, call_next, span)
         except BaseException:
             span.end()
@@ -124,7 +124,7 @@ class EpisodeCaptureAgentMiddleware(AgentMiddleware):
         if context.stream:
             if isinstance(context.result, ResponseStream):
                 context.result.with_pull_context_manager(
-                    lambda: trace.use_span(span, end_on_exit=False)
+                    lambda: trace.use_span(span, end_on_exit=False, record_exception=False)
                 )
 
             async def on_result(response: AgentResponse[Any]) -> AgentResponse[Any]:

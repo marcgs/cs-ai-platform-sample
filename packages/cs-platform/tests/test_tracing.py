@@ -124,6 +124,10 @@ async def test_failed_run_keeps_real_trace_and_ends_span(
     assert episode.trace_id == f"{root.context.trace_id:032x}"
     assert episode.status == "failed"
     assert root.status.status_code == StatusCode.ERROR
+    exceptions = [event for event in root.events if event.name == "exception"]
+    assert len(exceptions) == 1
+    assert exceptions[0].attributes is not None
+    assert exceptions[0].attributes["exception.type"] == "IndexError"
     assert root.end_time is not None
     assert not trace.get_current_span().get_span_context().is_valid
 
