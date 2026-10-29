@@ -299,6 +299,14 @@ handler join. This is the boundary of the investigation, not evidence that
 Functions cold starts or the proxy caused every slow RPC. No cache, pool,
 authentication bypass or infrastructure change is justified by these results.
 
+A3 subsequently checked all **54 actual local evaluation traces** from the three
+combined-release suites: every episode root matched its real episode ID and had
+`ItemCount=1`. The retained graphs contained **1,362 spans**, including **199 model
+spans** and **428 tool RPC spans**, but **zero Function handler requests**. This
+extends the observed boundary gap beyond the single hosted invocation; it does
+not localize RPC latency or prove a global telemetry outage. A6 made no additional
+model or toolbox request for this verification.
+
 ## Repeat the comparison
 
 Use the isolated workspace's dependencies and an existing signed-in azd
