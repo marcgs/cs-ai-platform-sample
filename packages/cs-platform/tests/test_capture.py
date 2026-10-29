@@ -4,8 +4,8 @@ import pytest
 from agent_framework import tool
 from pydantic import BaseModel
 
-from cs_platform.capture import EPISODE_ID_KEY, MAX_RESULT_CHARS
-from cs_platform.episodes import Episode, InMemoryEpisodeStore
+from cs_platform.capture import EPISODE_ID_KEY
+from cs_platform.episodes import EPISODE_MAX_BYTES, Episode, InMemoryEpisodeStore
 from cs_platform.factory import build_agent
 from cs_platform.testing import ScriptedChatClient, call, text
 
@@ -89,8 +89,8 @@ def get_history(machine_id: str) -> str:
 
 @tool
 def get_huge_dump(machine_id: str) -> str:
-    """Return more than an episode keeps."""
-    return "y" * (MAX_RESULT_CHARS + 10)
+    """Return more than an episode can hold."""
+    return "y" * 2_000_000
 
 
 async def test_long_tool_results_are_kept_whole(spec: AgentSpec) -> None:
@@ -105,16 +105,16 @@ async def test_long_tool_results_are_kept_whole(spec: AgentSpec) -> None:
     assert not tool_call.result_truncated
 
 
-async def test_oversized_tool_results_are_flagged(spec: AgentSpec) -> None:
+async def test_oversized_episode_is_cut_to_fit_and_flagged(spec: AgentSpec) -> None:
     store = InMemoryEpisodeStore()
     client = ScriptedChatClient([[call("get_huge_dump", machine_id="M-0004")], [text("done")]])
     agent = build_agent(spec, client=client, store=store, tools=[get_huge_dump])
     await agent.run("check M-0004")
 
-    [tool_call] = (await _only_episode(store)).tool_calls
-    assert tool_call.result is not None
-    assert len(tool_call.result) == MAX_RESULT_CHARS
-    assert tool_call.result_truncated
+    episode = await _only_episode(store)
+    assert episode.truncated
+    assert episode.tool_calls[0].result_truncated
+    assert len(episode.model_dump_json().encode()) <= EPISODE_MAX_BYTES
 
 
 async def test_tool_failure_is_recorded(spec: AgentSpec) -> None:

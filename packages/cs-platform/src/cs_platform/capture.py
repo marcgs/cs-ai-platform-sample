@@ -16,7 +16,7 @@ from agent_framework import AgentMiddleware, AgentResponse, FunctionMiddleware
 from opentelemetry import trace
 from pydantic import BaseModel
 
-from cs_platform.episodes import Episode, ToolCall, Usage
+from cs_platform.episodes import Episode, ToolCall, Usage, fit_to_budget
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -30,9 +30,6 @@ logger = logging.getLogger(__name__)
 
 RECORDER_KEY = "cs_platform_episode_recorder"
 EPISODE_ID_KEY = "episode_id"
-# Tool results are evidence, so episodes keep them whole. The cap only keeps an episode well
-# below the Cosmos DB item limit (2 MB); a cut result is flagged with result_truncated.
-MAX_RESULT_CHARS = 50_000
 
 
 class EpisodeRecorder:
@@ -67,6 +64,8 @@ class EpisodeRecorder:
             episode.error = f"{type(error).__name__}: {error}"
         else:
             episode.status = "succeeded"
+        # Tool results are evidence, so they're kept whole unless the episode wouldn't fit.
+        fit_to_budget(episode)
         try:
             await self._store.save(episode)
         except Exception:
@@ -148,8 +147,7 @@ class EpisodeCaptureFunctionMiddleware(FunctionMiddleware):
                 ToolCall(
                     name=context.function.name,
                     arguments=_arguments(context.arguments),
-                    result=result[:MAX_RESULT_CHARS] if result else result,
-                    result_truncated=result is not None and len(result) > MAX_RESULT_CHARS,
+                    result=result,
                     error=error,
                     started_at=started_at,
                     duration_ms=round((perf_counter() - start) * 1000, 2),

@@ -67,6 +67,43 @@ class Episode(BaseModel):
     usage: Usage | None = None
     trace_id: str | None = None
     feedback: Feedback | None = None
+    truncated: bool = False
+    """Set when the episode was cut to fit the store (see ``fit_to_budget``)."""
+
+
+# Cosmos DB rejects items over 2 MB; leave room for system properties and feedback added later.
+EPISODE_MAX_BYTES = 1_500_000
+
+
+def _json_size(episode: Episode) -> int:
+    return len(episode.model_dump_json().encode())
+
+
+def fit_to_budget(episode: Episode, max_bytes: int = EPISODE_MAX_BYTES) -> None:
+    """Shrink an episode in place until its JSON fits ``max_bytes``.
+
+    Tool results go first, largest first, each flagged with ``result_truncated``; then the output
+    text and the input. Every character is at least one byte of JSON, so cutting ``excess``
+    characters frees at least ``excess`` bytes.
+    """
+    excess = _json_size(episode) - max_bytes
+    while excess > 0:
+        calls = [c for c in episode.tool_calls if c.result]
+        if not calls:
+            break
+        largest = max(calls, key=lambda c: len(c.result or ""))
+        result = largest.result or ""
+        largest.result = result[: max(0, len(result) - excess)]
+        largest.result_truncated = True
+        episode.truncated = True
+        excess = _json_size(episode) - max_bytes
+    if excess > 0 and episode.output_text:
+        episode.output_text = episode.output_text[: max(0, len(episode.output_text) - excess)]
+        episode.truncated = True
+        excess = _json_size(episode) - max_bytes
+    if excess > 0:
+        episode.input = episode.input[: max(0, len(episode.input) - excess)]
+        episode.truncated = True
 
 
 class EpisodeNotFoundError(LookupError):
