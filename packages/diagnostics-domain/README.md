@@ -44,6 +44,12 @@ update date in machine context and its logbook entry, for misses and controls.
 IDs, tool timings, timestamps and reviews
 depend only on the seed, index and committed seed data. More records preserve the
 existing prefix. The displayed telemetry windows are compact transcript excerpts.
+Correct missing-mapping controls also record `azure_ai_search` retrieval of a
+matching seeded historical case and cite its returned `HC-…` ref and resolution.
+The failed variant lacks that successful knowledge fallback.
+Only this missing-mapping cohort requires a matching seeded historical case when
+choosing scenarios, for both misses and controls. Other contexts retain their
+existing eligibility rules and can select new known causes without prior cases.
 
 Four fictional reviewers have different accuracy; `R-004` is deliberately too strict.
 Disagreements, incomplete notes, wrong actual-cause assertions and duplicates are
