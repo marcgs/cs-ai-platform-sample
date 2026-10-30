@@ -114,9 +114,7 @@ def local_target(
             tool_trace=episode.tool_calls if episode else [],
             tool_trace_complete=episode is not None and not episode.truncated,
             failure=(
-                RunError(kind="unparseable", code="invalid_output")
-                if parsed is None and response.text
-                else None
+                RunError(kind="unparseable", code="invalid_output") if parsed is None else None
             ),
             episode_id=episode.id if episode else None,
         )
@@ -124,23 +122,37 @@ def local_target(
     return run
 
 
-def hosted_target(entry: AgentEntry, endpoint: str, credential: AsyncTokenCredential) -> Target:
+def hosted_target(
+    entry: AgentEntry,
+    endpoint: str,
+    credential: AsyncTokenCredential,
+    *,
+    on_episode: Callable[[Episode], None] | None = None,
+) -> Target:
     client = AsyncOpenAI(
         base_url=endpoint.split("/responses", 1)[0],
         default_query={"api-version": "v1"},
         api_key=get_bearer_token_provider(credential, AI_SCOPE),
     )
+    platform_client: PlatformClient | None = None
+    platform_lock = asyncio.Lock()
 
     async def run(case: EvalCase) -> RunOutput:
+        nonlocal platform_client
         response = await client.responses.create(input=case.input)
         response_id = response.id if response.id and response.id.strip() else None
         episode_id = hosted_episode_id(response_id) if response_id else None
         episode = None
         if response_id and episode_id:
             with suppress(SettingsError, PlatformApiError):
+                async with platform_lock:
+                    if platform_client is None:
+                        platform_client = await asyncio.to_thread(PlatformClient.from_env)
                 episode = await asyncio.to_thread(
-                    lambda: PlatformClient.from_env().wait_for_episode(episode_id, response_id)
+                    platform_client.wait_for_episode, episode_id, response_id
                 )
+        if episode is not None and on_episode is not None:
+            on_episode(episode)
         if response.status != "completed" or response.error is not None:
             # Failed runs (e.g. the model rate-limited inside the agent) don't raise.
             detail = response.error or response.incomplete_details
@@ -184,9 +196,7 @@ def hosted_target(entry: AgentEntry, endpoint: str, credential: AsyncTokenCreden
             text=text,
             value=value,
             failure=(
-                RunError(kind="unparseable", code="invalid_output")
-                if value is None and text
-                else None
+                RunError(kind="unparseable", code="invalid_output") if value is None else None
             ),
             tool_trace=episode.tool_calls if episode else trace,
             tool_trace_complete=episode is not None and not episode.truncated,
