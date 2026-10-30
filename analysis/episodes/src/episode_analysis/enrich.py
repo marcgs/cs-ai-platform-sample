@@ -20,10 +20,16 @@ def enrich(
     """Keep unknown context unknown; do not consult scenarios or any answer key."""
     context: dict[str, object] = {}
     for call in episode.tool_calls:
-        if call.name.split("___")[-1] == "get_machine_context" and call.result:
+        if (
+            call.name.split("___")[-1] == "get_machine_context"
+            and call.result
+            and call.error is None
+        ):
             try:
                 raw = TypeAdapter(dict[str, JsonValue]).validate_json(call.result)
             except ValueError:
+                continue
+            if "error" in raw:
                 continue
             context = dict(raw)
             break

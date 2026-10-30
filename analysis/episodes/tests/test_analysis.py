@@ -359,7 +359,8 @@ def test_unsupported_or_protected_generation_settings_are_rejected(name, value):
 
 
 @pytest.mark.parametrize("incident", ["M-0001: pressure excursion", "Pressure excursion"])
-def test_real_machine_context_overrides_conflicting_or_missing_incident_id(incident):
+@pytest.mark.parametrize("failed_lookup", ["none", "tool_error", "error_payload"])
+def test_real_machine_context_overrides_conflicting_or_missing_incident_id(incident, failed_lookup):
     dataset = load_seed()
     context = DiagnosticsTools(dataset).machine_context("M-0002")
     call = ToolCall(
@@ -369,13 +370,26 @@ def test_real_machine_context_overrides_conflicting_or_missing_incident_id(incid
         started_at=dataset.reference_time,
         duration_ms=1,
     )
+    calls = [call]
+    if failed_lookup != "none":
+        failed = call.model_copy(
+            update={
+                "error": "Lookup failed" if failed_lookup == "tool_error" else None,
+                "result": json.dumps(
+                    {"machine_id": "M-9999"}
+                    if failed_lookup == "tool_error"
+                    else {"error": "Unknown machine: M-9999"}
+                ),
+            }
+        )
+        calls.insert(0, failed)
     episode = Episode(
         id="captured-context",
         source="real",
         agent="rca",
         agent_version="test",
         input=incident,
-        tool_calls=[call],
+        tool_calls=calls,
     )
     reviews = [
         Review(

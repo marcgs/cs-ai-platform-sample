@@ -81,7 +81,8 @@ caches/preflights are invalidated; obtain a fresh estimate before any approved r
   Majority agreement is not expert correctness. Sparse/conflicting reviews stay
   uncertain; no single strict reviewer can establish a miss.
 - Captured `machine_id` takes precedence over legacy synthetic `id` and incident
-  text. Platform/software come from that context, with an explicit optional
+  text. Failed calls and JSON error payloads are skipped so a later successful
+  lookup can supply context. Platform/software come from that context, with an explicit optional
   dataset fallback for the same selected machine. Expected modes are majority
   reviewer assertions, labeled `reviewer_consensus`, not truth. The pipeline does
   not read scenarios, answer keys or `EpisodeTruth.actual_failure_mode` (the
