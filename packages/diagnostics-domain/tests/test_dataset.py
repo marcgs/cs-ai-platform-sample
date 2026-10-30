@@ -223,3 +223,71 @@ def test_overlapping_update_context_agrees_with_causal_failure_mode(
             assert machine.last_software_update <= scenario.onset.date()
         else:
             assert "temporal distraction" in entry.text
+
+
+def test_retrospective_challenge_notes_follow_observations(dataset: DiagnosticsDataset) -> None:
+    for scenario in dataset.scenarios:
+        if scenario.category in ("clean", "injection"):
+            continue
+        entry = dataset.logbook_for(scenario.machine_id)[0]
+        assert scenario.onset < entry.timestamp <= scenario.reported_at, scenario.id
+        for series in dataset.telemetry:
+            if series.machine_id != scenario.machine_id:
+                continue
+            latest = (
+                max(series.timestamps)
+                if series.timestamps
+                else series.start
+                + timedelta(minutes=(len(series.values) - 1) * series.interval_minutes)
+            )
+            assert latest < entry.timestamp, (scenario.id, series.signal)
+        for event in dataset.events_for(scenario.machine_id):
+            assert event.timestamp < entry.timestamp, (scenario.id, event.id)
+            if event.received_at is not None:
+                assert event.received_at < entry.timestamp, (scenario.id, event.id)
+
+
+def test_precursor_clues_remain_before_onset(dataset: DiagnosticsDataset) -> None:
+    for scenario in dataset.scenarios:
+        if scenario.category not in ("clean", "injection"):
+            continue
+        mode = dataset.failure_mode(scenario.expected_failure_mode)
+        assert any(
+            entry.timestamp < scenario.onset
+            and any(clue in entry.text for clue in mode.logbook_clues)
+            for entry in dataset.logbook_for(scenario.machine_id)
+        ), scenario.id
+
+
+def test_exporter_gap_finding_follows_observed_recovery(dataset: DiagnosticsDataset) -> None:
+    scenario = next(scenario for scenario in dataset.scenarios if scenario.id == "SC-043")
+    series = dataset.telemetry_for(scenario.machine_id, "chamber_pressure_pa")
+    recovery = next(
+        later
+        for earlier, later in zip(series.timestamps, series.timestamps[1:], strict=False)
+        if later - earlier > timedelta(minutes=series.interval_minutes)
+    )
+    entry = dataset.logbook_for(scenario.machine_id)[0]
+    assert recovery < entry.timestamp <= scenario.reported_at
+
+
+def test_maintenance_findings_follow_completed_window_and_checks(
+    dataset: DiagnosticsDataset,
+) -> None:
+    for scenario in dataset.scenarios:
+        if scenario.category != "nuisance_alarm":
+            continue
+        entry = dataset.logbook_for(scenario.machine_id)[0]
+        if "Logged maintenance window" not in entry.text:
+            continue
+        completed = scenario.onset + timedelta(hours=4)
+        recovered = dataset.telemetry_for(
+            scenario.machine_id, "chamber_pressure_pa", start=completed
+        )
+        signal = dataset.signal(recovered.signal)
+        assert recovered.values
+        assert all(abs(value - signal.nominal) < signal.tolerance for value in recovered.values)
+        last_check = recovered.start + timedelta(
+            minutes=(len(recovered.values) - 1) * recovered.interval_minutes
+        )
+        assert completed <= recovered.start <= last_check < entry.timestamp <= scenario.reported_at

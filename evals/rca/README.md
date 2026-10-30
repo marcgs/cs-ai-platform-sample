@@ -28,7 +28,10 @@ filter; use repeated `--case` options to restrict execution to original18.
 - `data_quality_disclosed`: the relevant collection anomaly or sensor fault is stated in
   the agent's own findings, uncertainty or checks. Word/phrase matching preserves
   supported inflections without treating substrings such as "late" in "correlate"
-  as anomaly disclosure.
+  as anomaly disclosure. Sensor/gauge wording must connect locally to an anomaly
+  within one finding or check; unrelated physical faults and routine gauge
+  comparisons do not earn sensor credit. This remains a deterministic wording
+  heuristic, not a semantic entailment judge.
 - `calibration`: binary Brier loss of the top hypothesis's confidence against lenient
   correctness, **lower is better**. Informational, not a threshold.
 

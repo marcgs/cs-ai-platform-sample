@@ -138,18 +138,18 @@ The output directories must be new or empty, not a mix with a previous populatio
 
 ```bash
 uv run generate-feedback --count 300 --seed 20261030 \
-  --output-dir analysis/episodes/output/held-out-final
+  --output-dir analysis/episodes/output/held-out-chronology
 uv run analyze-episodes sample \
-  --episodes analysis/episodes/output/held-out-final/episodes.jsonl \
-  --reviews analysis/episodes/output/held-out-final/reviews.jsonl \
+  --episodes analysis/episodes/output/held-out-chronology/episodes.jsonl \
+  --reviews analysis/episodes/output/held-out-chronology/reviews.jsonl \
   --source synthetic --misses 30 --controls 20 --seed l3-pilot-v1 \
-  --output-dir analysis/episodes/output/pilot-final
+  --output-dir analysis/episodes/output/pilot-chronology
 
 uv run analyze-episodes analyze \
-  --episodes analysis/episodes/output/pilot-final/episodes.jsonl \
-  --reviews analysis/episodes/output/pilot-final/reviews.jsonl \
+  --episodes analysis/episodes/output/pilot-chronology/episodes.jsonl \
+  --reviews analysis/episodes/output/pilot-chronology/reviews.jsonl \
   --source synthetic --synthetic-seed-context \
-  --output analysis/episodes/output/pilot-final-prepared
+  --output analysis/episodes/output/pilot-chronology-prepared
 ```
 
 `sample` reads only episodes and reviews, not the answer key or model labels.
@@ -171,28 +171,47 @@ request; the token estimate is not a hard billing ceiling.
 
 Offline preparation has already generated these files in the preparation
 worktree. Reuse them there rather than rerunning generation into nonempty
-directories. The final population was generated once from the integration
-of Q3 `b90d157`, L1 `59d273d` and Q2 `fc140cb`, retaining L3's review fixes.
-It includes the exported update-date and historical fallback-evidence corrections.
+directories. The chronology-corrected population was generated once after merging
+authoritative main `ae90cc5`, containing merged Q2/L2/Q3, into L3's `ed86b50`.
+L3's review fixes, L1's existing skill and Q8/S6 notes remain intact. The unfinished
+L1 restack has not been pulled. The correction moves retrospective challenge
+logbook findings after their observations; it changes no classifier logic or settings.
 The population has 300 episodes and 1,246 reviews; the pilot has 50 episodes and
 207 reviews. Older `held-out`, `pilot`, `*-corrected` and assistant-audit artifacts
 remain unchanged as **pre-final preparation only**, not acceptance input. Do not
-mix their inputs, reports or caches with the final cohort.
+mix their inputs, reports or caches with the corrected cohort.
 
-**No final audit, model calls or answer-key inspection has occurred.** Q2's
-review is clear and #13 is merged. After the audited integration is committed,
-freeze a blind audit of these final inputs and obtain a fresh estimate with the
-real model configuration. The private precommit estimate is not final run approval:
+The previous `held-out-final`, `pilot-final`, freeze and blind-input pages also
+remain untouched, with their original provenance. This is a technical repair of
+the **same preselected cohort**, not a new outcome-selected sample. Verification
+asserts identical population IDs/order, selection file, 30 candidate IDs,
+20 comparison IDs and review bytes. Only captured `get_logbook` result timestamps
+change: 85/300 population episodes and 13/50 pilot episodes. Of the original
+20 blind raw records, 16 remain canonical-byte/semantic identical and four change
+only those timestamps. Stop if any other difference appears; do not select again.
+
+The four corrected raw records are prepared separately, including captured
+diagnostic output and reviews but no assessments, labels or planted metadata.
+Their fresh isolated assistant audit is pending. Old audit assessments were not
+read to perform this correction. Assistant review is not human/domain-expert
+manual acceptance.
+
+**No model calls or held-out answer-key inspection has occurred.** Commit and
+freeze the reviewed integration, complete the four-record blind correction audit
+and obtain a fresh final-configuration estimate before labeling. The new cache
+is separate and empty; the preliminary estimate remains 30 logical calls,
+72,463 approximate input tokens and at most 36,000 output tokens, unchanged from
+the prior budget. Its fingerprint changes, so the old estimate cannot approve it:
 
 ```bash
 test -n "$FOUNDRY_PROJECT_ENDPOINT"
 test -n "$FOUNDRY_MODEL_DEPLOYMENT_NAME"
 uv run analyze-episodes analyze \
-  --episodes analysis/episodes/output/pilot-final/episodes.jsonl \
-  --reviews analysis/episodes/output/pilot-final/reviews.jsonl \
+  --episodes analysis/episodes/output/pilot-chronology/episodes.jsonl \
+  --reviews analysis/episodes/output/pilot-chronology/reviews.jsonl \
   --source synthetic --synthetic-seed-context --labeler foundry \
-  --cache analysis/episodes/output/pilot-final-labels \
-  --estimate analysis/episodes/output/pilot-final-estimate.json
+  --cache analysis/episodes/output/pilot-chronology-labels \
+  --estimate analysis/episodes/output/pilot-chronology-estimate.json
 ```
 
 Inspect the estimate and obtain approval for **this small cohort and budget**.
@@ -201,12 +220,12 @@ token-heavy run, the approved live command is:
 
 ```bash
 uv run analyze-episodes analyze \
-  --episodes analysis/episodes/output/pilot-final/episodes.jsonl \
-  --reviews analysis/episodes/output/pilot-final/reviews.jsonl \
+  --episodes analysis/episodes/output/pilot-chronology/episodes.jsonl \
+  --reviews analysis/episodes/output/pilot-chronology/reviews.jsonl \
   --source synthetic --synthetic-seed-context --labeler foundry \
-  --cache analysis/episodes/output/pilot-final-labels \
-  --approved-estimate analysis/episodes/output/pilot-final-estimate.json \
-  --output analysis/episodes/output/pilot-final-classified
+  --cache analysis/episodes/output/pilot-chronology-labels \
+  --approved-estimate analysis/episodes/output/pilot-chronology-estimate.json \
+  --output analysis/episodes/output/pilot-chronology-classified
 ```
 
 There is **no authorization to classify all 936 candidates** in the default
@@ -214,12 +233,12 @@ There is **no authorization to classify all 936 candidates** in the default
 
 ### Blind manual audit and final benchmark
 
-1. Keep `held-out-final/answer_key.json` closed. An auditor first reads the selected
+1. Keep `held-out-chronology/answer_key.json` closed. An auditor first reads the selected
    transcripts, tool results, captured `Episode.output` and raw reviews, without
    seeing model labels/rationales or planted truth metadata. Audit at
    least ten candidate misses and ten noncandidate comparisons, selected by
    ascending SHA-256 of `audit-v1:<episode-id>` within each group. The candidate
-   IDs come from `pilot-final-prepared.json`'s `unclassified` entries, not the key.
+   IDs come from `pilot-chronology-prepared.json`'s `unclassified` entries, not the key.
    Create a blank, deterministic audit sheet without opening any key or model
    report:
 
@@ -230,13 +249,13 @@ There is **no authorization to classify all 936 candidates** in the default
    from pathlib import Path
 
    output = Path("analysis/episodes/output")
-   report = json.loads((output / "pilot-final-prepared.json").read_text())
+   report = json.loads((output / "pilot-chronology-prepared.json").read_text())
    candidates = {row["episode"]["id"] for row in report["unclassified"]}
    comparisons = set(report["episode_ids"]) - candidates
    def order(value):
        return hashlib.sha256(f"audit-v1:{value}".encode()).hexdigest()
    selected = sorted(candidates, key=order)[:10] + sorted(comparisons, key=order)[:10]
-   with (output / "pilot-final-audit.jsonl").open("x", encoding="utf-8") as stream:
+   with (output / "pilot-chronology-audit.jsonl").open("x", encoding="utf-8") as stream:
        for episode_id in sorted(selected, key=order):
            stream.write(json.dumps({
                "episode_id": episode_id, "assessment": None, "category": None,
@@ -259,10 +278,10 @@ There is **no authorization to classify all 936 candidates** in the default
 
    ```bash
    uv run analyze-episodes benchmark \
-     --report analysis/episodes/output/pilot-final-classified.json \
-     --answer-key analysis/episodes/output/held-out-final/answer_key.json \
+     --report analysis/episodes/output/pilot-chronology-classified.json \
+     --answer-key analysis/episodes/output/held-out-chronology/answer_key.json \
      --allow-subset --sample-size 100 \
-     --output analysis/episodes/output/pilot-final-benchmark.json
+     --output analysis/episodes/output/pilot-chronology-benchmark.json
    ```
 
 5. Record every pattern's rank, coverage, purity and route, category agreement and

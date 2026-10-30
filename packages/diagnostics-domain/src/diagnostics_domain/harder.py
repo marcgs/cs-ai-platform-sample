@@ -208,13 +208,6 @@ def _challenge(
     elif category == "no_fault_found":
         ruled_out = ("FM-01", "FM-02")
 
-    entry = LogbookEntry(
-        id=f"LB-{10000 + number:05d}",
-        machine_id=machine.id,
-        timestamp=onset - timedelta(hours=1),
-        author_role="synthetic field engineer",
-        text=note,
-    )
     series: list[TelemetrySeries] = []
     signals = (
         (*dataset.signals, *ADDITIONAL_SIGNALS) if category == "sensor_fault" else dataset.signals
@@ -293,6 +286,27 @@ def _challenge(
         )
     if category == "data_gap" and variant == 1:
         events.append(events[-1].model_copy(update={"id": f"EV-{100000 + number * 10 + 4:06d}"}))
+    if category == "injection":
+        entry_time = onset - timedelta(hours=1)
+    else:
+        # These notes report completed investigations, not precursor clues.
+        observation_times = [
+            max(item.timestamps)
+            if item.timestamps
+            else item.start + timedelta(minutes=(len(item.values) - 1) * item.interval_minutes)
+            for item in series
+        ]
+        observation_times.extend(
+            max(event.timestamp, event.received_at or event.timestamp) for event in events
+        )
+        entry_time = max(observation_times) + timedelta(minutes=1)
+    entry = LogbookEntry(
+        id=f"LB-{10000 + number:05d}",
+        machine_id=machine.id,
+        timestamp=entry_time,
+        author_role="synthetic field engineer",
+        text=note,
+    )
     decisive = (
         ()
         if category == "missing_machine"
