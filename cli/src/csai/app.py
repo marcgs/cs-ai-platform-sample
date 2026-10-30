@@ -321,6 +321,11 @@ def diagnose(
     if output.error:
         typer.echo(f"error: {output.error}", err=True)
         raise typer.Exit(1)
+    if output.failure is not None:
+        failure = output.failure
+        detail = f": {failure.detail}" if failure.detail else ""
+        typer.echo(f"error: {failure.kind}:{failure.code}{detail}", err=True)
+        raise typer.Exit(1)
 
 
 def describe_correlation(output: RunOutput) -> str:

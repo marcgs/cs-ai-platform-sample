@@ -213,12 +213,31 @@ def test_real_local_episode_export_and_full_tool_transcript(
     def create(*_: object, **kwargs: Any) -> Any:
         turns = [[call("machine_status", machine_id="M-0001")]]
         if not fails:
-            turns.append([text("done")])
+            report = RcaReport(
+                machine_id="M-0001",
+                summary="Synthetic diagnosis",
+                hypotheses=[
+                    Hypothesis(
+                        rank=1,
+                        failure_mode_id="FM-01",
+                        title="Synthetic fault",
+                        root_cause="Synthetic cause",
+                        confidence=0.9,
+                        evidence=[
+                            Evidence(source="machine_status", ref="M-0001", excerpt="stable")
+                        ],
+                        recommended_checks=[],
+                    )
+                ],
+                missing_information=[],
+            )
+            turns.append([text(report.model_dump_json())])
         return build_agent(
             AgentSpec(name="test", version="1", description="test", instructions="test"),
             client=ScriptedChatClient(turns),
             store=kwargs["store"],
             tools=[machine_status],
+            response_format=RcaReport,
         )
 
     monkeypatch.setattr(targets, "configure_telemetry", lambda *_, **__: None)
@@ -447,3 +466,24 @@ def test_sparse_informational_mean_and_ci_are_not_zero_filled(
     assert summary["gate_intervals"]["absent"] == [0.0, 0.0]
     sparse_line = next(line for line in result.output.splitlines() if "sparse " in line)
     assert "0.80  95% CI [0.80, 0.80]" in sparse_line
+
+
+def test_diagnose_reports_structured_failure_and_exits_nonzero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cs_platform.evals import RunError
+
+    def factory(*_: object) -> Target:
+        async def run(case: EvalCase) -> RunOutput:
+            return RunOutput(
+                text="malformed report",
+                failure=RunError(kind="unparseable", code="invalid_output"),
+            )
+
+        return run
+
+    monkeypatch.setattr(cli, "local_target", factory)
+    result = runner.invoke(cli.app, ["--no-azd", "diagnose", "M-0001: check", "--target", "local"])
+    assert result.exit_code == 1, result.output
+    assert "malformed report" in result.output
+    assert "error: unparseable:invalid_output" in result.output
