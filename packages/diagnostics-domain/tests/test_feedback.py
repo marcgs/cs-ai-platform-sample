@@ -96,6 +96,29 @@ def test_planted_transcripts_are_distinguishable_from_successful_controls() -> N
             }
 
 
+def test_error_event_citations_match_the_observed_code_in_compact_transcripts() -> None:
+    population = generate_feedback(count=100)
+    for episode in population.episodes:
+        events = json.loads(
+            next(
+                call.result or "[]"
+                for call in episode.tool_calls
+                if call.name == "get_error_events"
+            )
+        )
+        code = next(
+            call.arguments["code"]
+            for call in episode.tool_calls
+            if call.name == "lookup_error_code"
+        )
+        report = RcaReport.model_validate(episode.output)
+        for evidence in report.hypotheses[0].evidence:
+            if evidence.source == "error_event":
+                cited = next(event for event in events if event["id"] == evidence.ref)
+                assert cited["code"] == code
+                assert evidence.excerpt == f"Observed {cited['code']}."
+
+
 def test_reviewer_population_has_noise_without_turning_assertions_into_truth() -> None:
     population = generate_feedback(count=100)
     truth_by_id = {truth.episode_id: truth for truth in population.answer_key.episodes}

@@ -95,6 +95,16 @@ def make_transcript(
                 "message": f"Unmapped diagnostic event; observed symptom: {scenario.symptom}",
             }
         )
+    matching_event = next(
+        (event.model_dump(mode="json") for event in reversed(events) if event.code == code),
+        None,
+    )
+    if context == 2:
+        matching_event = event_rows[-1]
+    if matching_event is None:
+        raise ValueError(f"Scenario {scenario.id} has no event for {code}")
+    if matching_event not in event_rows:
+        event_rows = [*event_rows[-3:], matching_event]
     call("get_error_events", {"machine_id": machine.id}, event_rows)
     call(
         "lookup_error_code",
@@ -194,7 +204,7 @@ def make_transcript(
                 else [
                     {
                         "source": "error_event",
-                        "ref": event_rows[-1]["id"] if event_rows else code,
+                        "ref": matching_event["id"],
                         "excerpt": f"Observed {code}.",
                     }
                 ]
