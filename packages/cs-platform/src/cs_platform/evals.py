@@ -381,6 +381,9 @@ def paired_difference_intervals(
     candidate: SuiteResult,
 ) -> dict[str, tuple[float, float]]:
     """Bootstrap paired candidate-minus-baseline scores on the same case/repeat cohort."""
+    required = baseline.minimum_score_metrics
+    if required != candidate.minimum_score_metrics:
+        raise ValueError("paired comparison requires identical minimum-score metrics")
     before = {(case.case_id, case.repeat): case for case in baseline.quality_cases if case.gated}
     after = {(case.case_id, case.repeat): case for case in candidate.quality_cases if case.gated}
     if before.keys() != after.keys():
@@ -388,12 +391,15 @@ def paired_difference_intervals(
     differences: list[CaseResult] = []
     for key in sorted(before):
         old, new = before[key], after[key]
-        if old.scores.keys() != new.scores.keys():
+        if old.scores.keys() - required != new.scores.keys() - required:
             raise ValueError("paired comparison requires identical metric applicability")
         differences.append(
             new.model_copy(
                 update={
-                    "scores": {name: value - old.scores[name] for name, value in new.scores.items()}
+                    "scores": {
+                        name: new.scores.get(name, 0.0) - old.scores.get(name, 0.0)
+                        for name in required | new.scores.keys()
+                    }
                 }
             )
         )
@@ -444,7 +450,7 @@ async def run_suite(
             output = await attempt(case)
         scores = {} if is_plumbing(output) else score(suite, case, output)
         if output.failure is None and any(
-            value < 1.0 for name, value in scores.items() if name in suite.thresholds.minimums
+            scores.get(name, 0.0) < 1.0 for name in suite.thresholds.minimums
         ):
             output.failure = RunError(kind="wrong_answer", code="quality_miss")
         result = CaseResult(
