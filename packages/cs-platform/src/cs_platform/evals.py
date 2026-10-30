@@ -178,6 +178,7 @@ class CaseResult(BaseModel):
 class SuiteResult(BaseModel):
     suite: str
     cases: list[CaseResult]
+    minimum_score_metrics: frozenset[str] = frozenset()
     bootstrap_samples: int = 2000
     bootstrap_seed: int = 42
 
@@ -192,7 +193,10 @@ class SuiteResult(BaseModel):
 
     @property
     def gate_metrics(self) -> dict[str, float]:
-        return aggregate([case for case in self.quality_cases if case.gated], missing_zero=True)
+        return aggregate(
+            [case for case in self.quality_cases if case.gated],
+            zero_fill=self.minimum_score_metrics,
+        )
 
     @property
     def intervals(self) -> dict[str, tuple[float, float]]:
@@ -206,7 +210,7 @@ class SuiteResult(BaseModel):
             [case for case in self.quality_cases if case.gated],
             samples=self.bootstrap_samples,
             seed=self.bootstrap_seed,
-            missing_zero=True,
+            zero_fill=self.minimum_score_metrics,
         )
 
     @property
@@ -236,7 +240,10 @@ class SuiteResult(BaseModel):
 
     def failures(self, thresholds: Thresholds) -> list[str]:
         """Why the gate fails: errored cases first, then threshold violations."""
-        metrics = self.gate_metrics
+        metrics = aggregate(
+            [case for case in self.quality_cases if case.gated],
+            zero_fill=frozenset(thresholds.minimums),
+        )
         failures: list[str] = []
         if self.errored:
             failures.append(f"{len(self.errored)} case(s) errored: {', '.join(self.errored)}")
@@ -252,9 +259,17 @@ class SuiteResult(BaseModel):
     def warnings(self, thresholds: Thresholds) -> list[str]:
         """Flag saturated gates and uncertainty larger than the threshold margin."""
         warnings: list[str] = []
-        intervals = self.gate_intervals
+        gated = [case for case in self.quality_cases if case.gated]
+        minimums = frozenset(thresholds.minimums)
+        metrics = aggregate(gated, zero_fill=minimums)
+        intervals = bootstrap_intervals(
+            gated,
+            samples=self.bootstrap_samples,
+            seed=self.bootstrap_seed,
+            zero_fill=minimums,
+        )
         for name, minimum in thresholds.minimums.items():
-            value = self.gate_metrics.get(name)
+            value = metrics.get(name)
             if value is None:
                 continue
             if value >= 0.95:
@@ -314,11 +329,15 @@ def classify_error(output: RunOutput) -> RunError | None:
     return None
 
 
-def aggregate(cases: list[CaseResult], *, missing_zero: bool = False) -> dict[str, float]:
-    names = sorted({name for case in cases for name in case.scores})
+def aggregate(
+    cases: list[CaseResult], *, zero_fill: frozenset[str] = frozenset()
+) -> dict[str, float]:
+    if not cases:
+        return {}
+    names = sorted(zero_fill | {name for case in cases for name in case.scores})
     return {
         name: mean(
-            case.scores.get(name, 0.0) for case in cases if missing_zero or name in case.scores
+            case.scores.get(name, 0.0) for case in cases if name in zero_fill or name in case.scores
         )
         for name in names
     }
@@ -329,17 +348,19 @@ def bootstrap_intervals(
     *,
     samples: int = 2000,
     seed: int = 42,
-    missing_zero: bool = False,
+    zero_fill: frozenset[str] = frozenset(),
 ) -> dict[str, tuple[float, float]]:
     """Percentile 95% CIs: resample cases, then repeats within each sampled case."""
     if samples < 1:
         raise ValueError("bootstrap samples must be positive")
+    if not cases:
+        return {}
     rng = random.Random(seed)
     intervals: dict[str, tuple[float, float]] = {}
-    for name in sorted({name for case in cases for name in case.scores}):
+    for name in sorted(zero_fill | {name for case in cases for name in case.scores}):
         clusters: dict[str, list[float]] = {}
         for case in sorted(cases, key=lambda case: (case.case_id, case.repeat)):
-            if missing_zero or name in case.scores:
+            if name in zero_fill or name in case.scores:
                 clusters.setdefault(case.case_id, []).append(case.scores.get(name, 0.0))
         groups = list(clusters.values())
         draws: list[float] = []
@@ -443,4 +464,8 @@ async def run_suite(
             for repeat in range(1, repeats + 1)
         )
     )
-    return SuiteResult(suite=suite.name, cases=list(results))
+    return SuiteResult(
+        suite=suite.name,
+        cases=list(results),
+        minimum_score_metrics=frozenset(suite.thresholds.minimums),
+    )

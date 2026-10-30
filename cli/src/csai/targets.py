@@ -98,7 +98,10 @@ def local_target(
         episode = await store.get(episode_id) if isinstance(episode_id, str) else None
         if episode is not None and on_episode is not None:
             on_episode(episode)
-        value = response.value
+        try:
+            value = response.value
+        except ValidationError:
+            value = None
         parsed = (
             value
             if isinstance(value, entry.output_type)

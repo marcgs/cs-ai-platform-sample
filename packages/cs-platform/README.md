@@ -72,8 +72,9 @@ structured output remains a scored quality failure. `RunOutput.failure` classifi
 `EvalSuite.gate_case_ids` declares the fixed regression cohort. Its default (`None`) gates
 all cases for legacy suites. Extended suites must explicitly retain their original case
 IDs: new categories, including their errors, are informational only, never pooled into
-thresholds. Missing legacy gate metrics still count as zero. Sparse informational metrics
-average only applicable case-runs.
+thresholds. Only metrics with declared minimums zero-fill missing scores.
+`run_suite` records those names in `SuiteResult.minimum_score_metrics`.
+Sparse informational means and intervals use only applicable case-runs.
 
 `SuiteResult.intervals` and `gate_intervals` use deterministic 95% percentile bootstrap
 intervals (2,000 draws, seed 42). Each draw samples cases, then repeats within those cases;
@@ -97,6 +98,8 @@ agent while the harness changes. Hosted tool traces are resolved only through th
 response-bound episode; unavailable or storage-truncated traces are explicitly incomplete.
 Local `--episodes-output` exports an explicitly `real` JSONL population, including failed
 attempts, and rejects hosted use or an existing destination.
+All result, summary, HTML, transcript and episode-export destinations must be distinct
+and unused before model calls. Writers exclusively create files and transcript directories.
 
 Predeclare a primary metric and practical noninferiority margins for the other gated
 metrics before measuring. Keep a change only if the primary metric's paired improvement

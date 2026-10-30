@@ -314,3 +314,136 @@ def test_report_only_selection_does_not_evaluate_or_claim_regression_gate(
     assert summary["gate_metrics"] == {}
     assert summary["gate_case_ids"] == []
     assert summary["metrics"] == {"exact": 0.0}
+
+
+@pytest.mark.parametrize("answer", ["not JSON", '{"machine_id":"M-0001"}'])
+def test_malformed_lazy_output_is_scored_once_with_text_and_tools(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any, answer: str
+) -> None:
+    from agent_framework import tool
+
+    @tool
+    def machine_status(machine_id: str) -> str:
+        """Return synthetic machine status."""
+        return f"{machine_id}: stable"
+
+    def create(*_: object, **kwargs: Any) -> Any:
+        return build_agent(
+            AgentSpec(name="test", version="1", description="test", instructions="test"),
+            client=ScriptedChatClient(
+                [[call("machine_status", machine_id="M-0001")], [text(answer)]]
+            ),
+            store=kwargs["store"],
+            tools=[machine_status],
+            response_format=RcaReport,
+        )
+
+    monkeypatch.setattr(targets, "configure_telemetry", lambda *_, **__: None)
+    monkeypatch.setitem(targets.AGENTS, "rca", replace(targets.AGENTS["rca"], create=create))
+    monkeypatch.setattr(cli, "run_suite", partial(run_suite, backoff_s=0))
+    output = tmp_path / "results.jsonl"
+    result = runner.invoke(
+        cli.app,
+        ["--no-azd", "eval", "rca", "--case", "SC-001", "--output", str(output)],
+    )
+    assert result.exit_code == 1, result.output
+    [record] = [json.loads(line) for line in output.read_text().splitlines()]
+    run = record["output"]
+    assert run["failure"] == {
+        "kind": "unparseable",
+        "code": "invalid_output",
+        "detail": None,
+    }
+    assert run["attempts"] == 1
+    assert run["text"] == answer
+    assert run["error"] is None
+    assert run["episode_id"]
+    assert run["tool_trace_complete"]
+    assert run["tool_calls"] == ["machine_status"]
+    assert "stable" in run["tool_trace"][0]["result"]
+    assert record["scores"]["schema_valid"] == 0
+    summary = json.loads(output.with_suffix(".summary.json").read_text())
+    assert summary["quality_case_runs"] == 1
+
+
+@pytest.mark.parametrize(
+    ("output_name", "episode_name", "existing"),
+    [
+        ("results.html", None, None),
+        ("results.jsonl", None, "results.summary.json"),
+        ("results.json", None, "results-transcripts"),
+        ("results.jsonl", None, "results.html"),
+        ("results.jsonl", "results.jsonl", None),
+        ("results.jsonl", "results.summary.json", None),
+        ("results.jsonl", "results.html", None),
+        ("results.jsonl", "results-transcripts", None),
+        ("results.jsonl", "results-transcripts/episodes.jsonl", None),
+        ("results.jsonl", "episodes.jsonl", "episodes.jsonl"),
+    ],
+)
+def test_artifact_conflicts_fail_before_running_target(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Any,
+    output_name: str,
+    episode_name: str | None,
+    existing: str | None,
+) -> None:
+    target = Mock(side_effect=AssertionError("target must not run"))
+    monkeypatch.setattr(cli, "local_target", target)
+    if existing is not None:
+        (tmp_path / existing).write_text("retained", encoding="utf-8")
+    arguments = [
+        "--no-azd",
+        "eval",
+        "rca",
+        "--case",
+        "SC-001",
+        "--output",
+        str(tmp_path / output_name),
+    ]
+    if episode_name is not None:
+        arguments.extend(["--episodes-output", str(tmp_path / episode_name)])
+    result = runner.invoke(cli.app, arguments)
+    assert result.exit_code == 2, result.output
+    assert "artifact destination" in result.output
+    target.assert_not_called()
+    if existing is not None:
+        assert (tmp_path / existing).read_text("utf-8") == "retained"
+    assert len(list(tmp_path.iterdir())) == int(existing is not None)
+
+
+def test_sparse_informational_mean_and_ci_are_not_zero_filled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    from cs_platform.evals import EvalCase, EvalSuite, Thresholds
+
+    def evaluate(case: EvalCase, output: RunOutput) -> dict[str, float]:
+        return {"required": 1.0, "sparse": 0.8} if case.id == "A" else {}
+
+    suite = EvalSuite(
+        "sparse",
+        tuple(EvalCase(id=name, input="q", expected={}) for name in ("A", "B")),
+        Thresholds(minimums={"required": 0.75, "absent": 0.5}),
+        (evaluate,),
+    )
+
+    def factory(*_: object) -> Target:
+        async def run(case: EvalCase) -> RunOutput:
+            return RunOutput(text="answer")
+
+        return run
+
+    monkeypatch.setitem(
+        targets.AGENTS, "rca", replace(targets.AGENTS["rca"], load_suite=lambda: suite)
+    )
+    monkeypatch.setattr(cli, "local_target", factory)
+    output = tmp_path / "results.jsonl"
+    result = runner.invoke(cli.app, ["--no-azd", "eval", "rca", "--output", str(output)])
+    assert result.exit_code == 1, result.output
+    summary = json.loads(output.with_suffix(".summary.json").read_text())
+    assert summary["gate_metrics"] == {"required": 0.5, "sparse": 0.8, "absent": 0.0}
+    assert summary["gate_intervals"]["sparse"] == [0.8, 0.8]
+    assert summary["gate_intervals"]["required"] == [0.0, 1.0]
+    assert summary["gate_intervals"]["absent"] == [0.0, 0.0]
+    sparse_line = next(line for line in result.output.splitlines() if "sparse " in line)
+    assert "0.80  95% CI [0.80, 0.80]" in sparse_line

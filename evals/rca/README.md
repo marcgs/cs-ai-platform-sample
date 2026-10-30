@@ -48,6 +48,8 @@ Each run writes:
 
 Artifacts are private and gitignored under `.eval-results/`. An incomplete tool
 transcript is explicitly flagged, not treated as an empty successful trace.
+All artifact destinations, including episode exports, must be distinct and unused.
+Collisions are rejected before model calls; writers refuse to overwrite existing files.
 
 ## Errors and uncertainty
 
@@ -57,6 +59,8 @@ are excluded from quality denominators but still fail the regression gate.
 Invalid structured output is scored, is not retried as plumbing, and fails the gate.
 Automatic `wrong_answer` inference considers only metrics with declared minimums;
 informational scores need not be higher-is-better.
+Missing scores count as zero only for metrics with declared regression minimums.
+Sparse informational means and intervals retain their applicable-score denominator.
 
 Intervals are deterministic hierarchical case-then-repeat 95% percentile bootstrap
 intervals: 2,000 draws, seed 42. Repeats do not become independent cases.
