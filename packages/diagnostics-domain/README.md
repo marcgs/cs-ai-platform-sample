@@ -39,7 +39,9 @@ The stable pattern IDs are `vacuum_telemetry_omission`,
 
 Every ten records contain five misses and five matched correct controls, over
 seed-scenario machines and causal failure modes. Pattern variants overlay transcript
-data; they do not mutate the seed dataset. IDs, tool timings, timestamps and reviews
+data; they do not mutate the seed dataset. The post-update variant uses the same
+update date in machine context and its logbook entry, for misses and controls.
+IDs, tool timings, timestamps and reviews
 depend only on the seed, index and committed seed data. More records preserve the
 existing prefix. The displayed telemetry windows are compact transcript excerpts.
 

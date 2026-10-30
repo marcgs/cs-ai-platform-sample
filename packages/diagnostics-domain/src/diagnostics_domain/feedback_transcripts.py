@@ -80,7 +80,11 @@ def make_transcript(
             )
         )
 
-    call("get_machine_context", {"machine_id": machine.id}, machine.model_dump(mode="json"))
+    machine_context = machine.model_dump(mode="json")
+    software_update = scenario.onset - timedelta(hours=2)
+    if context == 1:
+        machine_context["last_software_update"] = software_update.date().isoformat()
+    call("get_machine_context", {"machine_id": machine.id}, machine_context)
     events = dataset.events_for(machine.id, scenario.onset)
     event_rows = [event.model_dump(mode="json") for event in events[-4:]]
     code = mode.error_codes[-1]
@@ -125,7 +129,7 @@ def make_transcript(
         entries.append(
             {
                 "id": "LB-SYN-UPDATE",
-                "timestamp": (scenario.onset - timedelta(hours=2)).isoformat(),
+                "timestamp": software_update.isoformat(),
                 "text": "Software update completed before onset; shared codes persisted.",
                 "software_release": machine.software_release,
             }

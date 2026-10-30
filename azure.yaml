@@ -28,7 +28,7 @@ services:
       prepackage:
         posix:
           shell: sh
-          run: ../../scripts/package_function.sh diagnostics-mcp diagnostics-domain
+          run: ../../scripts/package_function.sh diagnostics-mcp diagnostics-domain cs-platform
       # Register the MCP server as a project connection and publish the "diagnostics"
       # toolbox (MCP server + AI Search); sets TOOLBOX_ENDPOINT for the agent.
       postdeploy:
