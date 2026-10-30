@@ -6,11 +6,12 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from cs_platform.episodes import Episode, Feedback, Verdict
+from cs_platform.episodes import Episode, Feedback, ToolCall, Verdict
 from cs_platform.testing import ScriptedChatClient, text
 from diagnostics_domain.dataset import load_seed
 from diagnostics_domain.feedback import generate_feedback
 from diagnostics_domain.feedback_models import Review
+from diagnostics_mcp.tools import DiagnosticsTools
 from episode_analysis.benchmark import evaluate
 from episode_analysis.classifier import (
     PROMPT,
@@ -284,6 +285,162 @@ async def test_structured_client_treats_injection_as_data(population):
     assert client.requests[0][0].role == "system"
     assert client.requests[0][1].role == "user"
     assert json.loads(client.requests[0][1].text)["episode"]["id"] == item.episode.id
+
+
+async def test_generation_settings_reach_client_and_remain_in_preflight(population):
+    item = prepare(population.episodes, population.reviews).candidates[0]
+    expected = await evidence_baseline(item)
+    received = []
+
+    class RecordingClient(ScriptedChatClient):
+        def _inner_get_response(self, *, messages, stream, options, **kwargs):
+            received.append(dict(options))
+            return super()._inner_get_response(
+                messages=messages, stream=stream, options=options, **kwargs
+            )
+
+    client = RecordingClient([[text(expected.model_dump_json())]] * 2)
+    config = ClassifierConfig(
+        model="scripted",
+        project_endpoint="https://example.invalid/project",
+        settings={"temperature": 0, "top_p": 0.8},
+        max_output_tokens=321,
+    )
+    classify = structured_classifier(client, config)
+    preflight = estimate([item], CachedClassifier(classify, config))
+    assert await classify(item) == expected
+    assert received[0]["temperature"] == 0
+    assert received[0]["top_p"] == 0.8
+    assert received[0]["model"] == config.model
+    assert received[0]["response_format"] is Label
+    assert received[0]["max_tokens"] == 321
+    assert received[0]["store"] is False
+    assert "project_endpoint" not in received[0]
+    assert preflight.maximum_output_tokens == 321
+    for update in (
+        {"settings": {"temperature": 1, "top_p": 0.8}},
+        {"settings": {"temperature": 0, "top_p": 0.5}},
+        {"project_endpoint": "https://example.invalid/another-project"},
+    ):
+        changed = config.model_copy(update=update)
+        assert fingerprint(item, changed) != fingerprint(item, config)
+        assert (
+            estimate([item], CachedClassifier(classify, changed)).fingerprint
+            != preflight.fingerprint
+        )
+    config.settings["temperature"] = 1
+    assert estimate([item], CachedClassifier(classify, config)).fingerprint != preflight.fingerprint
+    assert await classify(item) == expected
+    assert received[1]["temperature"] == 1
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("store", True),
+        ("model", "other"),
+        ("response_format", "text"),
+        ("max_tokens", 9000),
+        ("project_endpoint", "https://example.invalid/project"),
+        ("unknown", 1),
+    ],
+)
+def test_unsupported_or_protected_generation_settings_are_rejected(name, value):
+    settings = {name: value}
+    with pytest.raises(ValueError, match="Extra inputs are not permitted"):
+        ClassifierConfig.model_validate({"model": "scripted", "settings": settings})
+    client = ScriptedChatClient([])
+    copied = ClassifierConfig(model="scripted", settings={}).model_copy(
+        update={"settings": settings}
+    )
+    with pytest.raises(ValueError, match="Extra inputs are not permitted"):
+        structured_classifier(client, copied)
+    assert client.requests == []
+
+
+@pytest.mark.parametrize("incident", ["M-0001: pressure excursion", "Pressure excursion"])
+def test_real_machine_context_overrides_conflicting_or_missing_incident_id(incident):
+    dataset = load_seed()
+    context = DiagnosticsTools(dataset).machine_context("M-0002")
+    call = ToolCall(
+        name="diagnostics___get_machine_context",
+        arguments={"machine_id": context.machine_id},
+        result=context.model_dump_json(),
+        started_at=dataset.reference_time,
+        duration_ms=1,
+    )
+    episode = Episode(
+        id="captured-context",
+        source="real",
+        agent="rca",
+        agent_version="test",
+        input=incident,
+        tool_calls=[call],
+    )
+    reviews = [
+        Review(
+            id=reviewer,
+            episode_id=episode.id,
+            source="real",
+            feedback=Feedback(reviewer=reviewer, verdict=Verdict.INCORRECT),
+        )
+        for reviewer in ("one", "two")
+    ]
+    enriched = prepare([episode], reviews, dataset).candidates[0]
+    assert enriched.machine_id == context.machine_id
+    assert enriched.platform == context.platform
+    assert enriched.software_release == context.software_release
+
+    conflicting_legacy = call.model_copy(
+        update={"result": json.dumps({"machine_id": context.machine_id, "id": "M-0001"})}
+    )
+    fallback = prepare(
+        [episode.model_copy(update={"tool_calls": [conflicting_legacy]})], reviews, dataset
+    ).candidates[0]
+    assert (fallback.machine_id, fallback.platform, fallback.software_release) == (
+        context.machine_id,
+        context.platform,
+        context.software_release,
+    )
+
+
+def test_same_time_case_variant_reviews_have_stable_enrichment_and_cache(population):
+    episode = population.episodes[0].model_copy(update={"feedback": None})
+    reviews = [
+        Review(
+            id=f"row-{index}",
+            episode_id=episode.id,
+            source=episode.source,
+            feedback=Feedback(
+                reviewer=reviewer,
+                verdict=Verdict.INCORRECT,
+                actual_root_cause=cause,
+                submitted_at=episode.created_at,
+            ),
+        )
+        for index, (reviewer, cause) in enumerate(
+            [("one", "FM-01"), ("one", "fm-01"), ("two", "FM-01"), ("three", "fm-01")]
+        )
+    ]
+    original = prepare([episode], reviews, load_seed())
+    reversed_rows = prepare([episode], list(reversed(reviews)), load_seed())
+    renamed_rows = prepare(
+        [episode],
+        [
+            row.model_copy(update={"id": f"renamed-{100 - index}"})
+            for index, row in enumerate(reviews)
+        ],
+        load_seed(),
+    )
+    assert original == reversed_rows == renamed_rows
+    assert original.candidates[0].expected_failure_mode is not None
+    config = ClassifierConfig(model="scripted", settings={})
+    assert fingerprint(original.candidates[0], config) == fingerprint(
+        reversed_rows.candidates[0], config
+    )
+    assert estimate(original.candidates, CachedClassifier(evidence_baseline, config)) == estimate(
+        reversed_rows.candidates, CachedClassifier(evidence_baseline, config)
+    )
 
 
 async def test_same_category_distinct_evidence_does_not_collapse(population):

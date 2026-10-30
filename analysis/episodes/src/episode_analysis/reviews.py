@@ -32,16 +32,18 @@ def clean_reviews(reviews: Sequence[Review]) -> list[Review]:
     return [chosen[key] for key in sorted(chosen)]
 
 
-def _order(review: Review) -> tuple[float, str]:
+def _order(review: Review) -> tuple[float, str, tuple[str, str, str]]:
     feedback = review.feedback
-    semantic = "|".join(
-        " ".join((part or "").split()).casefold()
-        for part in (feedback.verdict.value, feedback.actual_root_cause, feedback.note)
+    raw = (
+        feedback.verdict.value,
+        feedback.actual_root_cause or "",
+        feedback.note or "",
     )
+    semantic = "|".join(" ".join(part.split()).casefold() for part in raw)
     submitted = feedback.submitted_at
     if submitted.tzinfo is None:
         submitted = submitted.replace(tzinfo=UTC)
-    return submitted.timestamp(), semantic
+    return submitted.timestamp(), semantic, raw
 
 
 def _majority(values: list[Verdict]) -> Verdict | None:

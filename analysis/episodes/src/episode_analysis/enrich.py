@@ -28,7 +28,11 @@ def enrich(
             context = dict(raw)
             break
     match = re.search(r"\bM-\d{4}\b", episode.input)
-    machine_id = _string(context.get("id")) or (match.group() if match else None)
+    machine_id = (
+        _string(context.get("machine_id"))
+        or _string(context.get("id"))
+        or (match.group() if match else None)
+    )
     platform = _string(context.get("platform"))
     release = _string(context.get("software_release"))
     if dataset and machine_id:

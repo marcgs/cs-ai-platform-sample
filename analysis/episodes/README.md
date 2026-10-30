@@ -62,20 +62,30 @@ Reports identify failed episode IDs and sanitized exception types; the CLI exits
 1 after writing a partial report. Retrying explicitly can reuse successful labels.
 Keep JSON, caches and transcripts local: they can contain sensitive real evidence.
 
+Classifier v2 forwards the supported generation settings `temperature` and
+`top_p` to the SDK and rejects other settings, including attempts to override
+model, schema, `store=False` or the explicit output-token budget. Connection
+metadata (`project_endpoint`) is separate from generation settings and remains
+fingerprinted, but is not sent as a per-request option. Previous classifier
+caches/preflights are invalidated; obtain a fresh estimate before any approved run.
+
 ## What the pipeline does
 
 - One vote per normalized reviewer identity per episode, regardless of review
   row ID or repetition. The latest revision wins; equal-time content breaks ties
-  deterministically. Anonymous feedback is conservatively one voice.
+  deterministically, using case-preserving content when normalized values tie,
+  never row IDs. Anonymous feedback is conservatively one voice.
 - Reviewer reliability is smoothed leave-one-out majority agreement. Ties are
   excluded. A verdict needs two named supporters and more than 60% of weighted
   votes. These are consensus policy parameters, **not classifier quality gates**.
   Majority agreement is not expert correctness. Sparse/conflicting reviews stay
   uncertain; no single strict reviewer can establish a miss.
-- Machine platform/software come from captured machine context, with an explicit
-  optional dataset fallback. Expected modes are majority reviewer assertions,
-  labeled `reviewer_consensus`, not truth. The pipeline does not read scenarios,
-  answer keys or `EpisodeTruth.actual_failure_mode` (the agent's reported output).
+- Captured `machine_id` takes precedence over legacy synthetic `id` and incident
+  text. Platform/software come from that context, with an explicit optional
+  dataset fallback for the same selected machine. Expected modes are majority
+  reviewer assertions, labeled `reviewer_consensus`, not truth. The pipeline does
+  not read scenarios, answer keys or `EpisodeTruth.actual_failure_mode` (the
+  agent's reported output).
 - Impact is mean historical downtime for the asserted mode, falling back to the
   historical population mean. Without history it is zero, marked unavailable.
   Cluster score is frequency x mean proxy downtime, not estimated savings.

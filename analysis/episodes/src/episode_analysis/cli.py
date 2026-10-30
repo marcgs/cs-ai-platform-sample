@@ -28,7 +28,8 @@ def _model_config() -> ClassifierConfig:
     settings = PlatformSettings.from_env()
     return ClassifierConfig(
         model=settings.model_deployment,
-        settings={"project_endpoint": settings.foundry_project_endpoint, "store": False},
+        project_endpoint=settings.foundry_project_endpoint,
+        settings={},
     )
 
 
