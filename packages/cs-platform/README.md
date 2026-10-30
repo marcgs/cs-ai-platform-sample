@@ -52,6 +52,54 @@ of `1.0` average to `0.9`, but naive floating-point summation can report
 `0.8999999999999999`. Comparisons remain strict: no tolerance, rounding of case scores,
 or relaxed threshold makes a genuinely lower score pass.
 
+## Evaluation health
+
+`run_suite(..., repeats=3)` runs independent case-runs; retries remain separate.
+Quality means exclude plumbing failures (rate limits, timeouts, transport failures and
+missing/truncated output), but those failures still fail the regression gate. Invalid
+structured output remains a scored quality failure. `RunOutput.failure` classifies errors;
+`tool_trace` retains typed calls with arguments and results alongside legacy tool names.
+
+`EvalSuite.gate_case_ids` declares the fixed regression cohort. Its default (`None`) gates
+all cases for legacy suites. Extended suites must explicitly retain their original case
+IDs: new categories, including their errors, are informational only, never pooled into
+thresholds. Missing legacy gate metrics still count as zero. Sparse informational metrics
+average only applicable case-runs.
+
+`SuiteResult.intervals` and `gate_intervals` use deterministic 95% percentile bootstrap
+intervals (2,000 draws, seed 42). Each draw samples cases, then repeats within those cases;
+repeats are not independent cases. Small cohorts and synthetic data limit inference.
+`paired_difference_intervals(baseline, candidate)` estimates paired changes and rejects
+different case/repeat cohorts or metric applicability.
+
+`assign_splits` ranks machine IDs by a hash with fixed salt
+`cs-platform-eval-split-v1` and assigns approximately 2:1 train/test within categories
+(four machines give three train, one test). It never uses Python's randomized hash.
+Manifest regeneration must retain existing explicit splits: those assignments are frozen
+when appending cases, even across categories. Conflicting machine assignments are rejected.
+Shared-machine constraints or a singleton stratum can prevent balancing; warnings identify
+strata without both splits.
+
+The CLI always writes private JSONL results, a run summary, per-case-run transcripts and
+escaped static HTML, by default under gitignored `.eval-results/`. Summaries include
+category/split means, CIs, error classes and saturation/threshold-margin warnings.
+Agent and harness revisions are independent; `--agent-revision` records a pinned baseline
+agent while the harness changes. Hosted tool traces are resolved only through the exact
+response-bound episode; unavailable or storage-truncated traces are explicitly incomplete.
+Local `--episodes-output` exports an explicitly `real` JSONL population, including failed
+attempts, and rejects hosted use or an existing destination.
+
+Predeclare a primary metric and practical noninferiority margins for the other gated
+metrics before measuring. Keep a change only if the primary metric's paired improvement
+CI lies above zero on both train and test, other gated metrics are noninferior within
+those margins, and every unchanged threshold passes. Saturated metrics require
+noninferiority, not impossible strict improvement. Tune from train transcripts only.
+Do not inspect test transcripts while tuning, rerun until green, or infer improvement from
+overlapping/unpaired confidence intervals. Serialize live measurements; offline tests
+are not evidence of live quality. The unchanged-agent 18-case × 3-repeat baseline
+[failed and was retained](../../docs/iteration-3/q2.md), not rerun to seek a pass.
+See the [eval guide](../../evals/rca/README.md) for paired comparison commands.
+
 Local startup creates a real episode span, enables HTTP propagation when exporting,
 and flushes owned exporters on exit. Streaming context is attached per iterator pull;
 hosted telemetry stays owned by the hosting library. See [trace continuity](../../docs/tracing.md)

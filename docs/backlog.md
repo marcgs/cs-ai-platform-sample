@@ -37,6 +37,7 @@ Everything else goes under [Later](#later) as one line, or is left out. Items re
 | Q4 | **Gate on outcomes, with model judges** | `tool_coverage` rewards a ritual, and the specification asks for model-based evaluators. | `azure-ai-evaluation` | S | |
 | Q5 | **Cost and latency per diagnosis** | Time to diagnosis is the main outcome, and cost decides the model. | Foundry tracing | S | |
 | Q6 | **Ask instead of guess** | Given a symptom without a machine, the agent picks one and diagnoses it; the report can't ask a question. | | S | |
+| Q7 | **Knowledge-citation reliability** | The pinned iteration-3 baseline cites historical knowledge in only 24 of 54 runs, below the unchanged 0.70 gate despite correct diagnoses; investigate retrieval versus citation failures without forcing irrelevant citations. | | M | |
 
 Notes:
 
@@ -44,6 +45,7 @@ Notes:
 - **Q2:** repeats with confidence intervals, plumbing failures apart from wrong answers, per-case transcripts, a saturation warning, and train and held-out cases split by machine (the keep/revert rule that L4 relies on).
 - **Q3:** decisive evidence, acceptable alternatives and ruled-out modes per scenario; categories such as overlapping, no fault found, out of catalog, missing machine, injection and noisy data. Keep the 18 existing cases byte-identical so the baseline stays comparable.
 - **Q4:** a change to which metrics gate needs the user's approval, and not as Q1's fix.
+- **Q7:** the [retained Q2 baseline](iteration-3/q2.md) ran the unchanged `fae76ff` agent and dataset, 18 cases with three repeats at concurrency one. `used_knowledge` was 0.444 (95% CI approximately 0.28–0.61), while `hit_at_1` was 1.00 and search was called in 0.67 of runs. The run failed and was retained; no threshold was lowered and no rerun was used to seek a pass.
 
 ## L. Governed learning loop
 
