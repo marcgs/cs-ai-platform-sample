@@ -41,3 +41,16 @@ uv run pytest services/diagnostics-mcp
 ```
 
 `tests/test_function_app.py` indexes the real Function app and invokes the tools through the MCP argument wrapper. This catches schema regressions, such as optional parameters being advertised as required.
+
+## Data-quality disclosure
+
+Tool names and original scenario responses are unchanged. Capabilities come from each
+machine's available telemetry; the independent pressure reference appears only on the new
+sensor-fault machines. Legacy response serialization does not gain empty quality fields.
+
+Irregular telemetry carries actual observation times. Summaries disclose missing and
+duplicate observations, clock reversals and sensor disagreement when present. Statistics
+use one observation per timestamp without filling gaps; sample timestamps retain elapsed
+time. Empty or single-timestamp windows return a tool error instead of invented statistics.
+Events expose receipt time when available, with duplicate, late-arrival and clock-skew
+counts. Event time and receipt time are not interchangeable.
