@@ -30,7 +30,7 @@ RCA-local episode-store adapter. Both injected and default stores receive the me
 Older episodes and agents without a skill retain `skill=None`. No shared factory,
 capture middleware or agent-spec changes are needed.
 
-**Always-in-context is the chosen default pending comparison.** It avoids an extra
+**Always-in-context remains the default.** It avoids an extra
 model-selected `load_skill` call and keeps every procedure rule available on every
 turn, at the cost of including the full procedure in context. Progressive disclosure
 is not implemented or measured here; no equivalence claim is made. The procedure and
@@ -39,11 +39,27 @@ model behavior.
 
 Offline tests cover the real tool loop, context inclusion exactly once in the built agent,
 episode metadata and legacy compatibility, and loading from an installed wheel rebuilt
-from its source distribution. Live regression comparisons against the iteration-3
-baseline and a hosted run after approved deployment remain pending. No model traffic,
-deployment, remote skill publication or Foundry skill-discovery verification was performed.
-The deployed path remains the bundled copy; no unsupported publishing configuration
-or remote skill API is assumed.
+from its source distribution.
+
+The frozen `59d273d` bundled-skill candidate passed the unchanged gates on the original
+18 cases with three serialized repeats: all 54 final episodes succeeded, tool coverage
+was 0.9333 and knowledge citations were 0.7037 against the unchanged 0.70 minimum.
+The retained pre-skill baseline still fails that knowledge gate at 0.4444. A first
+cancelled attempt's 25 rounded console observations remain separate and inconclusive;
+the sole complete technical recovery does not pool them into its results.
+
+All/train/test paired comparisons have no entirely negative difference interval on
+the common metrics, but train/test knowledge intervals include zero. These observations
+do not establish causal improvement, formal equivalence or noninferiority.
+One approved hosted diagnosis verified exact response-to-episode correlation, raw
+skill/source metadata and complete tool/output capture from the deployed revision.
+Reading the new metadata also required a coordinated platform API deployment.
+See [L1 evidence](../../docs/iteration-3/l1.md) for measurements and limitations.
+
+The deployed path remains the bundled copy. Progressive disclosure was not measured
+or selected. Current Agent Framework skill documentation was checked, but a
+Foundry-native consumption path was not verified and no skill resource was published.
+No unsupported publishing configuration or remote skill API is assumed.
 
 ## Run locally
 
