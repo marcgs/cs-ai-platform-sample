@@ -4,11 +4,13 @@ version = "0.1.0"
 description = "Synthetic, fictional diagnostics domain: models, deterministic generator and seed data."
 requires-python = ">=3.14,<3.15"
 dependencies = [
+    "cs-platform",
     "pydantic>=2.14.1",
 ]
 
 [project.scripts]
 generate-seed-data = "diagnostics_domain.generator:main"
+generate-feedback = "diagnostics_domain.feedback:main"
 
 [build-system]
 requires = ["uv_build>=0.13.5,<0.14"]

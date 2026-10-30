@@ -30,5 +30,24 @@ install() {
 }
 install --require-hashes -r "$requirements"
 install --no-deps "$wheels"/*.whl
+# Inspect only the Linux payload, not the editable workspace. Native extensions
+# cannot be imported on a macOS packaging host.
+uv run --frozen --no-sync --directory "$root" python - "$root" "$target" <<'PY'
+import re
+import sys
+import tomllib
+from importlib.metadata import distributions
+from pathlib import Path
+
+root, target = sys.argv[1:]
+sources = tomllib.loads(Path(root, "pyproject.toml").read_text())["tool"]["uv"]["sources"]
+workspace = {name for name, source in sources.items() if source.get("workspace")}
+installed = {dist.metadata["Name"]: dist for dist in distributions(path=[target])}
+for name, dist in installed.items():
+    for requirement in dist.requires or []:
+        dependency = re.split(r"[\s(<>=!~;\[]", requirement, maxsplit=1)[0]
+        if dependency in workspace and dependency not in installed:
+            raise SystemExit(f"Missing workspace dependency in function payload: {name} -> {dependency}")
+PY
 rm -rf "$wheels" "$requirements"
 echo "Packaged $(ls "$target" | wc -l | tr -d ' ') entries into $target"

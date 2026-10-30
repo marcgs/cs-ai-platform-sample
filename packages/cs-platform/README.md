@@ -10,6 +10,7 @@ The reusable agent harness. An agent is declared by a spec and built by the plat
 | `retry.py` | A bounded, asynchronous 429-only retry policy for one Foundry model turn |
 | `capture.py` | Middleware that records every run as an episode: input, tool calls (arguments, result, duration, errors), structured output, token usage, trace ID |
 | `episodes.py` | `Episode`, `ToolCall`, `Feedback`; the `EpisodeStore` protocol with in-memory and Cosmos DB implementations |
+| `episode_io.py` | Explicitly source-separated local JSONL export/import, without accessing an episode store |
 | `hosting.py` | Bind each host-issued Responses ID to its exact episode, independently of input, timing or session |
 | `evals.py` | Eval harness: `EvalCase`, `EvalSuite` (cases, thresholds, evaluators), `run_suite()` with concurrency and retries, `SuiteResult` with metrics and gate failures |
 | `evidence.py` | `Evidence`: the cited unit (source, ref, excerpt) agents put in their output and evaluators verify |
@@ -30,6 +31,14 @@ episode_id = response.additional_properties["episode_id"]
 ```
 
 Capture is deterministic: the platform writes the episode, not the model. A failing episode store is logged and never fails the user's request.
+
+`Episode.source` defaults to `real` for actual runs (including runs against the fictional
+diagnostics seed). Simulated runs must set it to `synthetic`. Legacy records still read
+as real. `export_episodes(episodes, path)` writes explicit real labels and refuses
+synthetic records, mixed populations and existing files. Set `source="synthetic"`
+explicitly for a separate synthetic population. `load_episodes` requires every record
+to have an explicit matching label. Neither helper connects to or mutates a store.
+See the [synthetic feedback generator](../diagnostics-domain/README.md).
 
 `foundry_client()` disables the OpenAI SDK's broader automatic retries and retries only
 model 429s: at most four attempts and 120 seconds of total waiting per turn. Server

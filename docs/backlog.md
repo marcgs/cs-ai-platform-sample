@@ -54,7 +54,7 @@ Capture and feedback exist. This theme adds the rest of the specification's loop
 | ID | Item | Why | Explores | Size | Target |
 |---|---|---|---|---|---|
 | L1 | **The RCA procedure as a skill** | A versioned skill is the unit the loop changes and the optimizer works on. | Agent Framework skills, Foundry skills | S | it3 |
-| L2 | **Synthetic expert feedback** | The loop needs feedback with realistic patterns and noise, including wrong reviews that must not push a change through. | | S | it3 |
+| L2 | **Synthetic expert feedback** | The loop needs feedback with realistic patterns and noise, including wrong reviews that must not push a change through. | | S | done it3 ([#14](https://github.com/marcgs/cs-ai-platform-sample/pull/14)) |
 | L3 | **Failure analysis over episodes** | At scale, feedback has to be cleaned, classified and ranked into clusters before anything learns from it; most clusters aren't prompt problems. | Cosmos DB mirroring to Fabric, Foundry models for classification | M | it3 |
 | L4 | **Proposals, replay and approval** | No change to agent behavior without a passing replay and an expert's approval. | | M | |
 | L5 | **A learner drafts proposals** | Turns one diagnosed cluster into a candidate skill or model change. | Foundry agent optimizer | M | |

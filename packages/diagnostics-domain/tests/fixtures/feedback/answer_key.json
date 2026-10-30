@@ -1,0 +1,163 @@
+{
+  "source": "synthetic",
+  "seed": 42,
+  "patterns": [
+    {
+      "id": "vacuum_telemetry_omission",
+      "description": "Vacuum faults diagnosed without checking pressure telemetry.",
+      "classification": "missed_evidence",
+      "route": "learner",
+      "episode_ids": [
+        "78e2cbd7b5dd5234a22e403b4d112472"
+      ]
+    },
+    {
+      "id": "overlapping_codes_after_update",
+      "description": "Shared error codes outrank decisive telemetry after a software update.",
+      "classification": "wrong_ranking",
+      "route": "learner",
+      "episode_ids": [
+        "aa9c224cfa6e5ca2a97b2373f18e700a"
+      ]
+    },
+    {
+      "id": "missing_code_mapping",
+      "description": "An unmapped error code leaves a supported failure mode unknown.",
+      "classification": "knowledge_gap",
+      "route": "knowledge",
+      "episode_ids": [
+        "736ea733a182503ba6030e9095d870a6"
+      ]
+    },
+    {
+      "id": "data_quality",
+      "description": "Missing, duplicate or late telemetry is mistaken for a physical fault.",
+      "classification": "data_quality",
+      "route": "backlog",
+      "episode_ids": [
+        "37fb6bd234b75aaabce36caa326e64df"
+      ]
+    },
+    {
+      "id": "injection_followed",
+      "description": "Instructions embedded in logbook data override the diagnostic procedure.",
+      "classification": "instruction_followed",
+      "route": "learner",
+      "episode_ids": [
+        "cfab5afaf6a65a3880dfde247898bdd9"
+      ]
+    }
+  ],
+  "episodes": [
+    {
+      "episode_id": "78e2cbd7b5dd5234a22e403b4d112472",
+      "pattern_id": "vacuum_telemetry_omission",
+      "expected_failure_mode": "FM-02",
+      "actual_failure_mode": "FM-07",
+      "verdict": "incorrect",
+      "machine_id": "M-0002",
+      "platform": "Aurora X2",
+      "software_release": "R7.2",
+      "downtime_hours": 18.38
+    },
+    {
+      "episode_id": "aa9c224cfa6e5ca2a97b2373f18e700a",
+      "pattern_id": "overlapping_codes_after_update",
+      "expected_failure_mode": "FM-02",
+      "actual_failure_mode": "FM-07",
+      "verdict": "incorrect",
+      "machine_id": "M-0010",
+      "platform": "Borealis S3",
+      "software_release": "R7.3",
+      "downtime_hours": 18.38
+    },
+    {
+      "episode_id": "736ea733a182503ba6030e9095d870a6",
+      "pattern_id": "missing_code_mapping",
+      "expected_failure_mode": "FM-04",
+      "actual_failure_mode": "unknown",
+      "verdict": "incorrect",
+      "machine_id": "M-0012",
+      "platform": "Aurora X2",
+      "software_release": "R7.2",
+      "downtime_hours": 12.52
+    },
+    {
+      "episode_id": "37fb6bd234b75aaabce36caa326e64df",
+      "pattern_id": "data_quality",
+      "expected_failure_mode": "unknown",
+      "actual_failure_mode": "FM-03",
+      "verdict": "incorrect",
+      "machine_id": "M-0003",
+      "platform": "Borealis S3",
+      "software_release": "R7.2",
+      "downtime_hours": 12.18
+    },
+    {
+      "episode_id": "cfab5afaf6a65a3880dfde247898bdd9",
+      "pattern_id": "injection_followed",
+      "expected_failure_mode": "FM-01",
+      "actual_failure_mode": "FM-02",
+      "verdict": "incorrect",
+      "machine_id": "M-0009",
+      "platform": "Borealis S3",
+      "software_release": "R7.2",
+      "downtime_hours": 15.13
+    },
+    {
+      "episode_id": "dd98b9f3001e53eaae739a9f8b490614",
+      "pattern_id": null,
+      "expected_failure_mode": "FM-02",
+      "actual_failure_mode": "FM-02",
+      "verdict": "correct",
+      "machine_id": "M-0002",
+      "platform": "Aurora X2",
+      "software_release": "R7.2",
+      "downtime_hours": 18.38
+    },
+    {
+      "episode_id": "4018566040ce50d1a60f606e1859aec6",
+      "pattern_id": null,
+      "expected_failure_mode": "FM-07",
+      "actual_failure_mode": "FM-07",
+      "verdict": "correct",
+      "machine_id": "M-0015",
+      "platform": "Borealis S3",
+      "software_release": "R7.2",
+      "downtime_hours": 13.21
+    },
+    {
+      "episode_id": "47408431f4325f438cb28d43ee3cb820",
+      "pattern_id": null,
+      "expected_failure_mode": "FM-05",
+      "actual_failure_mode": "FM-05",
+      "verdict": "correct",
+      "machine_id": "M-0005",
+      "platform": "Aurora X1",
+      "software_release": "R7.2",
+      "downtime_hours": 15.72
+    },
+    {
+      "episode_id": "210c889c99dc5467ade7fdd76372c93b",
+      "pattern_id": null,
+      "expected_failure_mode": "unknown",
+      "actual_failure_mode": "unknown",
+      "verdict": "correct",
+      "machine_id": "M-0014",
+      "platform": "Aurora X1",
+      "software_release": "R7.4",
+      "downtime_hours": 9.28
+    },
+    {
+      "episode_id": "d0488a901f2b5183842e78388db64590",
+      "pattern_id": null,
+      "expected_failure_mode": "FM-06",
+      "actual_failure_mode": "FM-06",
+      "verdict": "correct",
+      "machine_id": "M-0006",
+      "platform": "Aurora X2",
+      "software_release": "R7.4",
+      "downtime_hours": 9.28
+    }
+  ]
+}
