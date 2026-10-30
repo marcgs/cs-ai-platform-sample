@@ -347,6 +347,24 @@ def test_quality_requires_actual_anomaly_disclosure(category: str, variant: int)
     assert data_quality_disclosed(case, wrong) == {"data_quality_disclosed": 0.0}
 
 
+@pytest.mark.parametrize(
+    ("statement", "expected"),
+    [
+        ("Correlate the pressure readings with the logbook before diagnosing.", 0.0),
+        ("Telemetry delivery was delayed.", 1.0),
+        ("Late event arrivals invalidate the window.", 1.0),
+    ],
+)
+def test_delayed_event_disclosure_matches_words_not_substrings(
+    statement: str, expected: float
+) -> None:
+    case = _challenge_case("data_gap", 2)
+    observed = output(hypothesis(1, case.expected["failure_mode"]))
+    assert isinstance(observed.value, RcaReport)
+    observed.value.summary = statement
+    assert data_quality_disclosed(case, observed) == {"data_quality_disclosed": expected}
+
+
 def test_nonapplicable_metrics_are_sparse_and_calibration_is_brier_loss() -> None:
     clean = _challenge_case("clean")
     observed = _truthful_output(clean)

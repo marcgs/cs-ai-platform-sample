@@ -132,8 +132,14 @@ def _challenge(
         symptom = mode.symptoms[variant % len(mode.symptoms)]
         alternative = "FM-05" if mode.id != "FM-05" else "FM-01"
         ruled_out = (alternative,)
+        update_context = (
+            "The controller CPU overload and watchdog resets began after the recent software "
+            "update; "
+            if mode.id == "FM-06"
+            else "A recent software update is a temporal distraction; "
+        )
         note = (
-            f"{mode.logbook_clues[0]} A recent software update is a temporal distraction; "
+            f"{mode.logbook_clues[0]} {update_context}"
             f"independent checks of {dataset.failure_mode(alternative).signature.signal} passed."
         )
         checks = mode.recommended_checks

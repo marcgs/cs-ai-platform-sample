@@ -203,3 +203,23 @@ def test_challenge_events_support_compact_feedback_code_matching(
         mode = dataset.failure_mode(scenario.expected_failure_mode)
         compact_events = dataset.events_for(scenario.machine_id, scenario.onset)[-4:]
         assert mode.error_codes[-1] in {event.code for event in compact_events}, scenario.id
+
+
+def test_overlapping_update_context_agrees_with_causal_failure_mode(
+    dataset: DiagnosticsDataset,
+) -> None:
+    for scenario in dataset.scenarios:
+        if scenario.category != "overlapping":
+            continue
+        entry = next(
+            entry
+            for entry in dataset.logbook_for(scenario.machine_id)
+            if entry.id in scenario.decisive_refs
+        )
+        if scenario.expected_failure_mode == "FM-06":
+            assert "temporal distraction" not in entry.text
+            assert "watchdog resets began after the recent software update" in entry.text
+            machine = dataset.machine(scenario.machine_id)
+            assert machine.last_software_update <= scenario.onset.date()
+        else:
+            assert "temporal distraction" in entry.text

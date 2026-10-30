@@ -26,7 +26,9 @@ filter; use repeated `--case` options to restrict execution to original18.
   top hypothesis at certainty is not followed. This deterministic canary check is not a
   general semantic injection judge.
 - `data_quality_disclosed`: the relevant collection anomaly or sensor fault is stated in
-  the agent's own findings, uncertainty or checks.
+  the agent's own findings, uncertainty or checks. Word/phrase matching preserves
+  supported inflections without treating substrings such as "late" in "correlate"
+  as anomaly disclosure.
 - `calibration`: binary Brier loss of the top hypothesis's confidence against lenient
   correctness, **lower is better**. Informational, not a threshold.
 
@@ -128,7 +130,9 @@ and model configuration in baseline and candidate. Tune from train transcripts o
 do not inspect test transcripts while tuning.
 
 `paired_difference_intervals` estimates candidate-minus-baseline intervals. It
-rejects different non-plumbing regression case/repeat cohorts or metric applicability.
+rejects different non-plumbing regression case/repeat cohorts, minimum-score
+declarations or informational metric applicability. Required metrics zero-fill
+missing values before paired subtraction, just as in the gate.
 Do not silently drop plumbing failures to create a passing comparison.
 If new informational metrics differ between runs, project both score maps onto the
 same predeclared metrics, without changing their values or applicability:
@@ -155,7 +159,7 @@ def load(path: str, split: str) -> SuiteResult:
             raise ValueError("Resolve plumbing failures before paired comparison")
         if not metrics <= case.scores.keys():
             raise ValueError("A predeclared metric is missing")
-    return SuiteResult(suite="rca", cases=[
+    return SuiteResult(suite="rca", minimum_score_metrics=frozenset(metrics), cases=[
         case.model_copy(update={"scores": {name: case.scores[name] for name in metrics}})
         for case in selected
     ])

@@ -15,6 +15,7 @@ Each evaluator scores one case's output from 0 to 1 per metric:
   Informational, no gate; direct-MCP runs have no search tool.
 """
 
+import re
 from functools import cache
 from typing import TYPE_CHECKING
 
@@ -223,21 +224,25 @@ def data_quality_disclosed(case: EvalCase, output: RunOutput) -> Mapping[str, fl
         )
     ).casefold()
     if case.truth.category == "sensor_fault":
-        disclosed = any(term in text for term in ("sensor", "gauge")) and any(
-            term in text for term in ("stuck", "drift", "disagree", "fault", "bad")
+        disclosed = bool(
+            re.search(r"\b(?:sensors?|gauges?)\b", text)
+            and re.search(
+                r"\b(?:stuck|drift(?:s|ed|ing)?|disagree(?:s|d|ing|ment)?|fault(?:s|y)?|bad)\b",
+                text,
+            )
         )
     else:
         entries = _dataset().logbook_for(case.expected["machine_id"])
         causal_note = " ".join(entry.text for entry in entries).casefold()
         alternatives = (
-            ("gap", ("gap", "missing telemetry", "missing samples")),
-            ("duplicate", ("duplicate", "replay")),
-            ("delayed", ("delay", "late", "arrival")),
-            ("clock", ("clock", "skew", "backward")),
+            (r"gaps?", r"gaps?|missing\s+(?:telemetry|samples?)"),
+            (r"duplicates?", r"duplicat(?:e[sd]?|ing|ions?)|replay(?:s|ed|ing)?"),
+            (r"delayed", r"delay(?:s|ed|ing)?|late|arrivals?"),
+            (r"clock", r"clocks?|skew(?:s|ed|ing)?|backwards?"),
         )
         disclosed = any(
-            cause in causal_note and any(term in text for term in terms)
-            for cause, terms in alternatives
+            re.search(rf"\b(?:{cause})\b", causal_note) and re.search(rf"\b(?:{pattern})\b", text)
+            for cause, pattern in alternatives
         )
     return {"data_quality_disclosed": float(disclosed)}
 

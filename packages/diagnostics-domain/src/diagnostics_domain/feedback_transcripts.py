@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 
 def choose_scenario(dataset: DiagnosticsDataset, context: int, rng: Random) -> Scenario:
-    """Choose from known seed scenarios, keeping vacuum examples genuinely vacuum."""
+    """Choose a known seed scenario satisfying the shared failure/control premise."""
     scenarios = [
         scenario
         for scenario in dataset.scenarios
@@ -38,8 +38,13 @@ def choose_scenario(dataset: DiagnosticsDataset, context: int, rng: Random) -> S
                 if mode.id != scenario.expected_failure_mode
             )
         ]
+    elif context == 2:
+        historical_modes = {case.confirmed_failure_mode for case in dataset.historical_cases}
+        scenarios = [
+            scenario for scenario in scenarios if scenario.expected_failure_mode in historical_modes
+        ]
     if not scenarios:
-        raise ValueError("The seed must contain vacuum and overlapping-code scenarios")
+        raise ValueError(f"No eligible seed scenarios for transcript context {context}")
     return rng.choice(scenarios)
 
 
@@ -175,6 +180,19 @@ def make_transcript(
             {"machine_id": machine.id, "signal": series.signal},
             telemetry,
         )
+    historical_evidence: list[dict[str, object]] = []
+    if not failed and context == 2:
+        case = next(
+            item for item in dataset.historical_cases if item.confirmed_failure_mode == mode.id
+        )
+        call(
+            "azure_ai_search",
+            {"query": f"{scenario.symptom} {mode.subsystem.value}"},
+            [case.model_dump(mode="json")],
+        )
+        historical_evidence.append(
+            {"source": "azure_ai_search", "ref": case.id, "excerpt": case.resolution}
+        )
     selected = next((item for item in dataset.failure_modes if item.id == reported), None)
     root_cause = (
         selected.root_cause if selected else "Insufficient evidence for a catalog diagnosis."
@@ -226,7 +244,8 @@ def make_transcript(
                     ]
                     if not failed
                     else []
-                ),
+                )
+                + historical_evidence,
                 "recommended_checks": list(selected.recommended_checks)
                 if selected
                 else ["Collect a complete telemetry window and verify the code mapping."],
