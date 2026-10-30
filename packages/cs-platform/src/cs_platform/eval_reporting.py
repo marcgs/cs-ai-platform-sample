@@ -5,6 +5,7 @@ import html
 import json
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
+from urllib.parse import quote
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -106,7 +107,7 @@ def write_artifacts(
         }
         rendered = json.dumps(transcript, indent=2)
         _write_new(transcript_dir / filename, rendered + "\n")
-        link = html.escape(f"./{transcript_dir.name}/{filename}", quote=True)
+        link = html.escape(quote(f"./{transcript_dir.name}/{filename}", safe="/"), quote=True)
         label = html.escape(f"{case.case_id} repeat {case.repeat}")
         sections.append(
             f'<details><summary><a href="{link}">{label}</a></summary>'

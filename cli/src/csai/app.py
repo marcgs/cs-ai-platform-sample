@@ -1,6 +1,7 @@
 """``csai``: the CS AI platform's command line."""
 
 import asyncio
+import inspect
 import json
 import os
 import subprocess
@@ -13,6 +14,7 @@ from typing import TYPE_CHECKING, Annotated
 import typer
 from azure.identity.aio import DefaultAzureCredential
 
+from cs_platform import evals as eval_harness
 from cs_platform.episodes import Verdict  # noqa: TC001 - typer reads annotations at runtime
 from cs_platform.eval_reporting import (
     RunMetadata,
@@ -115,6 +117,8 @@ def make_target(
     endpoint = os.environ.get(entry.responses_endpoint_variable)
     if not endpoint:
         raise SettingsError(f"{entry.responses_endpoint_variable} is not set; deploy first")
+    if episodes is not None:
+        return hosted_target(entry, endpoint, credential, on_episode=episodes.append)
     return hosted_target(entry, endpoint, credential)
 
 
@@ -149,17 +153,35 @@ async def evaluate(
         )
 
 
-def git_provenance() -> tuple[str, bool]:
-    """Collect optional provenance, conservatively marking unavailable checks as dirty."""
+def git_provenance(source: Path | None = None) -> tuple[str, bool]:
+    """Read the checkout that tracks the code, never the caller's working directory."""
     revision = "unknown"
+    source = (source or Path(__file__)).resolve()
     try:
+        tracked = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", "--", source.name],
+            cwd=source.parent,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if tracked.returncode != 0:
+            return revision, True
         head = subprocess.run(
-            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=False
+            ["git", "rev-parse", "HEAD"],
+            cwd=source.parent,
+            capture_output=True,
+            text=True,
+            check=False,
         )
         if head.returncode == 0:
             revision = head.stdout.strip() or "unknown"
         status = subprocess.run(
-            ["git", "status", "--porcelain"], capture_output=True, text=True, check=False
+            ["git", "status", "--porcelain"],
+            cwd=source.parent,
+            capture_output=True,
+            text=True,
+            check=False,
         )
     except OSError:
         return revision, True
@@ -219,7 +241,20 @@ def eval_command(
         validate_artifact_destinations(output, episodes_path=episodes_output)
     except (OSError, ValueError) as error:
         raise typer.BadParameter(str(error), param_hint="--output/--episodes-output") from error
-    revision, dirty = git_provenance()
+    revision, dirty = git_provenance(Path(eval_harness.__file__))
+    cli_revision, cli_dirty = git_provenance()
+    if cli_revision != revision:
+        revision, dirty = "unknown", True
+    dirty = dirty or cli_dirty
+    if agent_revision is None and target is TargetKind.LOCAL:
+        try:
+            factory_source = inspect.getsourcefile(entry.create)
+        except TypeError:
+            factory_source = None
+        if factory_source is not None:
+            candidate_revision, candidate_dirty = git_provenance(Path(factory_source))
+            if not candidate_dirty:
+                agent_revision = candidate_revision
     episodes: list[Episode] | None = [] if episodes_output is not None else None
     try:
         result = asyncio.run(
@@ -235,8 +270,7 @@ def eval_command(
         result,
         output,
         RunMetadata(
-            agent_revision=agent_revision
-            or (revision if target is TargetKind.LOCAL else "unknown"),
+            agent_revision=agent_revision or "unknown",
             harness_revision=revision,
             harness_dirty=dirty,
             target=target.value,
@@ -301,7 +335,9 @@ def diagnose(
         raise typer.BadParameter("episode export requires --target local")
     if episodes_output is not None and episodes_output.exists():
         raise typer.BadParameter("episode output already exists")
-    episodes: list[Episode] | None = [] if episodes_output is not None else None
+    episodes: list[Episode] | None = (
+        [] if episodes_output is not None or target is TargetKind.HOSTED else None
+    )
 
     async def run() -> RunOutput:
         async with DefaultAzureCredential() as credential:
@@ -324,7 +360,7 @@ def diagnose(
     tools = ", ".join(output.tool_calls) or ("unavailable" if output.error else "none")
     typer.echo(f"\nTool calls: {tools}")
     if target is TargetKind.HOSTED:
-        typer.echo(describe_correlation(output))
+        typer.echo(describe_correlation(output, episode=episodes[0] if episodes else None))
     if output.error:
         typer.echo(f"error: {output.error}", err=True)
         raise typer.Exit(1)
@@ -333,13 +369,20 @@ def diagnose(
         detail = f": {failure.detail}" if failure.detail else ""
         typer.echo(f"error: {failure.kind}:{failure.code}{detail}", err=True)
         raise typer.Exit(1)
+    if output.value is None and not output.text:
+        typer.echo("error: unparseable:invalid_output (empty report)", err=True)
+        raise typer.Exit(1)
 
 
-def describe_correlation(output: RunOutput) -> str:
+def describe_correlation(output: RunOutput, *, episode: Episode | None = None) -> str:
     """Resolve only this response's episode, never a similar incident or session."""
     if not output.response_id or not output.episode_id:
         return "Episode: unavailable (host response identifier missing)"
     prefix = f"Response: {output.response_id}\nEpisode: {output.episode_id}"
+    if episode is not None:
+        if episode.id != output.episode_id or episode.hosted_response_id != output.response_id:
+            return f"{prefix} (unverified: episode identity does not match the hosted response)"
+        return f"{prefix} ({episode.status}, exact response verified)"
     try:
         episode = PlatformClient.from_env().wait_for_episode(output.episode_id, output.response_id)
     except (SettingsError, PlatformApiError) as error:
