@@ -28,6 +28,39 @@ class RunMetadata(BaseModel):
     started_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+def artifact_paths(path: Path) -> tuple[Path, Path, Path, Path]:
+    """Return results, summary, HTML and transcript destinations."""
+    return (
+        path,
+        path.with_suffix(".summary.json"),
+        path.with_suffix(".html"),
+        path.parent / f"{path.stem}-transcripts",
+    )
+
+
+def validate_artifact_destinations(path: Path, *, episodes_path: Path | None = None) -> None:
+    """Reject existing or overlapping artifact destinations before running an agent."""
+    destinations = list(artifact_paths(path))
+    if episodes_path is not None:
+        destinations.append(episodes_path)
+    resolved = [destination.resolve() for destination in destinations]
+    for index, destination in enumerate(destinations):
+        if destination.exists() or destination.is_symlink():
+            raise FileExistsError(f"artifact destination already exists: {destination}")
+        if any(
+            resolved[index] == other
+            or resolved[index] in other.parents
+            or other in resolved[index].parents
+            for other in resolved[index + 1 :]
+        ):
+            raise ValueError(f"artifact destinations overlap: {destination}")
+
+
+def _write_new(path: Path, text: str) -> None:
+    with path.open("x", encoding="utf-8") as stream:
+        stream.write(text)
+
+
 def write_artifacts(
     suite: EvalSuite,
     result: SuiteResult,
@@ -35,11 +68,11 @@ def write_artifacts(
     metadata: RunMetadata,
 ) -> None:
     """Write JSONL, run metadata, complete per-case transcripts and a static HTML report."""
+    validate_artifact_destinations(path)
+    _, summary_path, html_path, transcript_dir = artifact_paths(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    transcript_dir = path.parent / f"{path.stem}-transcripts"
-    transcript_dir.mkdir(exist_ok=True)
-    with path.open("x", encoding="utf-8") as stream:
-        stream.write(result.to_jsonl())
+    transcript_dir.mkdir()
+    _write_new(path, result.to_jsonl())
     summary = {
         "run": metadata.model_dump(mode="json"),
         "suite": result.suite,
@@ -47,6 +80,7 @@ def write_artifacts(
         "case_runs": len(result.cases),
         "quality_case_runs": len(result.quality_cases),
         "gate_case_ids": sorted({case.case_id for case in result.cases if case.gated}),
+        "minimum_score_metrics": sorted(result.minimum_score_metrics),
         "metrics": result.metrics,
         "intervals": result.intervals,
         "gate_metrics": result.gate_metrics,
@@ -60,8 +94,7 @@ def write_artifacts(
             "seed": result.bootstrap_seed,
         },
     }
-    summary_path = path.with_suffix(".summary.json")
-    summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    _write_new(summary_path, json.dumps(summary, indent=2) + "\n")
     cases = {case.id: case for case in suite.cases}
     sections: list[str] = []
     for case in result.cases:
@@ -72,7 +105,7 @@ def write_artifacts(
             **case.model_dump(mode="json"),
         }
         rendered = json.dumps(transcript, indent=2)
-        (transcript_dir / filename).write_text(rendered + "\n", encoding="utf-8")
+        _write_new(transcript_dir / filename, rendered + "\n")
         link = html.escape(f"./{transcript_dir.name}/{filename}", quote=True)
         label = html.escape(f"{case.case_id} repeat {case.repeat}")
         sections.append(
@@ -90,4 +123,4 @@ def write_artifacts(
         + "".join(sections)
         + "</body></html>\n"
     )
-    path.with_suffix(".html").write_text(page, encoding="utf-8")
+    _write_new(html_path, page)

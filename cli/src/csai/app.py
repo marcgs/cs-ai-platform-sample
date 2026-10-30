@@ -14,7 +14,11 @@ import typer
 from azure.identity.aio import DefaultAzureCredential
 
 from cs_platform.episodes import Verdict  # noqa: TC001 - typer reads annotations at runtime
-from cs_platform.eval_reporting import RunMetadata, write_artifacts
+from cs_platform.eval_reporting import (
+    RunMetadata,
+    validate_artifact_destinations,
+    write_artifacts,
+)
 from cs_platform.evals import EvalCase, EvalSuite, RunOutput, assign_splits, run_suite
 from cs_platform.settings import PlatformSettings, SettingsError
 from cs_platform.telemetry import flush_telemetry
@@ -179,10 +183,6 @@ def eval_command(
     entry = agent_entry(agent)
     if episodes_output is not None and target is not TargetKind.LOCAL:
         raise typer.BadParameter("episode export requires --target local")
-    if episodes_output is not None and episodes_output.exists():
-        raise typer.BadParameter("episode output already exists")
-    if output is not None and output.exists():
-        raise typer.BadParameter("results output already exists")
     suite = entry.load_suite()
     if case and (unknown := set(case) - {item.id for item in suite.cases}):
         raise typer.BadParameter(
@@ -197,6 +197,11 @@ def eval_command(
         raise typer.BadParameter("no cases selected", param_hint="--split/--case")
     suite = replace(suite, cases=selected)
     started_at = datetime.now(UTC)
+    output = output or Path(".eval-results") / f"{started_at:%Y%m%d-%H%M%S-%f}" / "results.jsonl"
+    try:
+        validate_artifact_destinations(output, episodes_path=episodes_output)
+    except (OSError, ValueError) as error:
+        raise typer.BadParameter(str(error), param_hint="--output/--episodes-output") from error
     revision = (
         subprocess.run(
             ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=False
@@ -218,7 +223,6 @@ def eval_command(
         raise typer.Exit(2) from error
     if episodes_output is not None and episodes is not None:
         export_local_episodes(episodes, episodes_output)
-    output = output or Path(".eval-results") / f"{started_at:%Y%m%d-%H%M%S-%f}" / "results.jsonl"
     write_artifacts(
         suite,
         result,
