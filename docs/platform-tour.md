@@ -258,7 +258,7 @@ dependencies
 
 **The idea.** Quality is measured, not assumed. A versioned **case manifest** ([`cases.jsonl`](../evals/rca/src/rca_evals/cases.jsonl), 18 synthetic incidents with the expected root cause) is scored by plain-code evaluators ([`evaluators.py`](../evals/rca/src/rca_evals/evaluators.py)), run by the platform's harness (`cs_platform/evals.py`). Each gated metric has a minimum in [`thresholds.yaml`](../evals/rca/src/rca_evals/thresholds.yaml), and `csai eval` exits 1 below any of them, so any pipeline can enforce it ([`docs/ci-cd.md`](ci-cd.md)). The same suite runs against the agent in-process (`--target local`) or the deployed one (`--target hosted`). The harness runs three cases at a time and retries cases that fail on rate limits.
 
-**Look.** Nothing to see in the portal yet. Publishing eval runs to Foundry's evaluation view (`csai eval --publish`) is parked: it needs capability hosts, which this network-injected project doesn't have (see [Later](backlog.md#later) in the backlog).
+**Look.** Nothing to see in the portal yet. Publishing eval runs to Foundry's evaluation view (`csai eval --publish`) is parked: it needs capability hosts, which this network-injected project doesn't have (backlog item [Q9](backlog.md#q-evaluation-you-can-trust)).
 
 **Try.** Run the gate and the experiment that breaks it ([walkthrough steps 6 and 7](walkthrough.md#6-check-quality-with-the-eval-gate)). Then compare `--output results.jsonl` from a good run and a broken one: the per-case scores and tool calls show which cases failed and why.
 
