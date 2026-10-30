@@ -100,6 +100,8 @@ Local `--episodes-output` exports an explicitly `real` JSONL population, includi
 attempts, and rejects hosted use or an existing destination.
 All result, summary, HTML, transcript and episode-export destinations must be distinct
 and unused before model calls. Writers exclusively create files and transcript directories.
+Git provenance is optional: unavailable probes retain an unknown harness revision and
+conservatively mark the checkout as dirty rather than preventing evaluation.
 
 Predeclare a primary metric and practical noninferiority margins for the other gated
 metrics before measuring. Keep a change only if the primary metric's paired improvement

@@ -149,6 +149,23 @@ async def evaluate(
         )
 
 
+def git_provenance() -> tuple[str, bool]:
+    """Collect optional provenance, conservatively marking unavailable checks as dirty."""
+    revision = "unknown"
+    try:
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=False
+        )
+        if head.returncode == 0:
+            revision = head.stdout.strip() or "unknown"
+        status = subprocess.run(
+            ["git", "status", "--porcelain"], capture_output=True, text=True, check=False
+        )
+    except OSError:
+        return revision, True
+    return revision, revision == "unknown" or status.returncode != 0 or bool(status.stdout.strip())
+
+
 @app.command("eval")
 def eval_command(
     agent: Annotated[str, typer.Argument(help=f"One of: {', '.join(AGENTS)}.")] = "rca",
@@ -202,17 +219,7 @@ def eval_command(
         validate_artifact_destinations(output, episodes_path=episodes_output)
     except (OSError, ValueError) as error:
         raise typer.BadParameter(str(error), param_hint="--output/--episodes-output") from error
-    revision = (
-        subprocess.run(
-            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=False
-        ).stdout.strip()
-        or "unknown"
-    )
-    dirty = bool(
-        subprocess.run(
-            ["git", "status", "--porcelain"], capture_output=True, text=True, check=False
-        ).stdout.strip()
-    )
+    revision, dirty = git_provenance()
     episodes: list[Episode] | None = [] if episodes_output is not None else None
     try:
         result = asyncio.run(

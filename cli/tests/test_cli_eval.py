@@ -487,3 +487,38 @@ def test_diagnose_reports_structured_failure_and_exits_nonzero(
     assert result.exit_code == 1, result.output
     assert "malformed report" in result.output
     assert "error: unparseable:invalid_output" in result.output
+
+
+@pytest.mark.parametrize("unavailable", ["missing", "nonzero"])
+def test_evaluation_runs_with_unverified_provenance_when_git_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any, unavailable: str
+) -> None:
+    import subprocess
+
+    def git(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        if unavailable == "missing":
+            raise FileNotFoundError("git is not installed")
+        return subprocess.CompletedProcess([], 128, stdout="", stderr="not a repository")
+
+    monkeypatch.setattr(subprocess, "run", git)
+    monkeypatch.setattr(cli, "local_target", answering(correct=True))
+    output = tmp_path / "results.jsonl"
+    result = runner.invoke(
+        cli.app,
+        [
+            "--no-azd",
+            "eval",
+            "rca",
+            "--case",
+            "SC-001",
+            "--agent-revision",
+            "pinned-agent",
+            "--output",
+            str(output),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    provenance = json.loads(output.with_suffix(".summary.json").read_text())["run"]
+    assert provenance["agent_revision"] == "pinned-agent"
+    assert provenance["harness_revision"] == "unknown"
+    assert provenance["harness_dirty"] is True
