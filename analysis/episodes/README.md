@@ -207,12 +207,14 @@ All 20 raw records were mechanically matched to the corrected pilot; the origina
 assessments were not read during integration. Assistant review is not
 human/domain-expert manual acceptance.
 
-**No model calls or held-out answer-key inspection has occurred.** Commit the
-integration, complete current-head code review and the final parent freeze,
-and obtain a fresh actual-configuration estimate before labeling. The new cache
-is separate and empty; the preliminary estimate remains 30 logical calls,
-72,463 approximate input tokens and at most 36,000 output tokens, unchanged from
-the prior budget. Its fingerprint changes, so the old estimate cannot approve it:
+**The approved pilot has now run once at source `3632003`.** Current-head review,
+the final freeze and actual-configuration estimate preceded classification.
+The separate benchmark opened the key only after output/cache hashes were
+frozen. The initially empty cache is now populated with 30 validated labels.
+The approved preflight was 30 logical calls, 72,463 approximate input tokens
+and at most 36,000 output tokens, unchanged from the prior budget.
+The commands below document the workflow, not authorization to clear the cache,
+rerun classification or tune against the now-open held-out key.
 
 ```bash
 test -n "$FOUNDRY_PROJECT_ENDPOINT"
@@ -343,9 +345,23 @@ It proves pipeline mechanics, **not Foundry quality**:
 - A separate strict-reviewer control test creates no cluster even after hundreds
   of duplicate assertions. Duplicate episode/review rows do not change results.
 
-No live classification, manual label audit or held-out **Foundry** agreement has
-been run. These remain outstanding measurements, not passing model gates.
-Agent instructions, tools and capture are unchanged; no live RCA eval is run.
+### Measured live pilot
+
+The frozen 50-episode cohort produced 30 validated Foundry labels and 21 clusters.
+Against the separate key, category agreement is 24/30 classified planted misses
+(80%), or 24/31 including the unclassified planted miss. No key-control false
+positives were observed among 19 controls. Best-cluster ranks for the five
+patterns are 3, 9, 2, 1 and 4; equivalent condition names fragment the results.
+Member routing agrees on 27/30 classified cases, not every case.
+
+The independent assistant-only audit is not human/domain-expert ground truth.
+On its eight supported, classified misses, category agreement is 3/8; this
+denominator must not be confused with the generator-key benchmark.
+See [L3 evidence](../../docs/iteration-3/l3.md#frozen-live-pilot-2026-10-30) for
+per-pattern recall, purity, routes, uncertainty and artifact provenance.
+Part A acceptance is not established. L8 records cluster stability; no held-out
+tuning, second classifier run or full-population model traffic followed.
+Agent instructions, tools and capture are unchanged by this classification run.
 
 ```bash
 uv run pytest analysis/episodes --basetemp=analysis/episodes/.test-work
