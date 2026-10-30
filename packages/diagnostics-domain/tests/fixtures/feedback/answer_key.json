@@ -55,21 +55,21 @@
       "expected_failure_mode": "FM-02",
       "actual_failure_mode": "FM-07",
       "verdict": "incorrect",
-      "machine_id": "M-0002",
-      "platform": "Aurora X2",
-      "software_release": "R7.2",
+      "machine_id": "M-0010",
+      "platform": "Borealis S3",
+      "software_release": "R7.3",
       "downtime_hours": 18.38
     },
     {
       "episode_id": "aa9c224cfa6e5ca2a97b2373f18e700a",
       "pattern_id": "overlapping_codes_after_update",
-      "expected_failure_mode": "FM-02",
-      "actual_failure_mode": "FM-07",
+      "expected_failure_mode": "FM-05",
+      "actual_failure_mode": "FM-01",
       "verdict": "incorrect",
-      "machine_id": "M-0010",
-      "platform": "Borealis S3",
-      "software_release": "R7.3",
-      "downtime_hours": 18.38
+      "machine_id": "M-0022",
+      "platform": "Aurora X2",
+      "software_release": "R7.4",
+      "downtime_hours": 15.72
     },
     {
       "episode_id": "736ea733a182503ba6030e9095d870a6",
@@ -110,8 +110,8 @@
       "expected_failure_mode": "FM-02",
       "actual_failure_mode": "FM-02",
       "verdict": "correct",
-      "machine_id": "M-0002",
-      "platform": "Aurora X2",
+      "machine_id": "M-0037",
+      "platform": "Aurora X1",
       "software_release": "R7.2",
       "downtime_hours": 18.38
     },
@@ -121,9 +121,9 @@
       "expected_failure_mode": "FM-07",
       "actual_failure_mode": "FM-07",
       "verdict": "correct",
-      "machine_id": "M-0015",
-      "platform": "Borealis S3",
-      "software_release": "R7.2",
+      "machine_id": "M-0040",
+      "platform": "Aurora X1",
+      "software_release": "R7.3",
       "downtime_hours": 13.21
     },
     {
@@ -151,13 +151,13 @@
     {
       "episode_id": "d0488a901f2b5183842e78388db64590",
       "pattern_id": null,
-      "expected_failure_mode": "FM-06",
-      "actual_failure_mode": "FM-06",
+      "expected_failure_mode": "FM-04",
+      "actual_failure_mode": "FM-04",
       "verdict": "correct",
-      "machine_id": "M-0006",
-      "platform": "Aurora X2",
-      "software_release": "R7.4",
-      "downtime_hours": 9.28
+      "machine_id": "M-0039",
+      "platform": "Borealis S3",
+      "software_release": "R7.2",
+      "downtime_hours": 12.52
     }
   ]
 }

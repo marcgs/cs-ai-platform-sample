@@ -15,6 +15,50 @@ from diagnostics_domain.models import (
     TelemetrySignature,
 )
 
+# Keep the legacy catalogs separate: their order also drives the original seeded stream.
+ADDITIONAL_SIGNALS = (
+    Signal(
+        name="chamber_pressure_reference_pa",
+        unit="Pa",
+        subsystem=Subsystem.VACUUM,
+        nominal=0.50,
+        noise=0.005,
+        tolerance=0.10,
+    ),
+)
+ADDITIONAL_ERROR_CODES = (
+    ErrorCode(
+        code="EC-7201",
+        subsystem=Subsystem.VACUUM,
+        severity=Severity.WARNING,
+        description="Primary and independent pressure sensors disagree",
+    ),
+    ErrorCode(
+        code="EC-7901",
+        subsystem=Subsystem.CONTROLLER,
+        severity=Severity.WARNING,
+        description="Unmapped intermittent timing residual; no validated catalog cause",
+    ),
+)
+ADDITIONAL_FAILURE_MODES = (
+    FailureMode(
+        id="FM-09",
+        name="Pressure sensor measurement fault",
+        subsystem=Subsystem.VACUUM,
+        root_cause="The primary pressure sensor is stuck or drifting; chamber pressure is healthy.",
+        error_codes=("EC-7201",),
+        signature=TelemetrySignature(
+            signal="chamber_pressure_pa", kind=SignatureKind.LEVEL_UP, magnitude=0.35
+        ),
+        symptoms=("Pressure display disagrees with the independent reference gauge.",),
+        recommended_checks=(
+            "Compare primary and independent pressure gauges.",
+            "Test the primary sensor against a calibrated reference.",
+        ),
+        logbook_clues=("Independent reference gauge remains stable during primary excursions.",),
+    ),
+)
+
 SIGNALS: tuple[Signal, ...] = (
     Signal(
         name="stage_coolant_temp_c",

@@ -1,7 +1,52 @@
-# diagnostics-domain
+# Synthetic diagnostics dataset
 
-The fictional diagnostics fleet, reference catalog, seed scenarios and deterministic
-data generators. The existing seed generator is unchanged.
+All machines, incidents and records are fictional. Generate the committed seed with
+`uv run generate-seed-data`; do not edit `data/seed.json`.
+
+## Dataset card
+
+The seed contains 52 machines and 50 incident scenarios:
+
+| Category | Cases | Causal distinction |
+|---|---:|---|
+| `clean` | 18 | Original eight physical and software failure modes |
+| `overlapping` | 4 | Shared alarms and recent updates; discriminating telemetry |
+| `no_fault_found` | 4 | Healthy telemetry and independent checks |
+| `out_of_catalog` | 4 | Unmapped code and a non-catalog residual |
+| `missing_machine` | 4 | No identifier or timestamp in the rendered incident |
+| `injection` | 4 | Untrusted instructions inside logbook text |
+| `sensor_fault` | 4 | Stuck or drifting primary pressure sensor, healthy reference |
+| `data_gap` | 4 | Missing samples, duplicate observations, delayed events, clock reversal |
+| `nuisance_alarm` | 4 | Flapping or authorized maintenance alarms on healthy machines |
+
+`Scenario` carries generator-derived category, decisive evidence references, acceptable
+alternatives, ruled-out modes and confirming checks. `incident_input()` is the input
+rendering contract: missing-machine incidents withhold their hidden machine identity.
+No-fault, out-of-catalog, missing-machine, collector faults and nuisance alarms expect
+`unknown`; this does not add a failure mode to the physical catalog.
+
+The original random stream, IDs and records are preserved. Challenge cohorts use independent
+seeded streams per category, machines from `M-0021`, scenarios from `SC-019`, events above
+`EV-100000` and logbook IDs above `LB-10000`. New sensor capability is advertised only for
+machines that have its telemetry. Legacy regular telemetry keeps its original serialization.
+Irregular series carry observation timestamps alongside values: removing samples never
+compresses elapsed time. Events optionally carry receipt time, distinct from event time.
+Original and injection-cohort precursor clues remain before onset. Retrospective
+investigations are logged after their telemetry observations and event receipts,
+before incident reporting. Maintenance findings follow the completed window and
+the subsequent healthy checks.
+
+The frozen `services/diagnostics-mcp/tests/fixtures/legacy_golden.json` records hashes taken
+from revision `fae76ff`, before extension: all original seed fields and 791 tool responses
+across original scenarios, signals, catalog codes and several windows. Do not regenerate it
+to accept a regression.
+
+Known biases: four examples per new category are small, templated cohorts, not measured
+field frequencies. Causes, checks and wording are generator-authored. Cases have one
+preferred explanation, healthy reference gauges are unusually reliable, and injection
+canaries are deliberately recognizable. Out-of-catalog cases model an unknown cause,
+not a validated new failure mode. Dataset counts and category balance imply no real-world
+prevalence. Train/test assignment is owned by the eval manifest; tuning must use train only.
 
 ## Synthetic feedback (L2)
 
@@ -44,6 +89,12 @@ update date in machine context and its logbook entry, for misses and controls.
 IDs, tool timings, timestamps and reviews
 depend only on the seed, index and committed seed data. More records preserve the
 existing prefix. The displayed telemetry windows are compact transcript excerpts.
+Correct missing-mapping controls also record `azure_ai_search` retrieval of a
+matching seeded historical case and cite its returned `HC-…` ref and resolution.
+The failed variant lacks that successful knowledge fallback.
+Only this missing-mapping cohort requires a matching seeded historical case when
+choosing scenarios, for both misses and controls. Other contexts retain their
+existing eligibility rules and can select new known causes without prior cases.
 
 Four fictional reviewers have different accuracy; `R-004` is deliberately too strict.
 Disagreements, incomplete notes, wrong actual-cause assertions and duplicates are

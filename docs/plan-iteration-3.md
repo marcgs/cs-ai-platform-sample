@@ -78,6 +78,10 @@ This is the plan, not authorization to implement. Like iteration 2: one worktree
 
 **Acceptance:** generator tests check that every decisive ref exists and belongs to its machine, the golden test passes, and evaluator tests cover each category with right and wrong scripted reports. **Headroom** (proposed; confirm before measuring): at baseline, `hit_at_1` over the new categories is between 0.3 and 0.8, for reasons an expert can explain from the data. The iteration-1 ablation (instructions without the investigation steps) also scores below baseline by more than the CI on at least two gated metrics.
 
+**Preparation:** offline implementation-ready; not complete. The original18 gate
+and 791 frozen tool-result fingerprints pass. Approved deployment, challenge
+headroom and ablation measurements remain outstanding. See [Q3 evidence](iteration-3/q3.md).
+
 ## L1: the RCA procedure as a skill
 
 **Outcome:** the investigation procedure is a versioned skill that the agent loads with no change in behavior, in the layout the optimizer will use in iteration 4.

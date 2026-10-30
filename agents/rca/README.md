@@ -55,6 +55,8 @@ One approved hosted diagnosis verified exact response-to-episode correlation, ra
 skill/source metadata and complete tool/output capture from the deployed revision.
 Reading the new metadata also required a coordinated platform API deployment.
 See [L1 evidence](../../docs/iteration-3/l1.md) for measurements and limitations.
+Subsequent main integration passed 374 offline tests. The live measurements above
+apply to frozen `59d273d`, not a new live validation of the integrated challenge suite.
 
 The deployed path remains the bundled copy. Progressive disclosure was not measured
 or selected. Current Agent Framework skill documentation was checked, but a

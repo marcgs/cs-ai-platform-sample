@@ -104,3 +104,77 @@ def test_invalid_calls_raise_tool_error(
     assert callable(call)
     with pytest.raises(ToolError, match=message):
         call(tools)
+
+
+def test_new_signals_are_only_advertised_on_capable_machines(tools: DiagnosticsTools) -> None:
+    data = load_seed()
+    sensor = next(s for s in data.scenarios if s.category == "sensor_fault")
+    assert len(tools.machine_context("M-0001").signals) == 8
+    assert "chamber_pressure_reference_pa" in {
+        signal.name for signal in tools.machine_context(sensor.machine_id).signals
+    }
+    with pytest.raises(ToolError, match="machine signal"):
+        tools.telemetry_window("M-0001", "chamber_pressure_reference_pa")
+
+
+def test_collection_anomalies_are_disclosed_without_compressing_time(
+    tools: DiagnosticsTools,
+) -> None:
+    scenarios = [s for s in load_seed().scenarios if s.category == "data_gap"]
+    gap = tools.telemetry_window(scenarios[0].machine_id, "chamber_pressure_pa")
+    assert gap.data_quality is not None
+    assert gap.data_quality.missing_count == 12
+    assert gap.data_quality.longest_gap_minutes == 13 * 60
+    assert gap.window_end == tools.now - timedelta(hours=1)
+    edge_gap = tools.telemetry_window(scenarios[0].machine_id, "chamber_pressure_pa", hours=24)
+    assert edge_gap.data_quality is not None
+    assert edge_gap.data_quality.missing_count == 6
+    duplicates = tools.telemetry_window(scenarios[1].machine_id, "chamber_pressure_pa")
+    assert duplicates.data_quality is not None
+    assert duplicates.data_quality.duplicate_count == 1
+    events = tools.error_events(scenarios[1].machine_id)
+    assert events.data_quality is not None
+    assert events.data_quality.duplicate_count == 1
+    late = tools.error_events(scenarios[2].machine_id)
+    assert late.data_quality is not None
+    assert late.data_quality.late_arrival_count == 4
+    assert all(item.received_at > item.timestamp for item in late.events if item.received_at)
+    skew = tools.telemetry_window(scenarios[3].machine_id, "chamber_pressure_pa")
+    assert skew.data_quality is not None
+    assert skew.data_quality.clock_reversal_count == 1
+    skew_events = tools.error_events(scenarios[3].machine_id)
+    assert skew_events.data_quality is not None
+    assert skew_events.data_quality.clock_skew_count == 4
+
+
+def test_bad_sensor_is_distinguished_from_physical_pressure(tools: DiagnosticsTools) -> None:
+    scenarios = [s for s in load_seed().scenarios if s.category == "sensor_fault"]
+    stuck = tools.telemetry_window(scenarios[0].machine_id, "chamber_pressure_pa")
+    assert stuck.data_quality is not None
+    assert stuck.data_quality.stuck_sensor
+    assert stuck.data_quality.sensor_disagreement
+    drift = tools.telemetry_window(scenarios[-1].machine_id, "chamber_pressure_pa")
+    assert drift.data_quality is not None
+    assert not drift.data_quality.stuck_sensor
+    assert drift.data_quality.sensor_disagreement
+    assert (
+        tools.telemetry_window(
+            scenarios[0].machine_id, "chamber_pressure_reference_pa"
+        ).data_quality
+        is None
+    )
+
+
+@pytest.mark.parametrize("count", [0, 1])
+def test_insufficient_telemetry_returns_actionable_error(count: int) -> None:
+    data = load_seed()
+    original = data.telemetry[0]
+    limited = original.model_copy(
+        update={
+            "start": data.reference_time - timedelta(hours=1),
+            "values": original.values[:count],
+        }
+    )
+    tools = DiagnosticsTools(data.model_copy(update={"telemetry": (limited, *data.telemetry[1:])}))
+    with pytest.raises(ToolError, match=r"observations|distinct telemetry timestamps"):
+        tools.telemetry_window(limited.machine_id, limited.signal)

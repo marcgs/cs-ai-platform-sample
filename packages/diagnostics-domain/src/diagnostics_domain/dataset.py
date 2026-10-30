@@ -105,8 +105,24 @@ class DiagnosticsDataset(BaseModel):
         self.machine(machine_id)
         self.signal(signal)
         series = next(
-            s for s in self.telemetry if s.machine_id == machine_id and s.signal == signal
+            (s for s in self.telemetry if s.machine_id == machine_id and s.signal == signal),
+            None,
         )
+        if series is None:
+            raise UnknownRecordError("machine signal", f"{machine_id}:{signal}")
+        if series.timestamps:
+            observations = [
+                (timestamp, value)
+                for timestamp, value in zip(series.timestamps, series.values, strict=True)
+                if (start is None or timestamp >= start) and (end is None or timestamp <= end)
+            ]
+            return series.model_copy(
+                update={
+                    "start": observations[0][0] if observations else series.start,
+                    "timestamps": tuple(timestamp for timestamp, _ in observations),
+                    "values": tuple(value for _, value in observations),
+                }
+            )
         step = timedelta(minutes=series.interval_minutes)
         first = 0 if start is None else max(0, _ceil_div(start - series.start, step))
         last = len(series.values) if end is None else (end - series.start) // step + 1
