@@ -292,6 +292,29 @@ async def test_sparse_metrics_are_not_penalized_and_unparseable_is_not_plumbing(
     assert all(case.output.attempts == 1 for case in result.cases)
 
 
+async def test_required_scores_zero_fill_summaries_without_penalizing_sparse_metrics() -> None:
+    def evaluate(case: EvalCase, output: RunOutput) -> Mapping[str, float]:
+        return {"exact": 1.0, "sparse": 0.8} if case.id == "C-0" else {}
+
+    async def target(case: EvalCase) -> RunOutput:
+        return RunOutput(text="answer")
+
+    base = suite("yes", "yes")
+    thresholds = Thresholds(minimums={"exact": 1.0, "absent": 1.0})
+    result = await run_suite(EvalSuite(base.name, base.cases, thresholds, (evaluate,)), target)
+    assert result.metrics == result.gate_metrics == {"exact": 0.5, "absent": 0.0, "sparse": 0.8}
+    assert (
+        result.intervals
+        == result.gate_intervals
+        == {
+            "exact": (0.0, 1.0),
+            "absent": (0.0, 0.0),
+            "sparse": (0.8, 0.8),
+        }
+    )
+    assert result.groups["category"]["clean"] == result.metrics
+
+
 @pytest.mark.parametrize("hit_at_1", [1.0, 0.0])
 async def test_quality_miss_ignores_directionless_informational_metrics(hit_at_1: float) -> None:
     scores = {
