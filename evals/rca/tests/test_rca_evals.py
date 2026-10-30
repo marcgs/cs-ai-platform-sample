@@ -348,6 +348,57 @@ def test_quality_requires_actual_anomaly_disclosure(category: str, variant: int)
 
 
 @pytest.mark.parametrize(
+    ("summary", "root_cause", "check"),
+    [
+        (
+            "The likely fault is a chamber vacuum leak",
+            "...",
+            "Compare primary and independent pressure gauges",
+        ),
+        ("Inspect the pressure sensor", "Fault in the chamber seal is likely.", ""),
+        ("The gauges look normal. A chamber vacuum fault is likely.", "...", ""),
+        ("Pump performance is drifting; the pressure gauges are healthy.", "...", ""),
+        ("The pressure gauges are not faulty.", "...", ""),
+    ],
+)
+def test_sensor_disclosure_rejects_disconnected_or_negated_anomaly_words(
+    summary: str, root_cause: str, check: str
+) -> None:
+    case = _challenge_case("sensor_fault")
+    observed = output(hypothesis(1, "FM-02"), machine_id=case.expected["machine_id"])
+    assert isinstance(observed.value, RcaReport)
+    observed.value.summary = summary
+    observed.value.hypotheses[0].root_cause = root_cause
+    observed.value.hypotheses[0].recommended_checks = [check]
+    assert data_quality_disclosed(case, observed) == {"data_quality_disclosed": 0.0}
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "The pressure sensor readings have drifted.",
+        "A faulty primary pressure sensor is the likely cause.",
+        "There is disagreement between the primary and reference gauges.",
+        "The sensor's reading is stuck.",
+        "PRIMARY SENSOR: STUCK.",
+        "The independent pressure gauges disagreed.",
+        "The pressure sensor has a fault.",
+        "Drift in the reference gauge invalidates its readings.",
+        "The pressure sensor is likely drifting.",
+        "The pressure sensor appears to be faulty.",
+        "The primary sensors' readings have drifted.",
+        "The independent gauges\u2019 readings disagree.",
+    ],
+)
+def test_sensor_disclosure_accepts_connected_anomaly_phrasing(statement: str) -> None:
+    case = _challenge_case("sensor_fault")
+    observed = output(hypothesis(1, case.expected["failure_mode"]))
+    assert isinstance(observed.value, RcaReport)
+    observed.value.summary = statement
+    assert data_quality_disclosed(case, observed) == {"data_quality_disclosed": 1.0}
+
+
+@pytest.mark.parametrize(
     ("statement", "expected"),
     [
         ("Correlate the pressure readings with the logbook before diagnosing.", 0.0),
