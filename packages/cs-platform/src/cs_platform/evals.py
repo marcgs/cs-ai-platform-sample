@@ -185,7 +185,7 @@ class SuiteResult(BaseModel):
     @property
     def metrics(self) -> dict[str, float]:
         """Quality means over applicable scores; plumbing is excluded."""
-        return aggregate(self.quality_cases)
+        return aggregate(self.quality_cases, zero_fill=self.minimum_score_metrics)
 
     @property
     def quality_cases(self) -> list[CaseResult]:
@@ -201,7 +201,10 @@ class SuiteResult(BaseModel):
     @property
     def intervals(self) -> dict[str, tuple[float, float]]:
         return bootstrap_intervals(
-            self.quality_cases, samples=self.bootstrap_samples, seed=self.bootstrap_seed
+            self.quality_cases,
+            samples=self.bootstrap_samples,
+            seed=self.bootstrap_seed,
+            zero_fill=self.minimum_score_metrics,
         )
 
     @property
@@ -218,7 +221,8 @@ class SuiteResult(BaseModel):
         return {
             field: {
                 str(value): aggregate(
-                    [case for case in self.quality_cases if str(getattr(case, field)) == value]
+                    [case for case in self.quality_cases if str(getattr(case, field)) == value],
+                    zero_fill=self.minimum_score_metrics,
                 )
                 for value in sorted({str(getattr(case, field)) for case in self.cases})
             }

@@ -1,10 +1,13 @@
 import json
 from collections import Counter
+from datetime import datetime, timedelta
 from pathlib import Path
+from random import Random
 
 import pytest
 
 from cs_platform.episodes import Episode, Verdict
+from diagnostics_domain.dataset import load_seed
 from diagnostics_domain.feedback import (
     generate_feedback,
     load_feedback,
@@ -12,6 +15,7 @@ from diagnostics_domain.feedback import (
     write_feedback,
 )
 from diagnostics_domain.feedback_models import AnswerKey, Review
+from diagnostics_domain.feedback_transcripts import choose_scenario, make_transcript
 from rca_agent.report import RcaReport
 
 FIXTURE = Path(__file__).parent / "fixtures" / "feedback"
@@ -119,6 +123,36 @@ def test_error_event_citations_match_the_observed_code_in_compact_transcripts() 
                 assert evidence.excerpt == f"Observed {cited['code']}."
 
 
+@pytest.mark.parametrize("failed", [False, True])
+def test_update_context_matches_logbook_without_mutating_seed(failed: bool) -> None:
+    dataset = load_seed()
+    original = dataset.model_dump_json()
+    rng = Random(42)
+    scenario = choose_scenario(dataset, 1, rng)
+    machine = dataset.machine(scenario.machine_id)
+    update = scenario.onset - timedelta(hours=2)
+    assert machine.last_software_update != update.date()
+    calls, _, _, _ = make_transcript(
+        dataset,
+        scenario,
+        context=1,
+        failed=failed,
+        started_at=dataset.reference_time,
+        rng=rng,
+    )
+    context = json.loads(
+        next(call.result or "{}" for call in calls if call.name == "get_machine_context")
+    )
+    entries = json.loads(next(call.result or "[]" for call in calls if call.name == "get_logbook"))
+    logged = next(entry for entry in entries if entry["id"] == "LB-SYN-UPDATE")
+    assert datetime.fromisoformat(logged["timestamp"]) == update
+    assert context == {
+        **machine.model_dump(mode="json"),
+        "last_software_update": update.date().isoformat(),
+    }
+    assert dataset.model_dump_json() == original
+
+
 def test_reviewer_population_has_noise_without_turning_assertions_into_truth() -> None:
     population = generate_feedback(count=100)
     truth_by_id = {truth.episode_id: truth for truth in population.answer_key.episodes}
@@ -156,6 +190,7 @@ def test_reviewer_population_has_noise_without_turning_assertions_into_truth() -
 
 def test_fixture_and_generated_bundle_roundtrip(tmp_path: Path) -> None:
     fixture = load_feedback(FIXTURE)
+    assert fixture == generate_feedback(count=10, seed=42)
     assert len(fixture.episodes) == 10
     assert len(fixture.answer_key.patterns) == 5
     assert all(isinstance(review, Review) for review in fixture.reviews)
