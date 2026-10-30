@@ -53,6 +53,8 @@ class Usage(BaseModel):
 
 class Episode(BaseModel):
     id: str = Field(default_factory=lambda: uuid4().hex)
+    source: Literal["real", "synthetic"] = "real"
+    """Run provenance, not whether the incident's domain data happens to be fictional."""
     agent: str
     agent_version: str
     created_at: datetime = Field(default_factory=_now)
