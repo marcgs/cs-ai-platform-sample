@@ -61,6 +61,10 @@ including failed runs. If persistence is delayed or unavailable, the CLI says th
 episode is unverified rather than selecting a similar incident.
 `csai episodes show <episode-id>` displays the stored Response ID (absent on older episodes).
 
+For repeated evals with confidence intervals and private transcripts, run
+`uv run csai eval rca --target local --repeats 3 --concurrency 1`.
+See the [eval guide](evals/rca/README.md) for splits, artifacts and paired comparisons.
+
 ### Clean up
 
 ```bash

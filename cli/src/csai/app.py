@@ -1,17 +1,27 @@
 """``csai``: the CS AI platform's command line."""
 
 import asyncio
+import inspect
+import json
 import os
+import subprocess
+from dataclasses import replace
 from datetime import UTC, datetime
 from enum import StrEnum
-from pathlib import Path  # noqa: TC003 - typer reads annotations at runtime
+from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
 import typer
 from azure.identity.aio import DefaultAzureCredential
 
+from cs_platform import evals as eval_harness
 from cs_platform.episodes import Verdict  # noqa: TC001 - typer reads annotations at runtime
-from cs_platform.evals import EvalCase, EvalSuite, RunOutput, run_suite
+from cs_platform.eval_reporting import (
+    RunMetadata,
+    validate_artifact_destinations,
+    write_artifacts,
+)
+from cs_platform.evals import EvalCase, EvalSuite, RunOutput, assign_splits, run_suite
 from cs_platform.settings import PlatformSettings, SettingsError
 from cs_platform.telemetry import flush_telemetry
 from csai import foundry
@@ -45,29 +55,70 @@ class TargetKind(StrEnum):
     HOSTED = "hosted"
 
 
+class EvalSplit(StrEnum):
+    TRAIN = "train"
+    TEST = "test"
+    ALL = "all"
+
+
 def describe(result: CaseResult) -> str:
     scores = " ".join(f"{name}={value:.2f}" for name, value in sorted(result.scores.items()))
-    error = f"  ERROR {result.output.error}" if result.output.error else ""
-    return f"{result.case_id:<10} {result.output.duration_s:6.1f}s  {scores}{error}"
+    failure = result.output.failure
+    error = f"  {failure.kind}:{failure.code}" if failure else ""
+    return (
+        f"{result.case_id:<10} repeat={result.repeat} "
+        f"{result.output.duration_s:6.1f}s  {scores}{error}"
+    )
 
 
 def report(suite: EvalSuite, result: SuiteResult) -> list[str]:
     typer.echo(f"\n{suite.name}: {len(result.cases)} cases")
-    metrics = result.metrics
+    metrics = result.gate_metrics
+    intervals = result.gate_intervals
     for name, value in metrics.items():
         minimum = suite.thresholds.minimums.get(name)
         gate = f"  (min {minimum:.2f})" if minimum is not None else ""
         mark = "FAIL" if minimum is not None and value < minimum else "ok  "
-        typer.echo(f"  {mark} {name:<20} {value:.2f}{gate}")
+        low, high = intervals[name]
+        typer.echo(f"  {mark} {name:<20} {value:.2f}  95% CI [{low:.2f}, {high:.2f}]{gate}")
+    for field, groups in result.groups.items():
+        for label, scores in groups.items():
+            values = " ".join(f"{name}={value:.2f}" for name, value in scores.items())
+            typer.echo(f"  {field}={label} (informational): {values}")
+    for warning in result.warnings(suite.thresholds):
+        typer.echo(f"warning: {warning}", err=True)
     return result.failures(suite.thresholds)
 
 
-def make_target(entry: AgentEntry, target: TargetKind, credential: AsyncTokenCredential) -> Target:
+def export_local_episodes(episodes: list[Episode], path: Path) -> None:
+    """Write explicitly real local episodes, including legacy records, without overwriting."""
+    records = [episode.model_dump(mode="json") for episode in episodes]
+    if any(record.get("source", "real") != "real" for record in records):
+        raise ValueError("Expected only real episodes")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("x", encoding="utf-8") as stream:
+        for record in records:
+            stream.write(json.dumps({**record, "source": "real"}) + "\n")
+
+
+def make_target(
+    entry: AgentEntry,
+    target: TargetKind,
+    credential: AsyncTokenCredential,
+    *,
+    episodes: list[Episode] | None = None,
+) -> Target:
     if target is TargetKind.LOCAL:
+        if episodes is not None:
+            return local_target(
+                entry, PlatformSettings.from_env(), credential, on_episode=episodes.append
+            )
         return local_target(entry, PlatformSettings.from_env(), credential)
     endpoint = os.environ.get(entry.responses_endpoint_variable)
     if not endpoint:
         raise SettingsError(f"{entry.responses_endpoint_variable} is not set; deploy first")
+    if episodes is not None:
+        return hosted_target(entry, endpoint, credential, on_episode=episodes.append)
     return hosted_target(entry, endpoint, credential)
 
 
@@ -79,15 +130,62 @@ def agent_entry(agent: str) -> AgentEntry:
 
 
 async def evaluate(
-    entry: AgentEntry, suite: EvalSuite, target: TargetKind, concurrency: int
+    entry: AgentEntry,
+    suite: EvalSuite,
+    target: TargetKind,
+    concurrency: int,
+    repeats: int = 1,
+    *,
+    episodes: list[Episode] | None = None,
 ) -> SuiteResult:
     async with DefaultAzureCredential() as credential:
+        selected_target = (
+            make_target(entry, target, credential)
+            if episodes is None
+            else make_target(entry, target, credential, episodes=episodes)
+        )
         return await run_suite(
             suite,
-            make_target(entry, target, credential),
+            selected_target,
             concurrency=concurrency,
+            repeats=repeats,
             on_result=lambda r: typer.echo(describe(r)),
         )
+
+
+def git_provenance(source: Path | None = None) -> tuple[str, bool]:
+    """Read the checkout that tracks the code, never the caller's working directory."""
+    revision = "unknown"
+    source = (source or Path(__file__)).resolve()
+    try:
+        tracked = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", "--", source.name],
+            cwd=source.parent,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if tracked.returncode != 0:
+            return revision, True
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=source.parent,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if head.returncode == 0:
+            revision = head.stdout.strip() or "unknown"
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=source.parent,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return revision, True
+    return revision, revision == "unknown" or status.returncode != 0 or bool(status.stdout.strip())
 
 
 @app.command("eval")
@@ -96,24 +194,94 @@ def eval_command(
     target: Annotated[TargetKind, typer.Option(help="Where the agent runs.")] = TargetKind.LOCAL,
     case: Annotated[list[str] | None, typer.Option(help="Run only these case IDs.")] = None,
     concurrency: Annotated[int, typer.Option(min=1, help="Cases run in parallel.")] = 3,
+    repeats: Annotated[int, typer.Option(min=1, help="Independent runs per case.")] = 1,
+    split: Annotated[
+        EvalSplit, typer.Option(help="Machine-grouped evaluation split.")
+    ] = EvalSplit.ALL,
     output: Annotated[Path | None, typer.Option(help="Write per-case results (JSONL).")] = None,
+    agent_revision: Annotated[
+        str | None, typer.Option(help="Evaluated agent revision, independent of harness revision.")
+    ] = None,
+    model: Annotated[
+        str | None,
+        typer.Option(help="Model identity for run provenance (not model configuration)."),
+    ] = None,
+    episodes_output: Annotated[
+        Path | None,
+        typer.Option(
+            "--episodes-output",
+            "--episodes-jsonl",
+            help="Export real local episodes to a new JSONL file.",
+        ),
+    ] = None,
     publish: Annotated[
         bool, typer.Option(help="Also score the run with Foundry's built-in evaluators.")
     ] = False,
 ) -> None:
     """Run the agent's eval suite and fail (exit 1) when a metric is below its threshold."""
     entry = agent_entry(agent)
+    if episodes_output is not None and target is not TargetKind.LOCAL:
+        raise typer.BadParameter("episode export requires --target local")
     suite = entry.load_suite()
-    if case:
-        selected = tuple(c for c in suite.cases if c.id in case)
-        suite = EvalSuite(suite.name, selected, suite.thresholds, suite.evaluators)
+    if case and (unknown := set(case) - {item.id for item in suite.cases}):
+        raise typer.BadParameter(
+            f"unknown case IDs: {', '.join(sorted(unknown))}", param_hint="--case"
+        )
+    selected = tuple(
+        item
+        for item in assign_splits(suite.cases)
+        if (not case or item.id in case) and (split is EvalSplit.ALL or item.split == split.value)
+    )
+    if not selected:
+        raise typer.BadParameter("no cases selected", param_hint="--split/--case")
+    suite = replace(suite, cases=selected)
+    started_at = datetime.now(UTC)
+    output = output or Path(".eval-results") / f"{started_at:%Y%m%d-%H%M%S-%f}" / "results.jsonl"
     try:
-        result = asyncio.run(evaluate(entry, suite, target, concurrency))
+        validate_artifact_destinations(output, episodes_path=episodes_output)
+    except (OSError, ValueError) as error:
+        raise typer.BadParameter(str(error), param_hint="--output/--episodes-output") from error
+    revision, dirty = git_provenance(Path(eval_harness.__file__))
+    cli_revision, cli_dirty = git_provenance()
+    if cli_revision != revision:
+        revision, dirty = "unknown", True
+    dirty = dirty or cli_dirty
+    if agent_revision is None and target is TargetKind.LOCAL:
+        try:
+            factory_source = inspect.getsourcefile(entry.create)
+        except TypeError:
+            factory_source = None
+        if factory_source is not None:
+            candidate_revision, candidate_dirty = git_provenance(Path(factory_source))
+            if not candidate_dirty:
+                agent_revision = candidate_revision
+    episodes: list[Episode] | None = [] if episodes_output is not None else None
+    try:
+        result = asyncio.run(
+            evaluate(entry, suite, target, concurrency, repeats, episodes=episodes)
+        )
     except SettingsError as error:
         typer.echo(f"error: {error}", err=True)
         raise typer.Exit(2) from error
-    if output is not None:
-        output.write_text(result.to_jsonl(), encoding="utf-8")
+    if episodes_output is not None and episodes is not None:
+        export_local_episodes(episodes, episodes_output)
+    write_artifacts(
+        suite,
+        result,
+        output,
+        RunMetadata(
+            agent_revision=agent_revision or "unknown",
+            harness_revision=revision,
+            harness_dirty=dirty,
+            target=target.value,
+            repeats=repeats,
+            model=model
+            or os.environ.get("FOUNDRY_MODEL_DEPLOYMENT_NAME")
+            or os.environ.get("AZURE_AI_MODEL_DEPLOYMENT_NAME", "gpt-5.4-mini"),
+            started_at=started_at,
+        ),
+    )
+    typer.echo(f"Results: {output} (HTML: {output.with_suffix('.html')})")
     failures = report(suite, result)
     if publish:
         settings = PlatformSettings.from_env()
@@ -135,7 +303,11 @@ def eval_command(
     if failures:
         typer.echo("\nGate failed: " + "; ".join(failures), err=True)
         raise typer.Exit(1)
-    typer.echo("\nGate passed.")
+    typer.echo(
+        "\nGate passed."
+        if any(item.gated for item in result.cases)
+        else "\nInformational run complete; no regression gate evaluated."
+    )
 
 
 # --- diagnose ------------------------------------------------------------------------------
@@ -148,35 +320,69 @@ def diagnose(
     target: Annotated[
         TargetKind, typer.Option(help="hosted (episode kept) or local (episode in memory).")
     ] = TargetKind.HOSTED,
+    episodes_output: Annotated[
+        Path | None,
+        typer.Option(
+            "--episodes-output",
+            "--episodes-jsonl",
+            help="Export this real local episode to a new JSONL file.",
+        ),
+    ] = None,
 ) -> None:
     """Ask an agent to diagnose an incident and print its report."""
     entry = agent_entry(agent)
+    if episodes_output is not None and target is not TargetKind.LOCAL:
+        raise typer.BadParameter("episode export requires --target local")
+    if episodes_output is not None and episodes_output.exists():
+        raise typer.BadParameter("episode output already exists")
+    episodes: list[Episode] | None = (
+        [] if episodes_output is not None or target is TargetKind.HOSTED else None
+    )
 
     async def run() -> RunOutput:
         async with DefaultAzureCredential() as credential:
             case = EvalCase(id="adhoc", input=incident, expected={})
-            return await make_target(entry, target, credential)(case)
+            selected_target = (
+                make_target(entry, target, credential)
+                if episodes is None
+                else make_target(entry, target, credential, episodes=episodes)
+            )
+            return await selected_target(case)
 
     try:
         output = asyncio.run(run())
     except SettingsError as error:
         typer.echo(f"error: {error}", err=True)
         raise typer.Exit(2) from error
+    if episodes_output is not None and episodes is not None:
+        export_local_episodes(episodes, episodes_output)
     typer.echo(entry.render(output.value) if output.value is not None else output.text or "")
     tools = ", ".join(output.tool_calls) or ("unavailable" if output.error else "none")
     typer.echo(f"\nTool calls: {tools}")
     if target is TargetKind.HOSTED:
-        typer.echo(describe_correlation(output))
+        typer.echo(describe_correlation(output, episode=episodes[0] if episodes else None))
     if output.error:
         typer.echo(f"error: {output.error}", err=True)
         raise typer.Exit(1)
+    if output.failure is not None:
+        failure = output.failure
+        detail = f": {failure.detail}" if failure.detail else ""
+        typer.echo(f"error: {failure.kind}:{failure.code}{detail}", err=True)
+        raise typer.Exit(1)
+    if output.value is None and not output.text:
+        typer.echo("error: unparseable:invalid_output (empty report)", err=True)
+        raise typer.Exit(1)
 
 
-def describe_correlation(output: RunOutput) -> str:
+def describe_correlation(output: RunOutput, *, episode: Episode | None = None) -> str:
     """Resolve only this response's episode, never a similar incident or session."""
     if not output.response_id or not output.episode_id:
         return "Episode: unavailable (host response identifier missing)"
     prefix = f"Response: {output.response_id}\nEpisode: {output.episode_id}"
+    if episode is not None:
+        if episode.id != output.episode_id or episode.hosted_response_id != output.response_id:
+            return f"{prefix} (unverified: episode identity does not match the hosted response)"
+        return f"{prefix} ({episode.status}, exact response verified)"
     try:
         episode = PlatformClient.from_env().wait_for_episode(output.episode_id, output.response_id)
     except (SettingsError, PlatformApiError) as error:

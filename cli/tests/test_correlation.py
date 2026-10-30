@@ -1,3 +1,4 @@
+import asyncio
 import time
 from typing import Any
 from unittest.mock import MagicMock
@@ -103,13 +104,14 @@ def test_polling_rejects_mismatched_and_legacy_records(updates: dict[str, Any]) 
 
 
 @pytest.mark.parametrize("failed", [False, True])
+@pytest.mark.parametrize("answer", ["report", ""])
 async def test_hosted_target_carries_real_protocol_identity(
-    monkeypatch: pytest.MonkeyPatch, failed: bool
+    monkeypatch: pytest.MonkeyPatch, failed: bool, answer: str
 ) -> None:
     store = InMemoryEpisodeStore()
     agent = build_agent(
         AgentSpec(name="rca-agent", version="1", description="test", instructions="Answer"),
-        client=ScriptedChatClient([] if failed else [[text("report")]]),
+        client=ScriptedChatClient([] if failed else [[text(answer)] for _ in range(2)]),
         store=store,
     )
     host = ResponsesHostServer(
@@ -118,6 +120,18 @@ async def test_hosted_target_carries_real_protocol_identity(
         response_store=InMemoryResponseProvider(),
         configure_observability=None,
     )
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        episode = asyncio.run(store.get(request.url.path.rsplit("/", 1)[1]))
+        return httpx.Response(200, json=episode.model_dump(mode="json"))
+
+    client = PlatformClient("http://test", "offline")
+    client._http.close()
+    api_http = httpx.Client(transport=httpx.MockTransport(handle), base_url="http://test/")
+    client._http = api_http
+    factory = MagicMock(return_value=client)
+    monkeypatch.setattr(PlatformClient, "from_env", factory)
+    captured: list[Episode] = []
     async with (
         httpx.AsyncClient(transport=httpx.ASGITransport(app=host)) as http,
         # OpenAI accepts legacy httpx clients at runtime but annotates only httpx2.
@@ -129,15 +143,25 @@ async def test_hosted_target_carries_real_protocol_identity(
         DefaultAzureCredential() as credential,
     ):
         monkeypatch.setattr(targets, "AsyncOpenAI", lambda **_: sdk)
-        run = targets.hosted_target(targets.AGENTS["rca"], "http://test/responses", credential)
-        output = await run(EvalCase(id="same", input="M-0001: identical input", expected={}))
-    assert output.response_id
-    assert output.episode_id is not None
-    assert output.episode_id == hosted_episode_id(output.response_id)
-    episode = await store.get(output.episode_id)
-    assert episode.hosted_response_id == output.response_id
-    assert (output.error is not None) == failed
-    assert episode.status == ("failed" if failed else "succeeded")
+        run = targets.hosted_target(
+            targets.AGENTS["rca"], "http://test/responses", credential, on_episode=captured.append
+        )
+        outputs = [
+            await run(EvalCase(id="same", input="M-0001: identical input", expected={}))
+            for _ in range(2)
+        ]
+    await asyncio.to_thread(api_http.close)
+    factory.assert_called_once()
+    assert len(captured) == 2
+    for output, episode in zip(outputs, captured, strict=True):
+        assert output.response_id
+        assert output.episode_id == hosted_episode_id(output.response_id) == episode.id
+        assert episode.hosted_response_id == output.response_id
+        assert (output.error is not None) == failed
+        assert episode.status == ("failed" if failed else "succeeded")
+        if not failed:
+            assert output.failure is not None
+            assert output.failure.kind == "unparseable"
 
 
 @pytest.mark.parametrize("failed", [False, True])
@@ -156,7 +180,7 @@ def test_diagnose_displays_verified_identity_for_success_and_failure(
     async def run(_: EvalCase) -> RunOutput:
         return output
 
-    monkeypatch.setattr(cli, "make_target", lambda *_: run)
+    monkeypatch.setattr(cli, "make_target", lambda *_, **__: run)
     client = PlatformClient("http://test", "offline")
     client._http.close()
     with httpx.Client(
@@ -187,6 +211,22 @@ def test_missing_identity_never_searches_recent_episodes(monkeypatch: pytest.Mon
 
     monkeypatch.setattr(PlatformClient, "from_env", forbidden)
     assert "identifier missing" in cli.describe_correlation(RunOutput())
+
+
+@pytest.mark.parametrize("mismatched", [False, True])
+def test_captured_correlation_avoids_a_second_credential_lookup(
+    monkeypatch: pytest.MonkeyPatch, mismatched: bool
+) -> None:
+    def forbidden() -> None:
+        pytest.fail("A captured episode does not need another credential lookup")
+
+    monkeypatch.setattr(PlatformClient, "from_env", forbidden)
+    episode = recorded(id="other" if mismatched else EPISODE_ID)
+    message = cli.describe_correlation(
+        RunOutput(episode_id=EPISODE_ID, response_id=RESPONSE_ID), episode=episode
+    )
+    assert ("exact response verified" in message) == (not mismatched)
+    assert ("unverified:" in message) == mismatched
 
 
 def test_missing_persistence_is_not_claimed_as_verified(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -339,7 +379,7 @@ def test_client_failures_preserve_both_ids_and_original_host_error(
             episode_id=EPISODE_ID,
         )
 
-    monkeypatch.setattr(cli, "make_target", lambda *_: run)
+    monkeypatch.setattr(cli, "make_target", lambda *_, **__: run)
 
     def episode_response(request: httpx.Request) -> httpx.Response:
         if failure == "episode-network":
@@ -381,7 +421,7 @@ def test_invalid_endpoint_preserves_ids_and_original_host_error(
             episode_id=EPISODE_ID,
         )
 
-    monkeypatch.setattr(cli, "make_target", lambda *_: run)
+    monkeypatch.setattr(cli, "make_target", lambda *_, **__: run)
     result = CliRunner().invoke(cli.app, ["--no-azd", "diagnose", "M-0001: identical input"])
     assert result.exit_code == 1, result.output
     assert f"Response: {RESPONSE_ID}" in result.output
