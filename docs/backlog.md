@@ -32,7 +32,7 @@ Everything else goes under [Later](#later) as one line, or is left out. Items re
 | ID | Item | Why | Explores | Size | Target |
 |---|---|---|---|---|---|
 | Q1 | **Tool-selection reliability** | The gate is red: the agent skips `get_telemetry_window` in up to 10 of 18 cases (`tool_coverage` 0.89 against 0.90) and calls the unchecked data unavailable. | | M | it3 |
-| Q2 | **Eval health** | Nobody knows how much scores vary between runs, or whether a failure was the model or the plumbing. | | M | it3 |
+| Q2 | **Eval health** | Nobody knows how much scores vary between runs, or whether a failure was the model or the plumbing. | | M | done it3 ([#13](https://github.com/marcgs/cs-ai-platform-sample/pull/13)) |
 | Q3 | **Harder cases with ground truth** | All 18 cases pass at baseline, so the suite can't show improvement, and a root-cause label can't tell a sound diagnosis from a lucky guess. | | M | it3 |
 | Q4 | **Gate on outcomes, with model judges** | `tool_coverage` rewards a ritual, and the specification asks for model-based evaluators. | `azure-ai-evaluation` | S | |
 | Q5 | **Cost and latency per diagnosis** | Time to diagnosis is the main outcome, and cost decides the model. | Foundry tracing | S | |
@@ -100,10 +100,12 @@ Notes:
 | S3 | **AI gateway** | Quotas per agent, logging and failover for models and tools. | API Management | L | |
 | S4 | **Fleet view and kill switch** | Someone has to see every agent, its cost and errors, and be able to stop one fast. | Foundry Control Plane, Entra Agent ID | M | |
 | S5 | **Canary diagnosis and alerts** | Failed runs, store outages and rate limiting should page someone. | Foundry monitoring, Azure Monitor alerts | S | |
+| S6 | **SDK dependency compatibility** | A fresh dependency resolution can break the real MCP session even when the baseline local resolution passes; verify compatible SDK ranges without committing a lock file. | Agent Framework, MCP | S | |
 
 Notes:
 
 - **S2:** test with Q3's injection cases, starting in annotate mode.
+- **S6:** found during iteration-3 validation: `agent-framework-core` 1.23.0 with `mcp` 1.30.0 fails both parameterizations of `test_real_mcp_session_propagates_episode_context_in_metadata` because `ClientSession.protocol_version` is absent. Framework core 1.22.0 with MCP 1.30.0 passes. No compatibility constraint was changed as part of Q2.
 
 ## Later
 
