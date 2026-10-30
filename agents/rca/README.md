@@ -7,12 +7,43 @@ It's built entirely from platform parts (`cs-platform`): the spec and instructio
 | File | Purpose |
 |---|---|
 | `src/rca_agent/agent.spec.yaml` | Name, version, description, instructions, tool sources, eval suite |
-| `src/rca_agent/instructions.md` | Investigation procedure and answer rules |
+| `src/rca_agent/instructions.md` | Role and pointer to the bundled skill |
+| `skills/rca-investigation/SKILL.md` | Versioned investigation procedure and answer rules |
+| `src/rca_agent/skill.py` | Bundled skill loading and episode version metadata |
 | `src/rca_agent/report.py` | `RcaReport` schema (strict structured outputs) |
 | `src/rca_agent/agent.py` | `create_agent()`: Azure-backed defaults, swappable for tests |
 | `src/rca_agent/main.py` | Foundry hosted agent entry point (Responses protocol, port 8088) |
 | `src/rca_agent/local.py` | `rca-local`: run on your machine against the toolbox or a local MCP server |
 | `Dockerfile` | Image for the hosted agent (build context: repository root) |
+
+## Versioned investigation skill (L1)
+
+The procedure and answer rules live in `skills/rca-investigation/SKILL.md`, with
+Agent Skills front matter (`name`, `description`, `metadata.version`). The optimizer's
+source layout remains separate from `src`; Hatchling maps `skills` into
+`rca_agent/skills` in the wheel and includes it in source distributions. Source runs
+read the same file from the checkout. The Dockerfile checks the installed skill at build time.
+
+`create_agent()` reads the skill once, appends its body once to the role instructions,
+and records its name and version as optional `Episode.skill` metadata through an
+RCA-local episode-store adapter. Both injected and default stores receive the metadata.
+Older episodes and agents without a skill retain `skill=None`. No shared factory,
+capture middleware or agent-spec changes are needed.
+
+**Always-in-context is the chosen default pending comparison.** It avoids an extra
+model-selected `load_skill` call and keeps every procedure rule available on every
+turn, at the cost of including the full procedure in context. Progressive disclosure
+is not implemented or measured here; no equivalence claim is made. The procedure and
+answer-rule text is unchanged, but offline scripted turns cannot establish equivalent
+model behavior.
+
+Offline tests cover the real tool loop, context inclusion exactly once in the built agent,
+episode metadata and legacy compatibility, and loading from an installed wheel rebuilt
+from its source distribution. Live regression comparisons against the iteration-3
+baseline and a hosted run after approved deployment remain pending. No model traffic,
+deployment, remote skill publication or Foundry skill-discovery verification was performed.
+The deployed path remains the bundled copy; no unsupported publishing configuration
+or remote skill API is assumed.
 
 ## Run locally
 
