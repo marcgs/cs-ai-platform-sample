@@ -31,6 +31,10 @@ seeded streams per category, machines from `M-0021`, scenarios from `SC-019`, ev
 machines that have its telemetry. Legacy regular telemetry keeps its original serialization.
 Irregular series carry observation timestamps alongside values: removing samples never
 compresses elapsed time. Events optionally carry receipt time, distinct from event time.
+Original and injection-cohort precursor clues remain before onset. Retrospective
+investigations are logged after their telemetry observations and event receipts,
+before incident reporting. Maintenance findings follow the completed window and
+the subsequent healthy checks.
 
 The frozen `services/diagnostics-mcp/tests/fixtures/legacy_golden.json` records hashes taken
 from revision `fae76ff`, before extension: all original seed fields and 791 tool responses
