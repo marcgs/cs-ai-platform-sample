@@ -9,9 +9,10 @@ can resolve: error events ``EV-...``, logbook entries ``LB-...``, telemetry
 
 import statistics
 from datetime import datetime, timedelta
+from itertools import pairwise
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from diagnostics_domain.dataset import DiagnosticsDataset, UnknownRecordError, load_seed
 from diagnostics_domain.models import Severity, Subsystem
@@ -77,6 +78,13 @@ class EventItem(_Result):
     timestamp: datetime
     code: str
     message: str
+    received_at: datetime | None = Field(default=None, exclude_if=lambda value: value is None)
+
+
+class EventQuality(_Result):
+    duplicate_count: int
+    late_arrival_count: int
+    clock_skew_count: int
 
 
 class ErrorEvents(_Result):
@@ -86,11 +94,23 @@ class ErrorEvents(_Result):
     summary: list[CodeSummary]
     events: list[EventItem]
     truncated: bool
+    data_quality: EventQuality | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class Sample(_Result):
     timestamp: datetime
     value: float
+
+
+class TelemetryQuality(_Result):
+    observed_count: int
+    missing_count: int
+    duplicate_count: int
+    clock_reversal_count: int
+    longest_gap_minutes: float
+    sensor_disagreement: bool
+    stuck_sensor: bool
+    statistics_policy: str = "One observation per timestamp; no interpolation across gaps."
 
 
 class TelemetryWindow(_Result):
@@ -111,6 +131,9 @@ class TelemetryWindow(_Result):
     out_of_tolerance_count: int
     first_out_of_tolerance: datetime | None
     samples: list[Sample]
+    data_quality: TelemetryQuality | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class PossibleCause(_Result):
@@ -177,6 +200,9 @@ class DiagnosticsTools:
                     tolerance=s.tolerance,
                 )
                 for s in self._data.signals
+                if any(
+                    t.machine_id == machine_id and t.signal == s.name for t in self._data.telemetry
+                )
             ],
         )
 
@@ -207,6 +233,14 @@ class DiagnosticsTools:
                 )
             )
         summary.sort(key=lambda s: (-s.count, s.ref))
+        duplicates = len(events) - len({(e.timestamp, e.code, e.message) for e in events})
+        late = sum(e.received_at is not None and e.received_at > e.timestamp for e in events)
+        skew = sum(e.received_at is not None and e.received_at < e.timestamp for e in events)
+        quality = (
+            EventQuality(duplicate_count=duplicates, late_arrival_count=late, clock_skew_count=skew)
+            if duplicates or late or skew
+            else None
+        )
 
         recent = events[-MAX_EVENTS:]
         return ErrorEvents(
@@ -215,10 +249,17 @@ class DiagnosticsTools:
             window_end=self.now,
             summary=summary,
             events=[
-                EventItem(ref=e.id, timestamp=e.timestamp, code=e.code, message=e.message)
+                EventItem(
+                    ref=e.id,
+                    timestamp=e.timestamp,
+                    code=e.code,
+                    message=e.message,
+                    received_at=e.received_at,
+                )
                 for e in recent
             ],
             truncated=len(events) > len(recent),
+            data_quality=quality,
         )
 
     def telemetry_window(
@@ -231,7 +272,65 @@ class DiagnosticsTools:
         spec = self._data.signal(signal)
         values = series.values
         step = timedelta(minutes=series.interval_minutes)
-        times = [series.start + i * step for i in range(len(values))]
+        times = (
+            list(series.timestamps)
+            if series.timestamps
+            else [series.start + i * step for i in range(len(values))]
+        )
+        if not values:
+            raise ToolError("No telemetry observations in the requested window")
+        observed = len(values)
+        duplicates = len(times) - len(set(times))
+        reversals = sum(b < a for a, b in pairwise(times))
+        if series.timestamps:
+            unique = dict(zip(times, values, strict=True))
+            times = sorted(unique)
+            values = tuple(unique[timestamp] for timestamp in times)
+        if len(values) < 2:
+            raise ToolError("At least two distinct telemetry timestamps are needed for a summary")
+        gaps = [b - a for a, b in pairwise(times)]
+        leading_gap = max(timedelta(), times[0] - start)
+        trailing_gap = max(timedelta(), self.now - step - times[-1])
+        missing = (
+            sum(max(0, gap // step - 1) for gap in gaps)
+            + leading_gap // step
+            + trailing_gap // step
+        )
+        longest_gap = max(*gaps, leading_gap, trailing_gap) / timedelta(minutes=1)
+        reference = next(
+            (
+                item
+                for item in self._data.telemetry
+                if item.machine_id == machine_id and item.signal == "chamber_pressure_reference_pa"
+            ),
+            None,
+        )
+        disagreement = (
+            signal == "chamber_pressure_pa"
+            and reference is not None
+            and abs(
+                statistics.fmean(values[-SUMMARY_POINTS:])
+                - statistics.fmean(reference.values[-SUMMARY_POINTS:])
+            )
+            > spec.tolerance
+        )
+        stuck = any(
+            len(set(values[index : index + SUMMARY_POINTS])) == 1
+            for index in range(max(0, len(values) - SUMMARY_POINTS + 1))
+        )
+        quality = (
+            TelemetryQuality(
+                observed_count=observed,
+                missing_count=missing,
+                duplicate_count=duplicates,
+                clock_reversal_count=reversals,
+                longest_gap_minutes=longest_gap,
+                sensor_disagreement=disagreement,
+                stuck_sensor=stuck,
+            )
+            if missing or duplicates or reversals or disagreement or stuck
+            else None
+        )
 
         outside = [
             t for t, v in zip(times, values, strict=True) if abs(v - spec.nominal) > spec.tolerance
@@ -262,6 +361,7 @@ class DiagnosticsTools:
                 Sample(timestamp=t, value=v)
                 for t, v in list(zip(times, values, strict=True))[::stride]
             ],
+            data_quality=quality,
         )
 
     def error_code(self, code: str) -> ErrorCodeReference:
