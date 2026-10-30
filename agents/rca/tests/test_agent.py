@@ -10,13 +10,17 @@ from cs_platform.settings import PlatformSettings, SettingsError
 from cs_platform.testing import ScriptedChatClient, call, text
 from diagnostics_domain.dataset import load_seed
 from diagnostics_mcp.tools import TOOL_NAMES, DiagnosticsTools, telemetry_ref
+from rca_agent import agent as agent_module
 from rca_agent import main as hosted
 from rca_agent.agent import create_agent, load_rca_spec
 from rca_agent.local import episode_summary, render
 from rca_agent.report import RcaReport
+from rca_agent.skill import load_investigation_skill
 
 if TYPE_CHECKING:
     from azure.core.credentials_async import AsyncTokenCredential
+
+    from rca_agent.skill import InvestigationSkill
 
 SETTINGS = PlatformSettings(foundry_project_endpoint="https://example/api/projects/p")
 CREDENTIAL: AsyncTokenCredential = None  # type: ignore[assignment]  # unused with injected parts
@@ -138,12 +142,18 @@ async def test_golden_path_produces_an_evidence_backed_report(knowledge: str) ->
     client = ScriptedChatClient(turns)
     store = InMemoryEpisodeStore()
     agent = create_agent(SETTINGS, CREDENTIAL, client=client, store=store, tools=tools)
+    skill = load_investigation_skill()
+    context = agent.default_options["instructions"]
+    assert context.count(skill.body) == 1
+    assert context.count("## How to investigate") == 1
+    assert context.count("## Rules for your answer") == 1
 
     response: Any = await agent.run(f"{machine}: {scenario.symptom}")
 
     assert isinstance(response.value, RcaReport)
     [episode] = await store.list()
     assert episode.status == "succeeded"
+    assert episode.skill == skill.metadata
     expected_calls = [
         "get_error_events",
         "get_telemetry_window",
@@ -171,6 +181,27 @@ def test_agent_needs_a_tool_source() -> None:
         create_agent(
             SETTINGS, CREDENTIAL, client=ScriptedChatClient([]), store=InMemoryEpisodeStore()
         )
+
+
+async def test_default_store_records_skill_on_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = InMemoryEpisodeStore()
+    skill = load_investigation_skill()
+    loads = 0
+
+    def load_skill() -> InvestigationSkill:
+        nonlocal loads
+        loads += 1
+        return skill
+
+    monkeypatch.setattr(agent_module, "load_investigation_skill", load_skill)
+    monkeypatch.setattr(agent_module, "episode_store", lambda *_args: store)
+    agent = create_agent(SETTINGS, CREDENTIAL, client=ScriptedChatClient([]), tools=[])
+    with pytest.raises(IndexError):
+        await agent.run("M-0001: incident")
+    [episode] = await store.list()
+    assert loads == 1
+    assert episode.status == "failed"
+    assert episode.skill == skill.metadata
 
 
 def test_hosting_server_accepts_the_factory() -> None:

@@ -32,6 +32,11 @@ episode_id = response.additional_properties["episode_id"]
 
 Capture is deterministic: the platform writes the episode, not the model. A failing episode store is logged and never fails the user's request.
 
+`Episode.skill` optionally records the bundled procedure's name and version independently
+of the agent version. It defaults to `None` for legacy records and agents without a
+versioned skill. The RCA agent attaches it through its own episode-store adapter; shared
+capture and factory behavior are unchanged.
+
 `Episode.source` defaults to `real` for actual runs (including runs against the fictional
 diagnostics seed). Simulated runs must set it to `synthetic`. Legacy records still read
 as real. `export_episodes(episodes, path)` writes explicit real labels and refuses
@@ -80,7 +85,9 @@ Sparse informational means and intervals use only applicable case-runs.
 intervals (2,000 draws, seed 42). Each draw samples cases, then repeats within those cases;
 repeats are not independent cases. Small cohorts and synthetic data limit inference.
 `paired_difference_intervals(baseline, candidate)` estimates paired changes and rejects
-different case/repeat cohorts or metric applicability.
+different case/repeat cohorts, minimum-score declarations or informational
+metric applicability. Missing minimum-score metrics are zero-filled before
+subtracting paired scores, including cases where both runs omit the metric.
 
 `assign_splits` ranks machine IDs by a hash with fixed salt
 `cs-platform-eval-split-v1` and assigns approximately 2:1 train/test within categories

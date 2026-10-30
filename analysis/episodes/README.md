@@ -138,18 +138,18 @@ The output directories must be new or empty, not a mix with a previous populatio
 
 ```bash
 uv run generate-feedback --count 300 --seed 20261030 \
-  --output-dir analysis/episodes/output/held-out-corrected
+  --output-dir analysis/episodes/output/held-out-final
 uv run analyze-episodes sample \
-  --episodes analysis/episodes/output/held-out-corrected/episodes.jsonl \
-  --reviews analysis/episodes/output/held-out-corrected/reviews.jsonl \
+  --episodes analysis/episodes/output/held-out-final/episodes.jsonl \
+  --reviews analysis/episodes/output/held-out-final/reviews.jsonl \
   --source synthetic --misses 30 --controls 20 --seed l3-pilot-v1 \
-  --output-dir analysis/episodes/output/pilot-corrected
+  --output-dir analysis/episodes/output/pilot-final
 
 uv run analyze-episodes analyze \
-  --episodes analysis/episodes/output/pilot-corrected/episodes.jsonl \
-  --reviews analysis/episodes/output/pilot-corrected/reviews.jsonl \
+  --episodes analysis/episodes/output/pilot-final/episodes.jsonl \
+  --reviews analysis/episodes/output/pilot-final/reviews.jsonl \
   --source synthetic --synthetic-seed-context \
-  --output analysis/episodes/output/pilot-corrected-prepared
+  --output analysis/episodes/output/pilot-final-prepared
 ```
 
 `sample` reads only episodes and reviews, not the answer key or model labels.
@@ -160,46 +160,39 @@ preflight, not the requested stratum count, determines actual model traffic.
 Selection is outcome-stratified, so its rates do not estimate population rates.
 
 The reserved cohort has **50 episodes and 30 classification candidates**. A local
-dry run with a placeholder model configuration estimates **72,739 input tokens
-plus at most 36,000 output tokens**: about **109k tokens**, 30 sequential logical
+classifier-v2 dry run with locally loaded real model settings estimates
+**72,463 input tokens plus at most 36,000 output tokens**: about **108.5k tokens**, 30 sequential logical
 requests and no tools. This is a byte-based approximation, not billed usage or a
 dollar quote. Monetary cost is approximately
-`0.072739 × input-price-per-million + 0.036 × output-price-per-million`;
+`0.072463 × input-price-per-million + 0.036 × output-price-per-million`;
 confirm the actual deployment's prices and reasoning-token accounting first.
 The platform client retries only rate limits, at most four attempts per logical
 request; the token estimate is not a hard billing ceiling.
 
 Offline preparation has already generated these files in the preparation
 worktree. Reuse them there rather than rerunning generation into nonempty
-directories. This corrected population was generated on base `78f82c7`, which
-aligns the exported machine-context update date with the explicit logbook update.
-The older `held-out`, `pilot` and audit artifacts remain untouched as
-**preparation only**, not final acceptance input. Do not mix their inputs, reports
-or caches with the corrected cohort.
+directories. The final population was generated once from the integration
+of Q3 `b90d157`, L1 `59d273d` and Q2 `fc140cb`, retaining L3's review fixes.
+It includes the exported update-date and historical fallback-evidence corrections.
+The population has 300 episodes and 1,246 reviews; the pilot has 50 episodes and
+207 reviews. Older `held-out`, `pilot`, `*-corrected` and assistant-audit artifacts
+remain unchanged as **pre-final preparation only**, not acceptance input. Do not
+mix their inputs, reports or caches with the final cohort.
 
-**Final pilot preparation is paused.** A further L2 review found that correct
-missing-code-mapping reports lack recorded retrieval/citation for their claimed
-historical fallback. That generator correction is still pending. The existing
-`held-out-corrected`, `pilot-corrected` and corrected assistant-audit artifacts
-are therefore **pre-final preparation only**, not final acceptance input. Do not
-run the following model/benchmark commands against them. After the parent
-confirms L2 is clean/current, use distinct final directories, regenerate once
-with the same seeds/selection, update the paths below, and freeze a new blind
-audit before any classifier run. Do not repeatedly regenerate while L2 changes.
-
-**No live calls have been made.** Load the real model configuration
-into the environment and rerun the estimate; a placeholder-config fingerprint
-cannot approve a real-model run:
+**No final audit, model calls or answer-key inspection has occurred.** Q2's
+review is clear and #13 is merged. After the audited integration is committed,
+freeze a blind audit of these final inputs and obtain a fresh estimate with the
+real model configuration. The private precommit estimate is not final run approval:
 
 ```bash
 test -n "$FOUNDRY_PROJECT_ENDPOINT"
 test -n "$FOUNDRY_MODEL_DEPLOYMENT_NAME"
 uv run analyze-episodes analyze \
-  --episodes analysis/episodes/output/pilot-corrected/episodes.jsonl \
-  --reviews analysis/episodes/output/pilot-corrected/reviews.jsonl \
+  --episodes analysis/episodes/output/pilot-final/episodes.jsonl \
+  --reviews analysis/episodes/output/pilot-final/reviews.jsonl \
   --source synthetic --synthetic-seed-context --labeler foundry \
-  --cache analysis/episodes/output/pilot-corrected-labels \
-  --estimate analysis/episodes/output/pilot-corrected-estimate.json
+  --cache analysis/episodes/output/pilot-final-labels \
+  --estimate analysis/episodes/output/pilot-final-estimate.json
 ```
 
 Inspect the estimate and obtain approval for **this small cohort and budget**.
@@ -208,12 +201,12 @@ token-heavy run, the approved live command is:
 
 ```bash
 uv run analyze-episodes analyze \
-  --episodes analysis/episodes/output/pilot-corrected/episodes.jsonl \
-  --reviews analysis/episodes/output/pilot-corrected/reviews.jsonl \
+  --episodes analysis/episodes/output/pilot-final/episodes.jsonl \
+  --reviews analysis/episodes/output/pilot-final/reviews.jsonl \
   --source synthetic --synthetic-seed-context --labeler foundry \
-  --cache analysis/episodes/output/pilot-corrected-labels \
-  --approved-estimate analysis/episodes/output/pilot-corrected-estimate.json \
-  --output analysis/episodes/output/pilot-corrected-classified
+  --cache analysis/episodes/output/pilot-final-labels \
+  --approved-estimate analysis/episodes/output/pilot-final-estimate.json \
+  --output analysis/episodes/output/pilot-final-classified
 ```
 
 There is **no authorization to classify all 936 candidates** in the default
@@ -221,11 +214,12 @@ There is **no authorization to classify all 936 candidates** in the default
 
 ### Blind manual audit and final benchmark
 
-1. Keep `held-out-corrected/answer_key.json` closed. An auditor first reads the selected
-   transcripts and raw reviews, without seeing model labels/rationales. Audit at
+1. Keep `held-out-final/answer_key.json` closed. An auditor first reads the selected
+   transcripts, tool results, captured `Episode.output` and raw reviews, without
+   seeing model labels/rationales or planted truth metadata. Audit at
    least ten candidate misses and ten noncandidate comparisons, selected by
    ascending SHA-256 of `audit-v1:<episode-id>` within each group. The candidate
-   IDs come from `pilot-corrected-prepared.json`'s `unclassified` entries, not the key.
+   IDs come from `pilot-final-prepared.json`'s `unclassified` entries, not the key.
    Create a blank, deterministic audit sheet without opening any key or model
    report:
 
@@ -236,13 +230,13 @@ There is **no authorization to classify all 936 candidates** in the default
    from pathlib import Path
 
    output = Path("analysis/episodes/output")
-   report = json.loads((output / "pilot-corrected-prepared.json").read_text())
+   report = json.loads((output / "pilot-final-prepared.json").read_text())
    candidates = {row["episode"]["id"] for row in report["unclassified"]}
    comparisons = set(report["episode_ids"]) - candidates
    def order(value):
        return hashlib.sha256(f"audit-v1:{value}".encode()).hexdigest()
    selected = sorted(candidates, key=order)[:10] + sorted(comparisons, key=order)[:10]
-   with (output / "pilot-corrected-audit.jsonl").open("x", encoding="utf-8") as stream:
+   with (output / "pilot-final-audit.jsonl").open("x", encoding="utf-8") as stream:
        for episode_id in sorted(selected, key=order):
            stream.write(json.dumps({
                "episode_id": episode_id, "assessment": None, "category": None,
@@ -254,7 +248,8 @@ There is **no authorization to classify all 936 candidates** in the default
 2. Record episode ID, independent miss/correct/uncertain assessment, taxonomy
    category or abstention, evidence citations and confidence. Review dissenting
    reviewers and alleged root causes; majority agreement is not expert truth.
-   Keep this local, separate from classifier inputs and cache.
+   Keep this local, separate from classifier inputs and cache. Identify the
+   auditor type: an assistant audit is not human/domain-expert manual acceptance.
 3. Freeze that audit, then compare model labels and rationales. Record category
    agreement with numerator/denominator, abstentions, false-positive consensus
    misses, missed failures among comparisons, signature fragmentation and route
@@ -264,10 +259,10 @@ There is **no authorization to classify all 936 candidates** in the default
 
    ```bash
    uv run analyze-episodes benchmark \
-     --report analysis/episodes/output/pilot-corrected-classified.json \
-     --answer-key analysis/episodes/output/held-out-corrected/answer_key.json \
+     --report analysis/episodes/output/pilot-final-classified.json \
+     --answer-key analysis/episodes/output/held-out-final/answer_key.json \
      --allow-subset --sample-size 100 \
-     --output analysis/episodes/output/pilot-corrected-benchmark.json
+     --output analysis/episodes/output/pilot-final-benchmark.json
    ```
 
 5. Record every pattern's rank, coverage, purity and route, category agreement and

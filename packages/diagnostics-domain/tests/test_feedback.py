@@ -16,6 +16,7 @@ from diagnostics_domain.feedback import (
 )
 from diagnostics_domain.feedback_models import AnswerKey, Review
 from diagnostics_domain.feedback_transcripts import choose_scenario, make_transcript
+from diagnostics_domain.models import HistoricalCase, Subsystem
 from rca_agent.report import RcaReport
 
 FIXTURE = Path(__file__).parent / "fixtures" / "feedback"
@@ -151,6 +152,74 @@ def test_update_context_matches_logbook_without_mutating_seed(failed: bool) -> N
         "last_software_update": update.date().isoformat(),
     }
     assert dataset.model_dump_json() == original
+
+
+@pytest.mark.parametrize("seed", [7, 42])
+def test_missing_mapping_controls_retrieve_and_cite_real_matching_cases(seed: int) -> None:
+    dataset = load_seed()
+    original = dataset.model_dump_json()
+    cases = {case.id: case for case in dataset.historical_cases}
+    population = generate_feedback(count=100, seed=seed)
+    checked: Counter[str] = Counter()
+    for episode in population.episodes:
+        if not any(
+            call.name == "lookup_error_code" and call.arguments["code"] == "EC-9901"
+            for call in episode.tool_calls
+        ):
+            continue
+        hypothesis = RcaReport.model_validate(episode.output).hypotheses[0]
+        searches = [call for call in episode.tool_calls if call.name == "azure_ai_search"]
+        citations = [item for item in hypothesis.evidence if item.ref.startswith("HC-")]
+        if hypothesis.failure_mode_id == "unknown":
+            assert not searches
+            assert not citations
+            checked["failed"] += 1
+            continue
+        assert len(searches) == 1
+        assert episode.input.split(": ", 1)[1] in searches[0].arguments["query"]
+        returned = [
+            HistoricalCase.model_validate(row) for row in json.loads(searches[0].result or "[]")
+        ]
+        assert returned
+        assert all(case == cases[case.id] for case in returned)
+        assert all(case.confirmed_failure_mode == hypothesis.failure_mode_id for case in returned)
+        assert citations
+        for citation in citations:
+            case = next(case for case in returned if case.id == citation.ref)
+            assert citation.source == "azure_ai_search"
+            assert citation.excerpt == case.resolution
+        assert any(item.source == "get_telemetry_window" for item in hypothesis.evidence)
+        checked["correct"] += 1
+    assert checked == {"failed": 10, "correct": 10}
+    assert dataset.model_dump_json() == original
+
+
+def test_only_missing_mapping_cohort_requires_matching_seed_history() -> None:
+    dataset = load_seed()
+    mode = next(mode for mode in dataset.failure_modes if mode.subsystem == Subsystem.VACUUM)
+    scenario = next(
+        scenario for scenario in dataset.scenarios if scenario.expected_failure_mode == mode.id
+    )
+    unmatched_mode = mode.model_copy(update={"id": "FM-99"})
+    unmatched = scenario.model_copy(
+        update={"id": "SC-SYN-NO-HISTORY", "expected_failure_mode": unmatched_mode.id}
+    )
+    expanded = dataset.model_copy(
+        update={
+            "failure_modes": (*dataset.failure_modes, unmatched_mode),
+            "scenarios": (scenario, unmatched),
+        }
+    )
+    assert all(
+        case.confirmed_failure_mode != unmatched_mode.id for case in expanded.historical_cases
+    )
+    for seed in range(10):
+        assert choose_scenario(expanded, 2, Random(seed)) == scenario
+    new_only = expanded.model_copy(update={"scenarios": (unmatched,)})
+    for context in (0, 1, 3, 4):
+        assert choose_scenario(new_only, context, Random(42)) == unmatched
+    with pytest.raises(ValueError, match=r"No eligible seed scenarios.*context 2"):
+        choose_scenario(new_only, 2, Random(42))
 
 
 def test_reviewer_population_has_noise_without_turning_assertions_into_truth() -> None:

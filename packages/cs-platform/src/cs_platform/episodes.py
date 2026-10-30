@@ -51,12 +51,23 @@ class Usage(BaseModel):
     output_tokens: int | None = None
 
 
+class SkillMetadata(BaseModel):
+    """The bundled procedure used for an episode, independent of the agent version."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: str
+    version: str
+
+
 class Episode(BaseModel):
     id: str = Field(default_factory=lambda: uuid4().hex)
     source: Literal["real", "synthetic"] = "real"
     """Run provenance, not whether the incident's domain data happens to be fictional."""
     agent: str
     agent_version: str
+    skill: SkillMetadata | None = None
+    """Absent on older records and agents without a versioned skill."""
     created_at: datetime = Field(default_factory=_now)
     completed_at: datetime | None = None
     status: Literal["running", "succeeded", "failed"] = "running"

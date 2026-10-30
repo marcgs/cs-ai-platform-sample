@@ -44,6 +44,7 @@ Notes:
 - **Q1:** found in the [PR #9](https://github.com/marcgs/cs-ai-platform-sample/pull/9) review; the failed run was accepted as recorded, not as a pass. Earlier suites skipped the tool in 7–8 cases. The numbered instruction alone is insufficient. Keep the threshold; don't rerun to get a pass.
 - **Q2:** repeats with confidence intervals, plumbing failures apart from wrong answers, per-case transcripts, a saturation warning, and train and held-out cases split by machine (the keep/revert rule that L4 relies on).
 - **Q3:** decisive evidence, acceptable alternatives and ruled-out modes per scenario; categories such as overlapping, no fault found, out of catalog, missing machine, injection and noisy data. Keep the 18 existing cases byte-identical so the baseline stays comparable.
+- **Q3, preparation:** the 50-case generator, truthful tools and causal evaluators are offline implementation-ready. The original18 gate and frozen legacy outputs are protected. Deployment-dependent headroom and ablation acceptance remain outstanding; see [Q3 evidence](iteration-3/q3.md).
 - **Q4:** a change to which metrics gate needs the user's approval, and not as Q1's fix.
 - **Q7:** the [retained Q2 baseline](iteration-3/q2.md) ran the unchanged `fae76ff` agent and dataset, 18 cases with three repeats at concurrency one. `used_knowledge` was 0.444 (95% CI approximately 0.28–0.61), while `hit_at_1` was 1.00 and search was called in 0.67 of runs. The run failed and was retained; no threshold was lowered and no rerun was used to seek a pass.
 

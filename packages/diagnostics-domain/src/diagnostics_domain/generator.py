@@ -10,6 +10,7 @@ from pathlib import Path
 
 from diagnostics_domain.catalog import BACKGROUND_CODES, ERROR_CODES, FAILURE_MODES, SIGNALS
 from diagnostics_domain.dataset import SEED_RESOURCE, DiagnosticsDataset
+from diagnostics_domain.harder import extend_dataset
 from diagnostics_domain.models import (
     ErrorEvent,
     FailureMode,
@@ -64,7 +65,7 @@ def generate(seed: int = DEFAULT_SEED) -> DiagnosticsDataset:
         for signal in SIGNALS
     )
 
-    return DiagnosticsDataset(
+    legacy = DiagnosticsDataset(
         reference_time=REFERENCE_TIME,
         signals=SIGNALS,
         error_codes=ERROR_CODES,
@@ -76,6 +77,7 @@ def generate(seed: int = DEFAULT_SEED) -> DiagnosticsDataset:
         historical_cases=_historical_cases(rng, machines),
         scenarios=scenarios,
     )
+    return extend_dataset(legacy, seed)
 
 
 def _plan_scenarios(rng: random.Random) -> list[tuple[str, str, datetime]]:

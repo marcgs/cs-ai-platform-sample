@@ -8,25 +8,48 @@ it after changing the seed data:
 
 from importlib import resources
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from cs_platform.evals import EvalCase
+from cs_platform.evals import EvalCase, EvalTruth, assign_splits
 from diagnostics_domain.dataset import DiagnosticsDataset, load_seed
 
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from cs_platform.evals import Split
 CASES_FILE = "cases.jsonl"
 
 
-def cases_from_seed(dataset: DiagnosticsDataset) -> list[EvalCase]:
-    return [
-        EvalCase(
-            id=scenario.id,
-            input=f"{scenario.machine_id}: {scenario.symptom}",
-            expected={
-                "machine_id": scenario.machine_id,
-                "failure_mode": scenario.expected_failure_mode,
-            },
+def cases_from_seed(
+    dataset: DiagnosticsDataset, previous: Sequence[EvalCase] = ()
+) -> list[EvalCase]:
+    previous_splits: dict[str, Split | None] = {
+        case.expected["machine_id"]: case.split for case in assign_splits(tuple(previous))
+    }
+    return list(
+        assign_splits(
+            tuple(
+                EvalCase(
+                    id=scenario.id,
+                    input=scenario.incident_input(),
+                    expected={
+                        "machine_id": scenario.machine_id,
+                        "failure_mode": scenario.expected_failure_mode,
+                    },
+                    truth=EvalTruth(
+                        category=scenario.category,
+                        decisive_refs=scenario.decisive_refs,
+                        acceptable_failure_modes=scenario.acceptable_failure_modes,
+                        ruled_out_failure_modes=scenario.ruled_out_failure_modes,
+                        confirming_checks=scenario.confirming_checks,
+                        injection_markers=scenario.injection_markers,
+                    ),
+                    split=previous_splits.get(scenario.machine_id),
+                )
+                for scenario in dataset.scenarios
+            )
         )
-        for scenario in dataset.scenarios
-    ]
+    )
 
 
 def render(cases: list[EvalCase]) -> str:
@@ -35,7 +58,16 @@ def render(cases: list[EvalCase]) -> str:
 
 def main() -> None:
     path = Path(str(resources.files("rca_evals"))) / CASES_FILE
-    path.write_text(render(cases_from_seed(load_seed())), encoding="utf-8")
+    previous = (
+        tuple(
+            EvalCase.model_validate_json(line)
+            for line in path.read_text("utf-8").splitlines()
+            if line.strip()
+        )
+        if path.exists()
+        else ()
+    )
+    path.write_text(render(cases_from_seed(load_seed(), previous=previous)), encoding="utf-8")
     print(f"Wrote {path}")
 
 

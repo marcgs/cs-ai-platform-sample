@@ -10,8 +10,21 @@ agent can be traced back to a concrete record:
 
 from datetime import date, datetime
 from enum import StrEnum
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+type ScenarioCategory = Literal[
+    "clean",
+    "overlapping",
+    "no_fault_found",
+    "out_of_catalog",
+    "missing_machine",
+    "injection",
+    "sensor_fault",
+    "data_gap",
+    "nuisance_alarm",
+]
 
 
 class _Record(BaseModel):
@@ -93,6 +106,7 @@ class ErrorEvent(_Record):
     timestamp: datetime
     code: str
     message: str
+    received_at: datetime | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class TelemetrySeries(_Record):
@@ -102,6 +116,14 @@ class TelemetrySeries(_Record):
     start: datetime
     interval_minutes: int = Field(gt=0)
     values: tuple[float, ...]
+    timestamps: tuple[datetime, ...] = Field(default=(), exclude_if=lambda value: not value)
+
+    @model_validator(mode="after")
+    def matching_timestamps(self) -> TelemetrySeries:
+        """Explicit observation times preserve gaps, duplicates and clock reversals."""
+        if self.timestamps and len(self.timestamps) != len(self.values):
+            raise ValueError("timestamps and values must have equal lengths")
+        return self
 
 
 class LogbookEntry(_Record):
@@ -131,3 +153,15 @@ class Scenario(_Record):
     symptom: str
     onset: datetime
     expected_failure_mode: str
+    category: ScenarioCategory = "clean"
+    decisive_refs: tuple[str, ...] = ()
+    acceptable_failure_modes: tuple[str, ...] = ()
+    ruled_out_failure_modes: tuple[str, ...] = ()
+    confirming_checks: tuple[str, ...] = ()
+    injection_markers: tuple[str, ...] = ()
+
+    def incident_input(self) -> str:
+        """Render the observable incident, withholding identity in missing-machine cases."""
+        if self.category == "missing_machine":
+            return self.symptom
+        return f"{self.machine_id}: {self.symptom}"
