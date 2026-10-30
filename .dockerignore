@@ -3,6 +3,8 @@
 .github
 .claude
 .azure
+.eval-results
+analysis/episodes/output
 **/.venv
 **/__pycache__
 **/.pytest_cache

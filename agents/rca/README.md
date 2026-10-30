@@ -7,12 +7,61 @@ It's built entirely from platform parts (`cs-platform`): the spec and instructio
 | File | Purpose |
 |---|---|
 | `src/rca_agent/agent.spec.yaml` | Name, version, description, instructions, tool sources, eval suite |
-| `src/rca_agent/instructions.md` | Investigation procedure and answer rules |
+| `src/rca_agent/instructions.md` | Role and pointer to the bundled skill |
+| `skills/rca-investigation/SKILL.md` | Versioned investigation procedure and answer rules |
+| `src/rca_agent/skill.py` | Bundled skill loading and episode version metadata |
 | `src/rca_agent/report.py` | `RcaReport` schema (strict structured outputs) |
 | `src/rca_agent/agent.py` | `create_agent()`: Azure-backed defaults, swappable for tests |
 | `src/rca_agent/main.py` | Foundry hosted agent entry point (Responses protocol, port 8088) |
 | `src/rca_agent/local.py` | `rca-local`: run on your machine against the toolbox or a local MCP server |
 | `Dockerfile` | Image for the hosted agent (build context: repository root) |
+
+## Versioned investigation skill (L1)
+
+The procedure and answer rules live in `skills/rca-investigation/SKILL.md`, with
+Agent Skills front matter (`name`, `description`, `metadata.version`). The optimizer's
+source layout remains separate from `src`; Hatchling maps `skills` into
+`rca_agent/skills` in the wheel and includes it in source distributions. Source runs
+read the same file from the checkout. The Dockerfile checks the installed skill at build time.
+
+`create_agent()` reads the skill once, appends its body once to the role instructions,
+and records its name and version as optional `Episode.skill` metadata through an
+RCA-local episode-store adapter. Both injected and default stores receive the metadata.
+Older episodes and agents without a skill retain `skill=None`. No shared factory,
+capture middleware or agent-spec changes are needed.
+
+**Always-in-context remains the default.** It avoids an extra
+model-selected `load_skill` call and keeps every procedure rule available on every
+turn, at the cost of including the full procedure in context. Progressive disclosure
+is not implemented or measured here; no equivalence claim is made. The procedure and
+answer-rule text is unchanged, but offline scripted turns cannot establish equivalent
+model behavior.
+
+Offline tests cover the real tool loop, context inclusion exactly once in the built agent,
+episode metadata and legacy compatibility, and loading from an installed wheel rebuilt
+from its source distribution.
+
+The frozen `59d273d` bundled-skill candidate passed the unchanged gates on the original
+18 cases with three serialized repeats: all 54 final episodes succeeded, tool coverage
+was 0.9333 and knowledge citations were 0.7037 against the unchanged 0.70 minimum.
+The retained pre-skill baseline still fails that knowledge gate at 0.4444. A first
+cancelled attempt's 25 rounded console observations remain separate and inconclusive;
+the sole complete technical recovery does not pool them into its results.
+
+All/train/test paired comparisons have no entirely negative difference interval on
+the common metrics, but train/test knowledge intervals include zero. These observations
+do not establish causal improvement, formal equivalence or noninferiority.
+One approved hosted diagnosis verified exact response-to-episode correlation, raw
+skill/source metadata and complete tool/output capture from the deployed revision.
+Reading the new metadata also required a coordinated platform API deployment.
+See [L1 evidence](../../docs/iteration-3/l1.md) for measurements and limitations.
+Subsequent main integration passed 374 offline tests. The live measurements above
+apply to frozen `59d273d`, not a new live validation of the integrated challenge suite.
+
+The deployed path remains the bundled copy. Progressive disclosure was not measured
+or selected. Current Agent Framework skill documentation was checked, but a
+Foundry-native consumption path was not verified and no skill resource was published.
+No unsupported publishing configuration or remote skill API is assumed.
 
 ## Run locally
 

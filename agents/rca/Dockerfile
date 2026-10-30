@@ -25,7 +25,7 @@ RUN uv venv /app/.venv \
     && uv pip install --python /app/.venv/bin/python --no-deps \
         packages/cs-platform agents/rca \
     # Fail the build, not the hosted session, on missing modules.
-    && /app/.venv/bin/python -c "import mcp, tenacity, rca_agent.main"
+    && /app/.venv/bin/python -c "import mcp, tenacity, rca_agent.main; from rca_agent.skill import load_investigation_skill; assert load_investigation_skill().body"
 
 WORKDIR /app
 EXPOSE 8088

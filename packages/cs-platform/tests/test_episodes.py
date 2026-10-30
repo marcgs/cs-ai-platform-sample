@@ -12,6 +12,7 @@ from cs_platform.episodes import (
     EpisodeStore,
     Feedback,
     InMemoryEpisodeStore,
+    SkillMetadata,
     ToolCall,
     Verdict,
     fit_to_budget,
@@ -82,6 +83,20 @@ async def test_save_and_get_round_trip(store: EpisodeStore) -> None:
     episode = _episode("a", 0)
     await store.save(episode)
     assert await store.get(episode.id) == episode
+
+
+async def test_skill_metadata_is_optional_and_round_trips(store: EpisodeStore) -> None:
+    legacy = {"agent": "a", "agent_version": "1", "input": "x"}
+    episode = Episode.model_validate(legacy)
+    assert episode.skill is None
+    await store.save(episode)
+    assert (await store.get(episode.id)).skill is None
+
+    episode.skill = SkillMetadata(name="investigation", version="1.0.0")
+    await store.save(episode)
+    restored = await store.get(episode.id)
+    assert restored.skill == episode.skill
+    assert Episode.model_validate_json(restored.model_dump_json()).skill == episode.skill
 
 
 async def test_get_unknown_raises(store: EpisodeStore) -> None:
