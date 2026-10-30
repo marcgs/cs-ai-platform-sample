@@ -75,7 +75,9 @@ and model configuration in baseline and candidate. Tune from train transcripts o
 do not inspect test transcripts while tuning.
 
 `paired_difference_intervals` estimates candidate-minus-baseline intervals. It
-rejects different non-plumbing regression case/repeat cohorts or metric applicability.
+rejects different non-plumbing regression case/repeat cohorts, minimum-score
+declarations or informational metric applicability. Required metrics zero-fill
+missing values before paired subtraction, just as in the gate.
 Do not silently drop plumbing failures to create a passing comparison.
 If new informational metrics differ between runs, project both score maps onto the
 same predeclared metrics, without changing their values or applicability:
@@ -102,7 +104,7 @@ def load(path: str, split: str) -> SuiteResult:
             raise ValueError("Resolve plumbing failures before paired comparison")
         if not metrics <= case.scores.keys():
             raise ValueError("A predeclared metric is missing")
-    return SuiteResult(suite="rca", cases=[
+    return SuiteResult(suite="rca", minimum_score_metrics=frozenset(metrics), cases=[
         case.model_copy(update={"scores": {name: case.scores[name] for name in metrics}})
         for case in selected
     ])

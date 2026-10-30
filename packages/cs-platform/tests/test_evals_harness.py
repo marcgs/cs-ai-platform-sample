@@ -170,6 +170,45 @@ def test_paired_difference_ci_and_mismatched_cohorts() -> None:
 
 
 @pytest.mark.parametrize(
+    ("before", "after", "expected"),
+    [
+        ([{"exact": 0.0}, {}], [{"exact": 1.0}, {}], (0.0, 1.0)),
+        ([{}, {}], [{"exact": 1.0}, {}], (0.0, 1.0)),
+        ([{}, {}], [{}, {}], (0.0, 0.0)),
+    ],
+)
+def test_paired_required_metrics_retain_missing_case_scores(
+    before: list[dict[str, float]],
+    after: list[dict[str, float]],
+    expected: tuple[float, float],
+) -> None:
+    def result(scores: list[dict[str, float]]) -> SuiteResult:
+        return SuiteResult(
+            suite="demo",
+            cases=[
+                CaseResult(case_id=str(index), scores=values, output=RunOutput(text="answer"))
+                for index, values in enumerate(scores)
+            ],
+            minimum_score_metrics=frozenset({"exact"}),
+        )
+
+    baseline, candidate = result(before), result(after)
+    assert paired_difference_intervals(baseline, candidate) == {"exact": expected}
+    with pytest.raises(ValueError, match="minimum-score"):
+        paired_difference_intervals(
+            baseline, candidate.model_copy(update={"minimum_score_metrics": frozenset()})
+        )
+    candidate.cases[0].scores["informational"] = 1.0
+    with pytest.raises(ValueError, match="applicability"):
+        paired_difference_intervals(baseline, candidate)
+    baseline.cases[0].scores["informational"] = 0.5
+    assert paired_difference_intervals(baseline, candidate) == {
+        "exact": expected,
+        "informational": (0.5, 0.5),
+    }
+
+
+@pytest.mark.parametrize(
     ("error", "code"),
     [
         ("RateLimitError: 429", "rate_limit"),
@@ -313,6 +352,25 @@ async def test_required_scores_zero_fill_summaries_without_penalizing_sparse_met
         }
     )
     assert result.groups["category"]["clean"] == result.metrics
+
+
+@pytest.mark.parametrize("scores", [{}, {"informational": 1.0}])
+async def test_missing_required_score_is_classified_as_a_quality_miss(
+    scores: dict[str, float],
+) -> None:
+    def evaluate(case: EvalCase, output: RunOutput) -> Mapping[str, float]:
+        return scores
+
+    async def target(case: EvalCase) -> RunOutput:
+        return RunOutput(text="answer")
+
+    base = suite("yes")
+    result = await run_suite(EvalSuite(base.name, base.cases, base.thresholds, (evaluate,)), target)
+    failure = result.cases[0].output.failure
+    assert failure is not None
+    assert (failure.kind, failure.code) == ("wrong_answer", "quality_miss")
+    assert result.cases[0].output.attempts == 1
+    assert result.metrics["exact"] == 0.0
 
 
 @pytest.mark.parametrize("hit_at_1", [1.0, 0.0])
