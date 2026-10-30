@@ -15,6 +15,7 @@ uv.lock
 .coverage
 htmlcov/
 .eval-results/
+/analysis-output/
 
 # Azure Developer CLI / Functions local state
 .azure/

@@ -33,20 +33,24 @@ Everything else goes under [Later](#later) as one line, or is left out. Items re
 |---|---|---|---|---|---|
 | Q1 | **Tool-selection reliability** | The gate is red: the agent skips `get_telemetry_window` in up to 10 of 18 cases (`tool_coverage` 0.89 against 0.90) and calls the unchecked data unavailable. | | M | it3 |
 | Q2 | **Eval health** | Nobody knows how much scores vary between runs, or whether a failure was the model or the plumbing. | | M | done it3 ([#13](https://github.com/marcgs/cs-ai-platform-sample/pull/13)) |
-| Q3 | **Harder cases with ground truth** | All 18 cases pass at baseline, so the suite can't show improvement, and a root-cause label can't tell a sound diagnosis from a lucky guess. | | M | it3 |
+| Q3 | **Harder cases with ground truth** | All 18 cases pass at baseline, so the suite can't show improvement, and a root-cause label can't tell a sound diagnosis from a lucky guess. | | M | done it3 ([#16](https://github.com/marcgs/cs-ai-platform-sample/pull/16)) |
 | Q4 | **Gate on outcomes, with model judges** | `tool_coverage` rewards a ritual, and the specification asks for model-based evaluators. | `azure-ai-evaluation` | S | |
 | Q5 | **Cost and latency per diagnosis** | Time to diagnosis is the main outcome, and cost decides the model. | Foundry tracing | S | |
 | Q6 | **Ask instead of guess** | Given a symptom without a machine, the agent picks one and diagnoses it; the report can't ask a question. | | S | |
 | Q7 | **Knowledge-citation reliability** | The pinned iteration-3 baseline cites historical knowledge in only 24 of 54 runs, below the unchanged 0.70 gate despite correct diagnoses; investigate retrieval versus citation failures without forcing irrelevant citations. | | M | |
+| Q8 | **Durable in-progress eval capture** | A fatal interruption can discard completed results and episodes before the CLI's final export; checkpoint actual records without turning cancellation or recovery into quality-seeking resampling. | | M | |
 
 Notes:
 
 - **Q1:** found in the [PR #9](https://github.com/marcgs/cs-ai-platform-sample/pull/9) review; the failed run was accepted as recorded, not as a pass. Earlier suites skipped the tool in 7–8 cases. The numbered instruction alone is insufficient. Keep the threshold; don't rerun to get a pass.
 - **Q2:** repeats with confidence intervals, plumbing failures apart from wrong answers, per-case transcripts, a saturation warning, and train and held-out cases split by machine (the keep/revert rule that L4 relies on).
 - **Q3:** decisive evidence, acceptable alternatives and ruled-out modes per scenario; categories such as overlapping, no fault found, out of catalog, missing machine, injection and noisy data. Keep the 18 existing cases byte-identical so the baseline stays comparable.
-- **Q3, preparation:** the 50-case generator, truthful tools and causal evaluators are offline implementation-ready. The original18 gate and frozen legacy outputs are protected. Deployment-dependent headroom and ablation acceptance remain outstanding; see [Q3 evidence](iteration-3/q3.md).
+- **Q3, measured:** one approved live experiment completed 150 baseline and 54 ablation results. Original18 baseline gates pass unchanged; challenge hit-at-1 is 69/96. Removing the investigation procedure degrades coverage and knowledge use beyond their paired confidence intervals, overall and on both splits. Failed attempts and ablation gate failures remain retained; see [Q3 evidence](iteration-3/q3.md).
+- **Q6:** Q3's missing-machine cohort scores 1/12 on both hit-at-1 and schema validity. This report-only finding does not authorize report-schema or behavioral changes.
 - **Q4:** a change to which metrics gate needs the user's approval, and not as Q1's fix.
 - **Q7:** the [retained Q2 baseline](iteration-3/q2.md) ran the unchanged `fae76ff` agent and dataset, 18 cases with three repeats at concurrency one. `used_knowledge` was 0.444 (95% CI approximately 0.28–0.61), while `hit_at_1` was 1.00 and search was called in 0.67 of runs. The run failed and was retained; no threshold was lowered and no rerun was used to seek a pass.
+- **Q7, separate observation:** the later Q3 control scores 49/54 on knowledge use. It neither replaces the failed Q2 run nor proves consistent citation reliability or a causal L1 improvement.
+- **Q8:** the first isolated L1 measurement was cancelled during MCP tool discovery after 25 completed case-runs. Only rounded console observations survived; no complete result or episode export was written. Private recovery drivers journal actual records immediately, but the public CLI still exports after the suite. Preserve genuine cancellation and failed attempts; do not reconstruct missing episodes from scores.
 
 ## L. Governed learning loop
 
@@ -61,10 +65,14 @@ Capture and feedback exist. This theme adds the rest of the specification's loop
 | L5 | **A learner drafts proposals** | Turns one diagnosed cluster into a candidate skill or model change. | Foundry agent optimizer | M | |
 | L6 | **Scheduled review and approval flow** | The periodic review and the expert's approval, outside a terminal. | Cosmos DB change feed, Logic Apps | M | |
 | L7 | **Confirmed diagnoses become knowledge** | Every confirmed diagnosis is a new historical case; today the index holds only seed data. | AI Search | S | |
+| L8 | **Stable evidence-pattern clustering** | L3's frozen live pilot turns 30 labels into 21 clusters; equivalent condition names split patterns and taxonomy mistakes misroute cases. Validate consolidation and category distinctions without tuning on the opened held-out key. | | M | |
 
 Notes:
 
+- **L1:** [#15](https://github.com/marcgs/cs-ai-platform-sample/pull/15) merged the eager packaged skill with local/hosted evidence. The planned comparison with native `SkillsProvider` progressive loading is still unperformed; the provider exists in the validated SDK. Do not equate packaging completion with completion of that comparison.
 - **L3:** routes each cluster to its owner: behavior to L5, knowledge to L7, tools or data to this backlog, and reproducing cases to the eval suite.
+- **L3, measured:** the approved 50-episode pilot has 24/30 category agreement against the key, 27/30 member routes correct, no classified key-controls among 19, and best-cluster ranks 3/9/2/1/4. Assistant-audit category agreement is separately 3/8 supported classified misses, not human-expert accuracy. The user approved merging [#17](https://github.com/marcgs/cs-ai-platform-sample/pull/17), but Part A acceptance remains incomplete.
+- **L8:** exact `(category, normalized condition)` grouping splits `prompt_injection_logbook` and `prompt_injection_in_logbook`. Per-pattern best-cluster recall is 25%-71.4%. No post-key alias merge, prompt tuning or second pilot was performed; future scope and a fresh evaluation cohort need approval.
 - **L4:** the platform turns feedback into eval cases (the expert's verdict is the ground truth), replays the proposal on them and on the train and held-out cases (Q2), and an expert approves. The learner never edits evaluators, thresholds or cases, and never sees held-out transcripts.
 - **L5:** checked 2026-10-29. The optimizer improves a hosted agent's instructions, skills, function-calling tool descriptions and model choice. The agent loads its configuration through the optimizer package (`load_config()`). Our tools are MCP, so tool optimization doesn't apply. It scores with an eval model on binary criteria; `eval.yaml` takes a held-out `validation_dataset`, which should come from Q2's test split. Verify first that it runs in a network-injected project (Foundry cloud evaluations don't; see Later) and whether it can score with our evaluators. Fallback learner: Claude Code, editing only the skill directory.
 
@@ -107,6 +115,7 @@ Notes:
 
 - **S2:** test with Q3's injection cases, starting in annotate mode.
 - **S6:** found during iteration-3 validation: `agent-framework-core` 1.23.0 with `mcp` 1.30.0 fails both parameterizations of `test_real_mcp_session_propagates_episode_context_in_metadata` because `ClientSession.protocol_version` is absent. Framework core 1.22.0 with MCP 1.30.0 passes. No compatibility constraint was changed as part of Q2.
+- **S6, live observation:** the isolated L1 attempt also encountered cancellation inside `FoundryToolbox.connect` / `session.list_tools` with core 1.22.0 and MCP 1.30.0. Its origin is unproven; the traceback does not distinguish an SDK lifecycle defect from a transient fault.
 
 ## Later
 
