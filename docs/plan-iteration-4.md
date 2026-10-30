@@ -44,10 +44,11 @@ Done in the pull request that adds this plan, in the backlog only:
 
 - **Q8 owns the run record:** the files a run writes as it goes (case-run results, episodes, transcripts) and the summary derived from them. Q9 publishes from that record, never from in-memory state.
 - **Q9 owns publishing:** what a published row contains, how runs are named, and the run metadata (revision, agent version, skill version, dataset version, split, cohort).
-- **L8 owns cluster identity:** a stable cluster key that L9 can cite and that survives a rerun of the analysis on the same input.
+- **L8 owns cluster identity and the report contract:** a stable cluster key that L9 can cite and that survives a rerun of the analysis on the same input. Each candidate case in the report also carries its episode's `ReviewSummary` (independent reviewers, agreement, root-cause support) and the IDs of the reviews behind it. Today the report keeps only review notes, so L9 couldn't check consensus or cite reviews from it.
+- **L9 owns replay-compatible feedback data** (its Part A): synthetic transcripts whose tool results are what today's tools return.
 - **L9 owns the feedback case format:** the case file, its `cohort: feedback`, and the provenance fields. It reuses Q3's `truth` field and Q2's split rule.
 
-**Merge order:** Q8 → Q9 → L8 → L9, then the baseline. Q8 and L8 can start at once; Q9's infrastructure step can be prepared in parallel.
+**Merge order:** Q8 → Q9 → L9 Part A → L8 → L9 Part B, then the baseline. L9 Part A must merge before L8 generates its fresh cohort, or that cohort can't replay. Q8, L9 Part A and L8's offline work can start at once; Q9's infrastructure step can be prepared in parallel.
 
 ## Q8: durable in-progress eval capture
 
@@ -90,7 +91,8 @@ Done in the pull request that adds this plan, in the backlog only:
 - **Fixed condition vocabulary.** The classifier picks the condition from a closed list taken from the catalog and taxonomy, using structured output, instead of free text. Clusters group on canonical keys, so `prompt_injection_logbook` and `prompt_injection_in_logbook` can't split.
 - **Sharper category definitions,** with examples from the train split only. Where two categories keep being confused, merge or define them; record the change.
 - **Stable cluster keys** derived from the canonical category and condition, not from order or labels' wording.
-- **Fresh measurement.** Generate a new population and cohort (new seeds) with L2's generator and the same selection rule as L3's pilot. Nobody reads its key before the criteria below are confirmed.
+- **Review evidence in the report.** Candidate cases carry their `ReviewSummary` and source review IDs (see Shared interfaces). Existing pilot outputs stay frozen; only new reports use the extended contract.
+- **Fresh measurement.** After L9 Part A merges, generate a new population and cohort (new seeds) with L2's generator and the same selection rule as L3's pilot. Nobody reads its key before the criteria below are confirmed.
 - **Criteria, proposed; confirm before measuring:** per planted pattern, best-cluster recall ≥ 0.8; at most 1.5 clusters per planted pattern; no cluster formed by the over-strict reviewer; category agreement and route accuracy reported against L3's pilot (24/30 and 27/30).
 - **A person reviews** the top clusters and a sample of labels in the report. L3 had no human acceptance; this is it, recorded in `docs/iteration-4/l8.md`.
 
@@ -100,17 +102,26 @@ Done in the pull request that adds this plan, in the backlog only:
 
 **Outcome:** a command turns a cluster report into a branch with reviewed eval cases, ready for a person to open as a pull request.
 
-- **Input:** L8's cluster report, whose clusters already carry candidate eval cases (L3 marks them "require expert review before promotion").
+**Part A: replay-compatible feedback data (prerequisite).** L2's transcripts don't match today's tools. `make_transcript` records the raw machine record as the `get_machine_context` result, while the tool returns `MachineContext` (with `reference_time` and `signals`). Some contexts also inject events and logbook entries that exist in no seed (`EV-SYN-UNMAPPED`, `LB-SYN-UPDATE`). As it stands, every synthetic candidate would fail the replay check.
+
+- Build every synthetic tool result with the same `DiagnosticsTools` functions the MCP server uses, over the seed.
+- A context that needs data the seed lacks either adds it as additive seed data under new IDs (existing records and tool results stay byte-identical, checked by the golden tests) or stays non-replayable on purpose, labeled as such, so the replay check rejects it.
+- Regenerate L2's fixtures with the generator. L3's pilot outputs stay frozen.
+- **Acceptance:** a test replays every tool call of a generated cohort against `DiagnosticsTools` and gets identical results, except the cases labeled non-replayable. The replay check still rejects a deliberately changed result. Each planted pattern has replayable episodes.
+
+**Part B: promotion.**
+
+- **Input:** L8's cluster report, whose clusters already carry candidate eval cases (L3 marks them "require expert review before promotion"), with their review evidence.
 - **Admission rules,** each with its reason in the output:
-  - **Consensus:** at least two independent reviewers agree on the verdict and the actual root cause, using L3's reliability-weighted consensus. Disagreement goes to an expert list; a single review waits.
+  - **Consensus:** at least two independent reviewers agree on the verdict and the actual root cause, read from the candidate's `ReviewSummary` (L3's reliability-weighted consensus). Disagreement goes to an expert list; a single review waits.
   - **Stable cluster:** the cluster has a stable key from L8.
   - **Replayable:** replaying the episode's captured tool calls against today's tools gives the same results, compared by the tool fingerprints from iteration 3. A mismatch rejects the case and is listed under K4.
   - **Not a duplicate** of an existing case (same machine, failure mode and category); it links to the existing case instead.
-- **Case format:** the episode's input; `expected` from the consensus verdict; Q3's `truth` with `category` and only the fields the reviews support (reviews don't give decisive refs, so those metrics don't apply and the report says so); `cohort: feedback`; `split` from Q2's machine rule; provenance with the cluster key, episode and review IDs and `source: synthetic`.
+- **Case format:** the episode's input; `expected` from the consensus verdict; Q3's `truth` with `category` and only the fields the reviews support (reviews don't give decisive refs, so those metrics don't apply and the report says so); `cohort: feedback`; `split` from Q2's machine rule; provenance with the cluster key, episode and review IDs from the report and `source: synthetic`.
 - **Where cases live:** a reviewed file next to the generated `cases.jsonl` (for example `feedback_cases.jsonl`), not regenerated from the seed, loaded by the suite as its own cohort.
 - **Output of the command,** for example `csai cases propose <report>`: the new case file on a new local branch, plus a pull request body: the cluster, consensus statistics, admitted and rejected candidates with reasons, links to episodes and reviews. It doesn't push or open the pull request (AGENTS.md rule 5).
 
-**Acceptance:** offline tests on L2's answer key: the command admits cases only from planted patterns and none from the over-strict reviewer or wrong reviews, rejects a case whose tool results changed, and gives identical output on a rerun. Then one real pull request with the first batch, from L8's fresh cohort, reviewed and merged by a person.
+**Acceptance:** offline tests on L2's answer key: the command admits cases only from planted patterns and none from the over-strict reviewer or wrong reviews, rejects a case whose tool results changed or that is labeled non-replayable, and gives identical output on a rerun. Then one real pull request with the first batch, from L8's fresh cohort, reviewed and merged by a person.
 
 ## The new baseline
 
@@ -137,6 +148,6 @@ Every PR passes `uv run ruff check && uv run ruff format --check`, `uv run pyrig
 
 Each PR includes the problem, the change, tests, sanitized evidence, limitations and any deployment it needs. Commit only on the item's branch, check the staged diff before every commit, and ask before pushing or opening the implementation PRs.
 
-Proposed branches: `it4/q8-durable-capture`, `it4/q9-foundry-evals`, `it4/l8-stable-clusters`, `it4/l9-feedback-cases`.
+Proposed branches: `it4/q8-durable-capture`, `it4/q9-foundry-evals`, `it4/l8-stable-clusters`, `it4/l9a-replayable-feedback`, `it4/l9-feedback-cases`. L9 is one backlog item with two PRs.
 
 While work is pending, the four backlog rows carry target `it4`. When an item meets its acceptance criteria, mark it done with its PR link and record its evidence in `docs/iteration-4/<item>.md`. New findings get the next free ID in their theme.
