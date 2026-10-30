@@ -57,7 +57,7 @@ def main(argv: list[str] | None = None) -> None:
     analysis.add_argument("--episodes", type=Path, required=True)
     analysis.add_argument("--source", choices=["synthetic", "real"], required=True)
     analysis.add_argument("--reviews", type=Path)
-    analysis.add_argument("--output", type=Path, default=Path("analysis-output/report"))
+    analysis.add_argument("--output", type=Path, default=Path("analysis/episodes/output/report"))
     analysis.add_argument("--labeler", choices=["offline", "foundry"], default="offline")
     analysis.add_argument("--cache", type=Path)
     analysis.add_argument(

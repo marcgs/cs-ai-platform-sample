@@ -21,6 +21,10 @@ production rule-based substitute presented as a model result. Real JSONL exports
 use `--source real`; omit `--synthetic-seed-context`. Synthetic and real
 populations must have separate reports, including their reviews.
 
+Without `--output`, reports use `analysis/episodes/output/report`, excluded from
+Git and Docker build contexts. The legacy `analysis-output/` directory is also
+excluded. Keep explicit output paths outside version control and build contexts.
+
 ### Explicit Foundry labeling
 
 Only classification sends model traffic. Configure `FOUNDRY_PROJECT_ENDPOINT`
@@ -82,9 +86,9 @@ caches/preflights are invalidated; obtain a fresh estimate before any approved r
   uncertain; no single strict reviewer can establish a miss.
 - Captured `machine_id` takes precedence over legacy synthetic `id` and incident
   text. Failed calls and JSON error payloads are skipped so a later successful
-  lookup can supply context. Platform/software come from that context, with an explicit optional
-  dataset fallback for the same selected machine. Expected modes are majority
-  reviewer assertions, labeled `reviewer_consensus`, not truth. The pipeline does
+  lookup can supply context. Platform/software come from that context, with an
+  explicit optional dataset fallback for the same selected machine. Expected modes
+  are majority reviewer assertions, labeled `reviewer_consensus`, not truth. The pipeline does
   not read scenarios, answer keys or `EpisodeTruth.actual_failure_mode` (the
   agent's reported output).
 - Impact is mean historical downtime for the asserted mode, falling back to the

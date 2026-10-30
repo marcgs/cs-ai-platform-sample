@@ -584,12 +584,16 @@ def test_model_runtime_requires_matching_explicit_approval(population, tmp_path,
     assert calls == 1
 
 
-def test_cli_default_offline_and_explicit_model_preflight(population, tmp_path, monkeypatch):
+@pytest.mark.parametrize("default_output", [False, True])
+def test_cli_default_offline_and_explicit_model_preflight(
+    population, tmp_path, monkeypatch, default_output
+):
+    monkeypatch.chdir(tmp_path)
     episodes = tmp_path / "episodes.jsonl"
     reviews = tmp_path / "reviews.jsonl"
     episodes.write_text("\n".join(row.model_dump_json() for row in population.episodes))
     reviews.write_text("\n".join(row.model_dump_json() for row in population.reviews))
-    output = tmp_path / "report"
+    output = tmp_path / "analysis/episodes/output/report" if default_output else tmp_path / "report"
     args = [
         "analyze",
         "--source",
@@ -598,9 +602,9 @@ def test_cli_default_offline_and_explicit_model_preflight(population, tmp_path, 
         str(episodes),
         "--reviews",
         str(reviews),
-        "--output",
-        str(output),
     ]
+    if not default_output:
+        args.extend(["--output", str(output)])
     monkeypatch.delenv("FOUNDRY_PROJECT_ENDPOINT", raising=False)
     main(args)
     assert output.with_suffix(".json").exists()
