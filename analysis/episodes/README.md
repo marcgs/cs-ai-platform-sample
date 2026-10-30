@@ -171,11 +171,14 @@ request; the token estimate is not a hard billing ceiling.
 
 Offline preparation has already generated these files in the preparation
 worktree. Reuse them there rather than rerunning generation into nonempty
-directories. The chronology-corrected population was generated once after merging
-authoritative main `ae90cc5`, containing merged Q2/L2/Q3, into L3's `ed86b50`.
-L3's review fixes, L1's existing skill and Q8/S6 notes remain intact. The unfinished
-L1 restack has not been pulled. The correction moves retrospective challenge
-logbook findings after their observations; it changes no classifier logic or settings.
+directories. The chronology-corrected population was generated once from the
+main `ae90cc5` integration, subsequently committed as `0252932`. The later proper
+merge of final main `2d618e4` adds authoritative L1 evidence/documentation and
+private build-context exclusions; runtime already matches the frozen L1 revision.
+L3's review fixes and Q8/S6 notes remain intact. No inputs, estimates or cache were
+changed or regenerated for this final integration. The chronology correction
+moves retrospective challenge logbook findings after their observations; it
+changes no classifier logic or settings.
 The population has 300 episodes and 1,246 reviews; the pilot has 50 episodes and
 207 reviews. Older `held-out`, `pilot`, `*-corrected` and assistant-audit artifacts
 remain unchanged as **pre-final preparation only**, not acceptance input. Do not
@@ -192,13 +195,16 @@ only those timestamps. Stop if any other difference appears; do not select again
 
 The four corrected raw records are prepared separately, including captured
 diagnostic output and reviews but no assessments, labels or planted metadata.
-Their fresh isolated assistant audit is pending. Old audit assessments were not
-read to perform this correction. Assistant review is not human/domain-expert
-manual acceptance.
+The parent reports the composite assistant-only audit is frozen: 16 unchanged
+original assessments plus four fresh-context assessments, **not 20 fresh audits**.
+All 20 raw records were mechanically matched to the corrected pilot; the original
+16 canonical hashes and all 78 citation pointers/values were verified. Its
+assessments were not read during integration. Assistant review is not
+human/domain-expert manual acceptance.
 
-**No model calls or held-out answer-key inspection has occurred.** Commit and
-freeze the reviewed integration, complete the four-record blind correction audit
-and obtain a fresh final-configuration estimate before labeling. The new cache
+**No model calls or held-out answer-key inspection has occurred.** Commit the
+integration, complete current-head code review and the final parent freeze,
+and obtain a fresh actual-configuration estimate before labeling. The new cache
 is separate and empty; the preliminary estimate remains 30 logical calls,
 72,463 approximate input tokens and at most 36,000 output tokens, unchanged from
 the prior budget. Its fingerprint changes, so the old estimate cannot approve it:
