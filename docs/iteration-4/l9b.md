@@ -31,6 +31,9 @@ rewritten. Identical reruns on the proposal branch produce identical files and
 CLI output, including admission and duplicate decisions. Changed artifacts are
 not overwritten. If the branch already exists elsewhere, switch to it explicitly
 before rerunning. `--repository` selects a repository root for offline tooling/tests.
+Conflicting existing case IDs are rejected rather than replaced. Manifest and
+artifact destinations, including every parent directory, must not be symlinks;
+these checks finish before any branch switch or file write.
 
 ## Admission
 
@@ -199,3 +202,29 @@ The separately approved 50-case local RCA gate ran on the **uncommitted full
 integration snapshot**, not these ordered clean commits. It is not a feedback
 baseline or fresh L8 measurement. No additional live acceptance, model traffic,
 deployment or publication is claimed or approved here.
+
+## Copilot review follow-up
+
+- **4436440053:** reject an incoming case whose ID conflicts with a different
+  previously reviewed case. A public CLI regression corrects a reviewed cause
+  without renaming its ID and confirms rejection preserves all files and the
+  current branch.
+- **4436440072:** reject symlink destinations and every symlinked parent.
+  Manifest checks precede reads; all destination checks precede branch switches
+  and proposal writes. Public CLI
+  regressions cover dangling artifact links, existing/dangling artifact parents,
+  existing/dangling feedback manifest links, original manifest links and
+  symlinked manifest parents. Rejections preserve checkout contents, external
+  destinations and the current branch.
+
+Seven initial CLI regressions failed before repair; all **27 public proposal
+tests** now pass. Native L9B fix gates passed **505 full offline tests**, with
+32 existing SDK deprecation warnings; repository Ruff lint/format passed
+(**146 files**) and strict Pyright reported zero errors or warnings.
+No dependencies or SDK ranges changed. Original/challenge manifests, golden
+responses and frozen pilot outputs remain unchanged.
+
+The approved live gate remains pre-review evidence from the uncommitted
+integration snapshot. Additional model traffic is not authorized; a fresh
+post-fix live gate is skipped and remains outstanding. The parent owns restacking
+these fixes with the parallel Q8/Q9 fixes and combined acceptance validation.
