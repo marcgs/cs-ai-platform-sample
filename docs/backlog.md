@@ -133,24 +133,34 @@ Notes:
 
 | ID | Item | Why | Explores | Size | Target |
 |---|---|---|---|---|---|
-| S1 | **Entra for the MCP server and platform API** | The last two keys: the MCP function key held by Foundry and the platform API key `csai` fetches. | Functions built-in auth, app registrations | M | |
+| S1 | **Entra for the MCP server and platform API** | The last two keys: the MCP function key held by Foundry and the platform API key `csai` fetches through ARM. Entra decides who may call; S7 and S9 decide from where. | Functions built-in authentication, app registrations, MCP connection identities | M | |
 | S2 | **Prompt-injection guardrails** | A logbook entry or tool result can carry instructions; protect at the platform, not only in the prompt. | Foundry guardrails, AI red-teaming agent | M | |
 | S3 | **AI gateway** | Quotas per agent, logging and failover for models and tools. | API Management | L | |
 | S4 | **Fleet view and kill switch** | Someone has to see every agent, its cost and errors, and be able to stop one fast. | Foundry Control Plane, Entra Agent ID | M | |
 | S5 | **Canary diagnosis and alerts** | Failed runs, store outages and rate limiting should page someone. | Foundry monitoring, Azure Monitor alerts | S | |
 | S6 | **SDK dependency compatibility** | A fresh dependency resolution can break the real MCP session even when the baseline local resolution passes; verify compatible SDK ranges without committing a lock file. | Agent Framework, MCP | S | |
+| S7 | **Private tool path** | Tool calls reach the MCP server over its public endpoint; a corporate deployment accepts no public endpoints. | Private endpoints, toolbox network isolation | M | |
+| S8 | **Access path into the network** | Once the platform API, registry or Foundry go private, `azd`, `csai` and the portal stop working from a laptop. | VPN gateway or Dev Box, DNS Private Resolver | M | |
+| S9 | **Private platform API and registry** | The last public endpoints people and deployments use directly. | Private endpoints, ACR build agent pools | M | |
+| S10 | **Private Foundry and AI Search** | Models, agents and knowledge reachable only from the network. | Private endpoints, Search shared private link | M | |
+| S11 | **Private monitoring, locked by policy** | Telemetry ingestion stays private, and nothing can drift back to public. | Azure Monitor Private Link Scope, Azure Policy deny | S | |
 
 Notes:
 
+- **S1:** checked 2026-11-01 against [MCP on Functions with Foundry](https://learn.microsoft.com/azure/azure-functions/functions-mcp-foundry-tools) and [MCP authentication](https://learn.microsoft.com/azure/foundry/agents/how-to/mcp-authentication). Turning on the function app's built-in authentication validates Entra tokens and turns key auth off. Toolbox to MCP server: Functions supports the project managed identity (shared by every agent in the project) with the app registration's Application ID URI as audience; agent identity, the per-agent option preferred for production, isn't supported by Functions yet; OAuth identity passthrough runs tools as the signed-in user. `csai` to the platform API: the user's Entra token for the app registration's audience replaces the ARM key fetch. Each app needs an app registration, which needs Entra permissions to create; check whether it can be declared in Bicep before falling back to a setup script. Independent of S7–S11, and pairs naturally with S7 (MCP server) and S9 (platform API).
 - **S2:** test with Q3's injection cases, starting in annotate mode.
 - **S6:** found during iteration-3 validation: `agent-framework-core` 1.23.0 with `mcp` 1.30.0 fails both parameterizations of `test_real_mcp_session_propagates_episode_context_in_metadata` because `ClientSession.protocol_version` is absent. Framework core 1.22.0 with MCP 1.30.0 passes. No compatibility constraint was changed as part of Q2.
 - **S6, live observation:** the isolated L1 attempt also encountered cancellation inside `FoundryToolbox.connect` / `session.list_tools` with core 1.22.0 and MCP 1.30.0. Its origin is unproven; the traceback does not distinguish an SDK lifecycle defect from a transient fault.
+- **S7–S11, private by default:** checked 2026-11-01 (read-only and Learn). Only Cosmos DB and function storage are private; public network access is enabled on both function apps, the Foundry account, AI Search and the registry. ADR 0003 chose this so developers could work from a laptop; S8 supersedes it with a new ADR. Agent network injection, the one setting fixed at account creation, is already in place, so the rest can be added to the existing environment. What stays public in any case: Entra ID, the ARM control plane and Foundry's managed backend. Order: S7 needs nothing else; S8 comes before S9–S11.
+- **S7:** the MCP server only. A toolbox calling tools through the VNet needs a project-level capability host, shared with Q9.
+- **S8:** the decision is the access path: point-to-site VPN with a DNS resolver, Dev Box, Bastion, or an in-VNet runner (which touches the no-CI rule).
+- **S9:** hosted agents can pull from a private registry only in projects created after 2026-06-25; ours qualifies. Not yet verified: how ACR remote builds (`azd deploy`) work with public access off, likely a dedicated agent pool in the VNet.
+- **S10:** not yet verified: Search's vectorizer reaching Foundry over a shared private link, and evaluations with Foundry's public access off.
 
 ## Later
 
 Kept in view, not planned. Each would get a proper item when it becomes relevant.
 
-- Full private networking for Foundry, the registry, AI Search and Application Insights.
 - Continuous evaluation of production traffic (after Q9).
 - Model comparison across providers, and the model router.
 - Conversations (multi-turn) and managed agent memory.
