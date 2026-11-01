@@ -69,7 +69,12 @@ def replay_episode(episode: Episode, *, tools: DiagnosticsTools | None = None) -
     tools = tools if tools is not None else DiagnosticsTools.from_seed()
     fingerprints: list[str] = []
     issues: list[ReplayIssue] = []
-    if episode.truncated or not episode.tool_calls:
+    if (
+        episode.status == "running"
+        or episode.completed_at is None
+        or episode.truncated
+        or not episode.tool_calls
+    ):
         issues.append(ReplayIssue(call_index=-1, tool_name="", reason="Incomplete episode capture"))
     for index, call in enumerate(episode.tool_calls):
         reason: str | None = None

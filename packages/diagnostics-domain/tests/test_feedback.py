@@ -332,6 +332,24 @@ def test_replay_rejects_changed_results_and_incomplete_or_unsupported_calls() ->
     assert replay_episode(episode).replayable
 
 
+@pytest.mark.parametrize("status", ["running", "succeeded", "failed"])
+def test_replay_requires_completed_episode_evidence(status: str) -> None:
+    episode = generate_feedback(count=1).episodes[0]
+    assert replay_episode(episode).replayable
+    unfinished = episode.model_copy(update={"status": status, "completed_at": None})
+    assert not replay_episode(unfinished).replayable
+    if status == "running":
+        assert not replay_episode(episode.model_copy(update={"status": status})).replayable
+
+
+def test_replay_preserves_completed_failed_capture_support() -> None:
+    episode = generate_feedback(count=1).episodes[0]
+    failed = episode.model_copy(update={"status": "failed", "error": "Synthetic model failure"})
+    replay = replay_episode(failed)
+    assert replay.replayable
+    assert replay.fingerprints == replay_episode(episode).fingerprints
+
+
 def test_reviewer_population_has_noise_without_turning_assertions_into_truth() -> None:
     population = generate_feedback(count=100)
     truth_by_id = {truth.episode_id: truth for truth in population.answer_key.episodes}
