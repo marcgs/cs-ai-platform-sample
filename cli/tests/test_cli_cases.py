@@ -12,7 +12,7 @@ from cs_platform.episodes import Verdict
 from cs_platform.evals import EvalTruth, RunOutput, run_suite
 from csai.app import app
 from csai.case_consensus import review_consensus
-from csai.case_proposal import CaseProposal
+from csai.case_proposal import CaseProposal, propose_cases, report_digest
 from csai.cases import FEEDBACK, MANIFEST
 from diagnostics_domain.dataset import load_seed
 from diagnostics_domain.feedback import generate_feedback
@@ -427,3 +427,102 @@ def test_feedback_loader_rejects_inconsistent_provenance(
     path.write_text(case.model_dump_json() + "\n")
     with pytest.raises(ValueError, match="expected"):
         load_feedback_cases(path, existing=load_suite().cases)
+
+
+def repository_contents(repo: Path):
+    contents = {}
+    for path in repo.rglob("*"):
+        relative = path.relative_to(repo)
+        if ".git" in relative.parts:
+            continue
+        contents[relative] = (
+            path.readlink() if path.is_symlink() else path.read_bytes() if path.is_file() else None
+        )
+    return contents
+
+
+def test_public_command_rejects_conflicting_existing_case_id_without_mutation(
+    feedback_report, tmp_path: Path
+) -> None:
+    _, report = feedback_report
+    source = only_mapping(report)
+    repo = repository(tmp_path / "repo")
+    incoming = propose_cases(source, load_suite().cases).cases[0]
+    reviewed = incoming.model_copy(
+        update={"expected": {**incoming.expected, "failure_mode": "FM-08"}}
+    )
+    assert reviewed.expected != incoming.expected
+    (repo / FEEDBACK).write_text(reviewed.model_dump_json() + "\n")
+    before = repository_contents(repo)
+    response = invoke(source, repo)
+    assert response.exit_code == 2, response.output
+    assert "Conflicting existing case ID" in response.output
+    assert repository_contents(repo) == before
+    assert (
+        subprocess.run(
+            ["git", "-C", str(repo), "branch", "--show-current"], capture_output=True, text=True
+        ).stdout.strip()
+        == "main"
+    )
+
+
+@pytest.mark.parametrize(
+    "destination",
+    [
+        "dangling_artifact",
+        "artifact_parent",
+        "dangling_artifact_parent",
+        "feedback_manifest",
+        "dangling_feedback_manifest",
+        "original_manifest",
+        "manifest_parent",
+    ],
+)
+def test_public_command_rejects_symlink_destinations_without_mutation(
+    feedback_report, tmp_path: Path, destination: str
+) -> None:
+    _, report = feedback_report
+    source = only_mapping(report)
+    repo = repository(tmp_path / "repo")
+    digest = report_digest(source)[:12]
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    if destination == "dangling_artifact":
+        link = repo / "docs/iteration-4/proposals" / digest / "proposal.json"
+        target = outside / "missing.json"
+    elif destination.endswith("artifact_parent"):
+        link = repo / "docs/iteration-4/proposals"
+        target = outside / "missing" if destination.startswith("dangling") else outside
+    elif destination == "manifest_parent":
+        link = (repo / MANIFEST).parent
+        target = outside / "metadata"
+        target.mkdir()
+        (target / MANIFEST.name).write_bytes((repo / MANIFEST).read_bytes())
+        (repo / MANIFEST).unlink()
+        link.rmdir()
+    else:
+        link = repo / (MANIFEST if destination == "original_manifest" else FEEDBACK)
+        target = outside / "manifest.jsonl"
+        if not destination.startswith("dangling"):
+            if destination == "original_manifest":
+                target.write_bytes((repo / MANIFEST).read_bytes())
+            else:
+                retained = propose_cases(source, load_suite().cases).cases[0]
+                target.write_text(retained.model_dump_json() + "\n")
+        if link.exists():
+            link.unlink()
+    link.parent.mkdir(parents=True, exist_ok=True)
+    link.symlink_to(target)
+    before = repository_contents(repo)
+    outside_before = repository_contents(outside)
+    response = invoke(source, repo)
+    assert response.exit_code == 2, response.output
+    assert "symlink" in response.output.lower()
+    assert repository_contents(repo) == before
+    assert repository_contents(outside) == outside_before
+    assert (
+        subprocess.run(
+            ["git", "-C", str(repo), "branch", "--show-current"], capture_output=True, text=True
+        ).stdout.strip()
+        == "main"
+    )

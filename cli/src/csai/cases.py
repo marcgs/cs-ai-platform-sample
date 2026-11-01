@@ -28,6 +28,12 @@ def _git(repository: Path, *arguments: str) -> str:
     return result.stdout.strip()
 
 
+def _reject_symlinks(path: Path) -> None:
+    for component in (path, *path.parents):
+        if component.is_symlink():
+            raise ValueError(f"Refusing symlink proposal path: {component}")
+
+
 def _evidence(report: Report) -> str:
     lines = ["# Feedback proposal evidence", "", "Source: synthetic; human review required.", ""]
     for cluster in sorted(report.clusters, key=lambda value: value.id):
@@ -134,18 +140,27 @@ def _body(proposal: CaseProposal, evidence_path: Path) -> str:
 
 def write_proposal(report: Report, repository: Path) -> tuple[CaseProposal, str, Path]:
     """Write deterministic files on a new local branch, safely allowing identical reruns."""
+    repository = repository.absolute()
+    _reject_symlinks(repository)
     repository = repository.resolve()
     if Path(_git(repository, "rev-parse", "--show-toplevel")).resolve() != repository:
         raise ValueError("--repository must name the repository root")
     manifest_path = repository / MANIFEST
+    _reject_symlinks(manifest_path)
     original = tuple(
         EvalCase.model_validate_json(line)
         for line in manifest_path.read_text("utf-8").splitlines()
         if line.strip()
     )
     feedback_path = repository / FEEDBACK
+    _reject_symlinks(feedback_path)
     previous = load_feedback_cases(feedback_path, existing=original)
     proposal = propose_cases(report, (*original, *previous))
+    existing_by_id = {case.id: case for case in (*original, *previous)}
+    for case in proposal.cases:
+        existing = existing_by_id.get(case.id)
+        if existing is not None and existing != case:
+            raise ValueError(f"Conflicting existing case ID: {case.id}")
     combined = {case.id: case for case in previous}
     combined.update({case.id: case for case in proposal.cases})
     rendered = "".join(combined[case_id].model_dump_json() + "\n" for case_id in sorted(combined))
@@ -159,6 +174,7 @@ def write_proposal(report: Report, repository: Path) -> tuple[CaseProposal, str,
         artifacts / "pr-body.md": _body(proposal, relative / "evidence.md"),
     }
     for path, content in output.items():
+        _reject_symlinks(path)
         if path.exists() and path.read_text("utf-8") != content:
             raise ValueError(f"Refusing to overwrite changed proposal artifact: {path.name}")
     current = _git(repository, "branch", "--show-current")
