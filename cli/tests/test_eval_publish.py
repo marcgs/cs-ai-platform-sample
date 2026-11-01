@@ -211,3 +211,22 @@ def test_standalone_publish_handles_unexpected_adapter_failure(saved_run, monkey
     assert result.exit_code == 2
     assert "unexpected adapter failure" in result.output
     assert read_run(saved_run).failures == []
+
+
+@pytest.mark.parametrize("truncate_call", [False, True])
+def test_mapping_preserves_incomplete_trace_evidence_and_blocks_tool_judging(
+    saved_run, monkeypatch, truncate_call
+):
+    record = read_run(saved_run)
+    output = record.result.cases[0].output
+    output.tool_trace_complete = truncate_call
+    output.tool_trace[0].result_truncated = truncate_call
+    monkeypatch.setattr(eval_publish, "read_run", lambda _: record)
+    before = {path: path.read_bytes() for path in saved_run.rglob("*") if path.is_file()}
+    publication = eval_publish.publication_from_record(saved_run)
+    row = publication.rows[0]
+    assert row.tool_trace_complete is truncate_call
+    assert row.tool_calls[0]["result_truncated"] is truncate_call
+    with pytest.raises(foundry.FoundryEvalError, match="incomplete or truncated"):
+        foundry.publish(publication, endpoint="unused", model="judge")
+    assert before == {path: path.read_bytes() for path in saved_run.rglob("*") if path.is_file()}
