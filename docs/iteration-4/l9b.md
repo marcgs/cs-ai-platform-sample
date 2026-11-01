@@ -258,3 +258,12 @@ The approved live evaluation was the pre-review uncommitted integration snapshot
 Additional model traffic is unapproved: a fresh post-fix live gate is skipped and
 outstanding. Parent restacking must combine these cohort changes with the
 parallel Q8 completion-certificate/load changes before rereview and acceptance.
+
+### Round-three seed-only knowledge gate
+
+Copilot comment **4436638946** identified one remaining seed-only baseline.
+The measured knowledge-gate test now passes an explicitly absent feedback
+manifest, retaining its existing 13-of-18 pass and 12-of-18 failure assertions.
+The full offline suite passes **561 tests**; Ruff lint/format and strict
+Pyright pass. Additive loading and original18 production gates are unchanged.
+No model traffic, publication or deployment ran.

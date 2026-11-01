@@ -148,9 +148,9 @@ def test_fabricated_history_is_used_but_not_grounded() -> None:
 
 @pytest.mark.parametrize(("citing_reports", "passes"), [(13, True), (12, False)])
 def test_measured_knowledge_gate_allows_one_case_below_the_observed_minimum(
-    citing_reports: int, passes: bool
+    tmp_path: Path, citing_reports: int, passes: bool
 ) -> None:
-    suite = load_suite()
+    suite = load_suite(feedback_cases=tmp_path / "absent-feedback.jsonl")
     dataset = load_seed()
     results = []
     for index, case in enumerate(suite.cases):
