@@ -130,3 +130,23 @@ completed 50 cases with exit 0 on the **uncommitted full integration snapshot**.
 That result is not live proof for this independent L9A draft commit, not a
 feedback-cohort baseline and not fresh L8 classification acceptance.
 No additional model traffic, deployment or publication is approved here.
+
+## Copilot review follow-up
+
+Comment **4436431183** identified copied scenarios whose decisive references
+still named the original machines. `feedback_scenarios` now remaps telemetry,
+event and logbook references using the exact allocation performed by
+`extend_feedback_seed`. Four regression cases failed before the fix; each now
+resolves all decisive evidence through the copied machine's real tool results,
+including its unmapped-code events, without changing original scenario fields.
+
+Native L9A fix validation: **460 full offline tests passed** (32 existing SDK
+deprecation warnings), Ruff lint/format passed (**137 files**), and strict
+Pyright reported zero errors or warnings. The focused feedback/golden selection
+passed **24 tests**. Running the seed and case generators produced no tracked
+data change; the existing fixture and frozen pilots remain unchanged.
+
+The approved live gate was the pre-review uncommitted integration measurement.
+No new model traffic is authorized, so a fresh post-fix live gate is skipped and
+remains outstanding. Restacking the parallel item fixes and their combined
+validation is parent-owned.
