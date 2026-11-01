@@ -18,6 +18,7 @@ from cs_platform.eval_reporting import RunMetadata, artifact_paths, validate_art
 from cs_platform.evals import (
     CaseResult,
     EvalCase,
+    EvalPersistenceError,
     EvalSuite,
     RunOutput,
     SuiteResult,
@@ -163,7 +164,9 @@ def _sync_directory(path: Path) -> None:
 def _write(path: Path, text: str, *, append: bool = False) -> None:
     if path.is_symlink():
         raise ValueError(f"refusing symlink artifact destination: {path}")
-    with path.open("a" if append else "x", encoding="utf-8") as stream:
+    flags = os.O_WRONLY | os.O_CREAT | (os.O_APPEND if append else os.O_EXCL)
+    descriptor = os.open(path, flags, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
         stream.write(text)
         stream.flush()
         os.fsync(stream.fileno())
@@ -176,7 +179,8 @@ def _replace(path: Path, text: str) -> None:
     pending = path.with_name(f".{path.name}.{uuid4().hex}.pending")
     created = False
     try:
-        with pending.open("x", encoding="utf-8") as stream:
+        descriptor = os.open(pending, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
             created = True
             stream.write(text)
             stream.flush()
@@ -186,6 +190,18 @@ def _replace(path: Path, text: str) -> None:
     finally:
         if created and pending.exists():
             pending.unlink()
+
+
+def _mkdir(path: Path, *, parents: bool = False) -> None:
+    if parents and not path.parent.is_dir():
+        _mkdir(path.parent, parents=True)
+    try:
+        path.mkdir(mode=0o700)
+    except FileExistsError:
+        if not parents or not path.is_dir():
+            raise
+    else:
+        _sync_directory(path.parent)
 
 
 def _transcript_filename(result: CaseResult) -> str:
@@ -232,15 +248,24 @@ class RunWriter:
             concurrency=concurrency,
         )
         self._current = ContextVar[tuple[CaseRunKey, int] | None]("eval_attempt", default=None)
-        output.parent.mkdir(parents=True, exist_ok=True)
-        self.directory.mkdir()
-        artifact_paths(output)[3].mkdir()
+        self._journal_failed = False
+        _mkdir(output.parent, parents=True)
+        _mkdir(self.directory)
+        _mkdir(artifact_paths(output)[3])
         _write(self.directory / "manifest.json", self.manifest.model_dump_json(indent=2) + "\n")
         for path in (self.directory / "events.jsonl", self.directory / "episodes.jsonl", output):
             _write(path, "")
 
     def append(self, event: RunEvent) -> None:
-        _write(self.directory / "events.jsonl", event.model_dump_json() + "\n", append=True)
+        if self._journal_failed:
+            raise EvalPersistenceError("Journal write previously failed; no further appends.")
+        try:
+            _write(self.directory / "events.jsonl", event.model_dump_json() + "\n", append=True)
+        except BaseException as error:
+            self._journal_failed = True
+            if isinstance(error, Exception):
+                raise EvalPersistenceError("Could not append the eval journal.") from error
+            raise
 
     def start(self, case: EvalCase, repeat: int) -> None:
         self.append(Started(key=CaseRunKey(case_id=case.id, repeat=repeat)))
@@ -262,7 +287,10 @@ class RunWriter:
                 episode=episode,
             )
         )
-        _write(self.directory / "episodes.jsonl", episode.model_dump_json() + "\n", append=True)
+        try:
+            _write(self.directory / "episodes.jsonl", episode.model_dump_json() + "\n", append=True)
+        except Exception as error:
+            raise EvalPersistenceError("Could not export the captured episode.") from error
 
     def completed(self, result: CaseResult) -> None:
         self.append(CaseFinished(result=result))
@@ -279,6 +307,19 @@ class RunWriter:
                 error=type(error).__name__ if error is not None else None,
             )
         )
+
+    def finalize(self) -> RunRecord:
+        """Export the prospective complete snapshot before committing its final marker."""
+        record = load_run(self.directory)
+        if record.never_started or record.interrupted:
+            raise ValueError("Cannot finalize missing case-runs.")
+        if self._journal_failed or record.journal_warning:
+            raise EvalPersistenceError("Cannot finalize a failed journal.")
+        record.status = "complete"
+        record.failures = record.result.failures(record.manifest.thresholds)
+        _export_record(self.directory, record)
+        self.finish()
+        return load_run(self.directory)
 
 
 def _locate(results_dir: Path) -> Path:
@@ -369,11 +410,15 @@ def rebuild_report(results_dir: Path) -> RunRecord:
     """Rebuild derived exports, summary and escaped HTML from disk, never running a case."""
     directory = _locate(results_dir)
     record = load_run(directory)
+    return _export_record(directory, record)
+
+
+def _export_record(directory: Path, record: RunRecord) -> RunRecord:
     output = directory.parent / record.manifest.result_filename
     _, summary_path, html_path, transcripts = artifact_paths(output)
     if transcripts.is_symlink():
         raise ValueError(f"refusing symlink artifact destination: {transcripts}")
-    transcripts.mkdir(exist_ok=True)
+    _mkdir(transcripts, parents=True)
     result = record.result
     summary = {
         "run": record.manifest.metadata.model_dump(mode="json"),

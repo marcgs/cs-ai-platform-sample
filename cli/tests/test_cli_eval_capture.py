@@ -71,6 +71,65 @@ def invoke(path: Path, *arguments: str) -> Any:
     )
 
 
+def test_hard_stop_during_required_export_has_no_complete_marker(
+    scripted: list[int], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    output = tmp_path / "results.jsonl"
+    statuses: list[str] = []
+    original_replace = eval_runs._replace
+    original_finish = eval_runs.RunWriter.finish
+
+    def interrupt(path: Path, text: str) -> None:
+        if path.suffix == ".html":
+            statuses.append(load_run(output).status)
+            raise KeyboardInterrupt
+        original_replace(path, text)
+
+    def no_shutdown_marker(
+        self: eval_runs.RunWriter, *, error: BaseException | None = None
+    ) -> None:
+        if error is None:
+            original_finish(self)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(eval_runs, "_replace", interrupt)
+        patch.setattr(eval_runs.RunWriter, "finish", no_shutdown_marker)
+        result = invoke(output)
+    assert result.exit_code == 130
+    assert statuses
+    assert set(statuses) == {"incomplete"}
+    record = load_run(output)
+    assert record.status == "incomplete"
+    assert len(record.result.cases) == 3
+    result = runner.invoke(cli.app, ["--no-azd", "eval", "report", str(output)])
+    assert result.exit_code == 1
+    assert scripted == [3]
+
+
+def test_episode_export_failure_aborts_without_retrying_successful_model_call(
+    scripted: list[int], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    original_write = eval_runs._write
+    failed = False
+
+    def fail_once(path: Path, text: str, *, append: bool = False) -> None:
+        nonlocal failed
+        if path.name == "episodes.jsonl" and text and not failed:
+            failed = True
+            raise OSError("episode export failed")
+        original_write(path, text, append=append)
+
+    monkeypatch.setattr(eval_runs, "_write", fail_once)
+    result = invoke(tmp_path / "results.jsonl")
+    assert result.exit_code == 1
+    assert scripted == [1]
+    record = load_run(tmp_path)
+    assert record.status == "incomplete"
+    assert len(record.episodes) == 1
+    assert record.episodes[0].status == "succeeded"
+    assert record.result.cases == []
+
+
 @pytest.mark.parametrize("repeats", [1, 2])
 def test_public_cli_cancellation_between_cases_is_durable(
     scripted: list[int], monkeypatch: pytest.MonkeyPatch, tmp_path: Path, repeats: int

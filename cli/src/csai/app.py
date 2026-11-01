@@ -19,7 +19,14 @@ from cs_platform import evals as eval_harness
 from cs_platform.episodes import Verdict  # noqa: TC001 - typer reads annotations at runtime
 from cs_platform.eval_reporting import RunMetadata
 from cs_platform.eval_runs import RunWriter, load_run, rebuild_report, validate_run_destinations
-from cs_platform.evals import EvalCase, EvalSuite, RunOutput, assign_splits, run_suite
+from cs_platform.evals import (
+    EvalCase,
+    EvalPersistenceError,
+    EvalSuite,
+    RunOutput,
+    assign_splits,
+    run_suite,
+)
 from cs_platform.settings import PlatformSettings, SettingsError
 from cs_platform.telemetry import flush_telemetry
 from csai import foundry
@@ -306,10 +313,12 @@ def eval_command(
         )
         if episodes_output is not None:
             export_local_episodes(load_run(output).episodes, episodes_output)
-        writer.finish()
-        record = rebuild_report(output)
+        record = writer.finalize()
     except BaseException as error:
-        writer.finish(error=error)
+        try:
+            writer.finish(error=error)
+        except EvalPersistenceError as journal_error:
+            typer.echo(f"warning: {journal_error}", err=True)
         try:
             rebuild_report(output)
         except (OSError, ValueError) as export_error:
