@@ -1,6 +1,5 @@
 import json
 from collections import Counter
-from datetime import datetime, timedelta
 from pathlib import Path
 from random import Random
 
@@ -15,8 +14,13 @@ from diagnostics_domain.feedback import (
     write_feedback,
 )
 from diagnostics_domain.feedback_models import AnswerKey, Review
+from diagnostics_domain.feedback_replay import (
+    execute_tool_call,
+    replay_episode,
+    tool_fingerprint,
+)
 from diagnostics_domain.feedback_transcripts import choose_scenario, make_transcript
-from diagnostics_domain.models import HistoricalCase, Subsystem
+from diagnostics_domain.tools import DiagnosticsTools
 from rca_agent.report import RcaReport
 
 FIXTURE = Path(__file__).parent / "fixtures" / "feedback"
@@ -84,13 +88,19 @@ def test_planted_transcripts_are_distinguishable_from_successful_controls() -> N
     assert "get_telemetry_window" not in {call.name for call in vacuum.tool_calls}
     assert "vacuum" in (vacuum.tool_calls[2].result or "")
     overlap = misses["overlapping_codes_after_update"]
-    assert "Software update" in next(
-        call.result or "" for call in overlap.tool_calls if call.name == "get_logbook"
+    assert (
+        "update"
+        in next(
+            call.result or "" for call in overlap.tool_calls if call.name == "get_logbook"
+        ).lower()
     )
     mapping = misses["missing_code_mapping"]
-    assert any('"mapping_missing": true' in (call.result or "") for call in mapping.tool_calls)
+    assert any('"possible_causes": []' in (call.result or "") for call in mapping.tool_calls)
     data = misses["data_quality"]
-    assert any('"missing_samples": 9' in (call.result or "") for call in data.tool_calls)
+    assert any(
+        "data_quality" in (call.result or "") or "collection" in (call.result or "")
+        for call in data.tool_calls
+    )
     injection = misses["injection_followed"]
     assert any("Ignore previous" in (call.result or "") for call in injection.tool_calls)
     assert "get_telemetry_window" not in {call.name for call in injection.tool_calls}
@@ -119,7 +129,7 @@ def test_error_event_citations_match_the_observed_code_in_compact_transcripts() 
         report = RcaReport.model_validate(episode.output)
         for evidence in report.hypotheses[0].evidence:
             if evidence.source == "error_event":
-                cited = next(event for event in events if event["id"] == evidence.ref)
+                cited = next(event for event in events["events"] if event["ref"] == evidence.ref)
                 assert cited["code"] == code
                 assert evidence.excerpt == f"Observed {cited['code']}."
 
@@ -131,8 +141,6 @@ def test_update_context_matches_logbook_without_mutating_seed(failed: bool) -> N
     rng = Random(42)
     scenario = choose_scenario(dataset, 1, rng)
     machine = dataset.machine(scenario.machine_id)
-    update = scenario.onset - timedelta(hours=2)
-    assert machine.last_software_update != update.date()
     calls, _, _, _ = make_transcript(
         dataset,
         scenario,
@@ -144,21 +152,16 @@ def test_update_context_matches_logbook_without_mutating_seed(failed: bool) -> N
     context = json.loads(
         next(call.result or "{}" for call in calls if call.name == "get_machine_context")
     )
-    entries = json.loads(next(call.result or "[]" for call in calls if call.name == "get_logbook"))
-    logged = next(entry for entry in entries if entry["id"] == "LB-SYN-UPDATE")
-    assert datetime.fromisoformat(logged["timestamp"]) == update
-    assert context == {
-        **machine.model_dump(mode="json"),
-        "last_software_update": update.date().isoformat(),
-    }
+    entries = json.loads(next(call.result or "{}" for call in calls if call.name == "get_logbook"))
+    assert any("update" in entry["text"].lower() for entry in entries["entries"])
+    assert context == DiagnosticsTools(dataset).machine_context(machine.id).model_dump(mode="json")
     assert dataset.model_dump_json() == original
 
 
 @pytest.mark.parametrize("seed", [7, 42])
-def test_missing_mapping_controls_retrieve_and_cite_real_matching_cases(seed: int) -> None:
+def test_missing_mapping_controls_use_real_telemetry_and_service_clues(seed: int) -> None:
     dataset = load_seed()
     original = dataset.model_dump_json()
-    cases = {case.id: case for case in dataset.historical_cases}
     population = generate_feedback(count=100, seed=seed)
     checked: Counter[str] = Counter()
     for episode in population.episodes:
@@ -169,57 +172,135 @@ def test_missing_mapping_controls_retrieve_and_cite_real_matching_cases(seed: in
             continue
         hypothesis = RcaReport.model_validate(episode.output).hypotheses[0]
         searches = [call for call in episode.tool_calls if call.name == "azure_ai_search"]
-        citations = [item for item in hypothesis.evidence if item.ref.startswith("HC-")]
+        assert not searches
         if hypothesis.failure_mode_id == "unknown":
-            assert not searches
-            assert not citations
             checked["failed"] += 1
             continue
-        assert len(searches) == 1
-        assert episode.input.split(": ", 1)[1] in searches[0].arguments["query"]
-        returned = [
-            HistoricalCase.model_validate(row) for row in json.loads(searches[0].result or "[]")
-        ]
-        assert returned
-        assert all(case == cases[case.id] for case in returned)
-        assert all(case.confirmed_failure_mode == hypothesis.failure_mode_id for case in returned)
-        assert citations
-        for citation in citations:
-            case = next(case for case in returned if case.id == citation.ref)
-            assert citation.source == "azure_ai_search"
-            assert citation.excerpt == case.resolution
         assert any(item.source == "get_telemetry_window" for item in hypothesis.evidence)
+        assert any(item.source == "logbook" for item in hypothesis.evidence)
+        code = json.loads(
+            next(
+                call.result or "{}"
+                for call in episode.tool_calls
+                if call.name == "lookup_error_code"
+            )
+        )
+        assert code["ref"] == "EC-9901"
+        assert code["possible_causes"] == []
+        assert replay_episode(episode).replayable
         checked["correct"] += 1
     assert checked == {"failed": 10, "correct": 10}
     assert dataset.model_dump_json() == original
 
 
-def test_only_missing_mapping_cohort_requires_matching_seed_history() -> None:
-    dataset = load_seed()
-    mode = next(mode for mode in dataset.failure_modes if mode.subsystem == Subsystem.VACUUM)
-    scenario = next(
-        scenario for scenario in dataset.scenarios if scenario.expected_failure_mode == mode.id
-    )
-    unmatched_mode = mode.model_copy(update={"id": "FM-99"})
-    unmatched = scenario.model_copy(
-        update={"id": "SC-SYN-NO-HISTORY", "expected_failure_mode": unmatched_mode.id}
-    )
-    expanded = dataset.model_copy(
+def test_additive_feedback_seed_preserves_all_existing_records_and_tool_results() -> None:
+    from diagnostics_domain.feedback_seed import extend_feedback_seed
+
+    extended = load_seed()
+    existing_ids = {machine.id for machine in extended.machines[:52]}
+    original = extended.model_copy(
         update={
-            "failure_modes": (*dataset.failure_modes, unmatched_mode),
-            "scenarios": (scenario, unmatched),
+            "machines": extended.machines[:52],
+            "error_codes": tuple(code for code in extended.error_codes if code.code != "EC-9901"),
+            "error_events": tuple(
+                item for item in extended.error_events if item.machine_id in existing_ids
+            ),
+            "telemetry": tuple(
+                item for item in extended.telemetry if item.machine_id in existing_ids
+            ),
+            "logbook": tuple(item for item in extended.logbook if item.machine_id in existing_ids),
         }
     )
-    assert all(
-        case.confirmed_failure_mode != unmatched_mode.id for case in expanded.historical_cases
-    )
-    for seed in range(10):
-        assert choose_scenario(expanded, 2, Random(seed)) == scenario
-    new_only = expanded.model_copy(update={"scenarios": (unmatched,)})
-    for context in (0, 1, 3, 4):
-        assert choose_scenario(new_only, context, Random(42)) == unmatched
-    with pytest.raises(ValueError, match=r"No eligible seed scenarios.*context 2"):
-        choose_scenario(new_only, 2, Random(42))
+    assert extend_feedback_seed(original) == extended
+    before = original.model_dump(mode="json")
+    after = extended.model_dump(mode="json")
+    for field, records in before.items():
+        assert (
+            after[field][: len(records)] if isinstance(records, list) else after[field]
+        ) == records
+    old_tools, new_tools = DiagnosticsTools(original), DiagnosticsTools(extended)
+    for machine_id in sorted(existing_ids):
+        assert old_tools.machine_context(machine_id).model_dump_json() == (
+            new_tools.machine_context(machine_id).model_dump_json()
+        )
+        for hours in (24, 48, 168):
+            assert old_tools.error_events(machine_id, hours).model_dump_json() == (
+                new_tools.error_events(machine_id, hours).model_dump_json()
+            )
+        assert old_tools.logbook(machine_id).model_dump_json() == (
+            new_tools.logbook(machine_id).model_dump_json()
+        )
+        for signal in old_tools.machine_context(machine_id).signals:
+            assert old_tools.telemetry_window(machine_id, signal.name).model_dump_json() == (
+                new_tools.telemetry_window(machine_id, signal.name).model_dump_json()
+            )
+    for code in original.error_codes:
+        assert old_tools.error_code(code.code).model_dump_json() == (
+            new_tools.error_code(code.code).model_dump_json()
+        )
+
+
+def test_every_generated_tool_call_replays_and_every_pattern_is_replayable() -> None:
+    dataset = load_seed()
+    tools = DiagnosticsTools(dataset)
+    for seed in (7, 42):
+        population = generate_feedback(count=100, seed=seed)
+        admitted: set[str] = set()
+        for episode in population.episodes:
+            result = replay_episode(episode, tools=tools)
+            assert result.replayable, result.issues
+            assert len(result.fingerprints) == len(episode.tool_calls)
+            admitted.add(episode.id)
+            for call in episode.tool_calls:
+                assert json.loads(call.result or "null") == json.loads(
+                    execute_tool_call(call, tools)
+                )
+            truth = next(
+                row for row in population.answer_key.episodes if row.episode_id == episode.id
+            )
+            if truth.pattern_id == "vacuum_telemetry_omission":
+                assert (
+                    next(
+                        scenario.category
+                        for scenario in dataset.scenarios
+                        if scenario.machine_id == truth.machine_id
+                    )
+                    == "clean"
+                )
+            if truth.pattern_id == "overlapping_codes_after_update":
+                reference = json.loads(
+                    next(
+                        call.result or "{}"
+                        for call in episode.tool_calls
+                        if call.name == "lookup_error_code"
+                    )
+                )
+                assert len(reference["possible_causes"]) > 1
+        assert all(
+            set(pattern.episode_ids) <= admitted for pattern in population.answer_key.patterns
+        )
+
+
+def test_replay_rejects_changed_results_and_incomplete_or_unsupported_calls() -> None:
+    episode = generate_feedback(count=1).episodes[0]
+    original = episode.tool_calls[0]
+    prefixed = original.model_copy(update={"name": f"diagnostics___{original.name}"})
+    assert tool_fingerprint(original) == tool_fingerprint(prefixed)
+    for update in (
+        {"result": "{}"},
+        {"result": "not JSON"},
+        {"result": None},
+        {"result_truncated": True},
+        {"error": "failed"},
+        {"name": "azure_ai_search"},
+        {"arguments": {"machine_id": "M-9999"}},
+    ):
+        changed = original.model_copy(update=update)
+        rejected = episode.model_copy(update={"tool_calls": [changed]})
+        assert not replay_episode(rejected).replayable
+    assert not replay_episode(episode.model_copy(update={"tool_calls": []})).replayable
+    assert not replay_episode(episode.model_copy(update={"truncated": ["input"]})).replayable
+    assert replay_episode(episode).replayable
 
 
 def test_reviewer_population_has_noise_without_turning_assertions_into_truth() -> None:
