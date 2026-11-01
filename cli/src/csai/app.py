@@ -37,7 +37,7 @@ from cs_platform.settings import PlatformSettings, SettingsError
 from cs_platform.telemetry import flush_telemetry
 from csai import foundry
 from csai.environment import load_environment
-from csai.eval_cli import DurableEpisodes, EvalEnvironment, eval_app
+from csai.eval_cli import DurableEpisodes, EvalEnvironment, eval_app, publish_record
 from csai.platform import PlatformApiError, PlatformClient
 from csai.targets import AGENTS, hosted_target, local_target
 from platform_api.api import FeedbackRequest
@@ -343,18 +343,10 @@ def eval_command(
     report(record.suite(), result)
     failures = record.failures
     if publish:
-        settings = PlatformSettings.from_env()
-        label = f"{target}-{datetime.now(UTC):%Y%m%d-%H%M%S}"
-        typer.echo(f"\nPublishing {label} to Foundry (built-in evaluators)...")
+        typer.echo("\nPublishing the durable run to Foundry...")
         try:
-            url = foundry.publish(
-                record.suite(),
-                result,
-                endpoint=settings.foundry_project_endpoint,
-                model=settings.model_deployment,
-                label=label,
-            )
-        except foundry.FoundryEvalError as error:
+            url = publish_record(output)
+        except (foundry.FoundryEvalError, OSError, ValueError) as error:
             # Publishing is reporting, not gating: the code-based gate below still decides.
             typer.echo(f"warning: {error}", err=True)
         else:

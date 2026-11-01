@@ -2,7 +2,9 @@ import asyncio
 import json
 import os
 import stat
+import sys
 from dataclasses import replace
+from types import ModuleType
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -17,7 +19,7 @@ from cs_platform.factory import build_agent
 from cs_platform.spec import AgentSpec
 from cs_platform.testing import ScriptedChatClient, call, text
 from csai import app as cli
-from csai import eval_cli, targets
+from csai import eval_cli, foundry, targets
 from rca_agent.report import RcaReport
 
 if TYPE_CHECKING:
@@ -538,6 +540,63 @@ def test_default_agent_path_and_complete_report_use_frozen_gates(
     assert result.exit_code == 0, result.output
     assert "Gate passed." in result.output
     assert load_run(tmp_path) == before
+
+
+@pytest.mark.parametrize("quality", [0.0, 1.0])
+@pytest.mark.parametrize("error_type", [foundry.FoundryEvalError, RuntimeError])
+def test_optional_publish_failure_never_changes_disk_gate(
+    scripted: list[int],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    quality: float,
+    error_type: type[Exception],
+) -> None:
+    suite = targets.AGENTS["rca"].load_suite()
+    monkeypatch.setitem(
+        targets.AGENTS,
+        "rca",
+        replace(
+            targets.AGENTS["rca"],
+            load_suite=lambda: replace(
+                suite, evaluators=(lambda _case, _output: {"exact": quality},)
+            ),
+        ),
+    )
+    adapter = ModuleType("csai.eval_publish")
+
+    def publish(path: Path) -> str:
+        assert load_run(path).status == "complete"
+        raise error_type("offline publishing failure")
+
+    monkeypatch.setattr(adapter, "publish_record", publish, raising=False)
+    monkeypatch.setitem(sys.modules, adapter.__name__, adapter)
+    result = invoke(tmp_path / "results.jsonl", "--publish")
+    assert result.exit_code == (0 if quality == 1 else 1), result.output
+    assert "warning:" in result.output
+    assert "offline publishing failure" in result.output
+    assert load_run(tmp_path).status == "complete"
+
+
+@pytest.mark.parametrize("failed", [False, True])
+def test_standalone_publish_dispatches_only_to_disk_adapter(
+    scripted: list[int], monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failed: bool
+) -> None:
+    assert invoke(tmp_path / "results.jsonl").exit_code == 0
+    adapter = ModuleType("csai.eval_publish")
+
+    def publish(path: Path) -> str:
+        assert path == tmp_path
+        assert load_run(path).status == "complete"
+        if failed:
+            raise ValueError("invalid publication")
+        return "https://example.invalid/evaluation"
+
+    monkeypatch.setattr(adapter, "publish_record", publish, raising=False)
+    monkeypatch.setitem(sys.modules, adapter.__name__, adapter)
+    monkeypatch.setattr(cli, "make_target", lambda *_, **__: pytest.fail("must not run"))
+    result = runner.invoke(cli.app, ["--no-azd", "eval", "publish", str(tmp_path)])
+    assert result.exit_code == (2 if failed else 0), result.output
+    assert ("invalid publication" if failed else "Foundry report:") in result.output
 
 
 @pytest.mark.parametrize("failed", [False, True])

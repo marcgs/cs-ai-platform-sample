@@ -101,6 +101,16 @@ resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   }
 }
 
+// Evaluations need a project host even when network injection created the account host.
+resource evaluationHost 'Microsoft.CognitiveServices/accounts/projects/capabilityHosts@2025-04-01-preview' = {
+  name: 'evaluations'
+  parent: account::project
+  properties: {
+    #disable-next-line BCP037
+    capabilityHostKind: 'Agents'
+  }
+}
+
 resource projectAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(registry.id, account::project.id, roles.acrPull)
   scope: registry
