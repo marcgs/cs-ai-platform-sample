@@ -22,6 +22,7 @@ def clean_reviews(reviews: Sequence[Review]) -> list[Review]:
 
     Anonymous feedback is conservatively one voice per episode. Latest revision wins;
     canonical content breaks same-time ties deterministically, not input ordering.
+    Only identical content uses row ID to select stable provenance, never extra votes.
     """
     chosen: dict[tuple[str, str], Review] = {}
     for row in reviews:
@@ -32,7 +33,7 @@ def clean_reviews(reviews: Sequence[Review]) -> list[Review]:
     return [chosen[key] for key in sorted(chosen)]
 
 
-def _order(review: Review) -> tuple[float, str, tuple[str, str, str]]:
+def _order(review: Review) -> tuple[float, str, tuple[str, str, str], str]:
     feedback = review.feedback
     raw = (
         feedback.verdict.value,
@@ -43,7 +44,7 @@ def _order(review: Review) -> tuple[float, str, tuple[str, str, str]]:
     submitted = feedback.submitted_at
     if submitted.tzinfo is None:
         submitted = submitted.replace(tzinfo=UTC)
-    return submitted.timestamp(), semantic, raw
+    return submitted.timestamp(), semantic, raw, review.id
 
 
 def _majority(values: list[Verdict]) -> Verdict | None:
@@ -95,7 +96,7 @@ def summarize(
         causes: Counter[str] = Counter()
         for row in trusted:
             cause = row.feedback.actual_root_cause
-            if cause:
+            if cause and cause.strip():
                 causes[cause.strip()] += 1
         cause, count = causes.most_common(1)[0] if causes else (None, 0)
         results[episode_id] = ReviewSummary(

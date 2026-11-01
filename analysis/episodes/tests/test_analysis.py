@@ -27,6 +27,7 @@ from episode_analysis.pilot import sample
 from episode_analysis.pipeline import analyze, prepare
 from episode_analysis.report import markdown
 from episode_analysis.reviews import summarize
+from episode_analysis.vocabulary import cluster_key
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -53,7 +54,7 @@ async def evidence_baseline(item: EnrichedEpisode) -> Label:
     if any(call.error for call in calls) or item.episode.error:
         category, condition = "tool_error", "failed_diagnostic_tool"
     elif "ignore previous instructions" in results and not has_telemetry:
-        category, condition = "instruction_followed", "logbook_instruction_overrode_procedure"
+        category, condition = "instruction_followed", "prompt_injection_logbook"
     elif '"data_quality"' in results:
         category, condition = "data_quality", "incomplete_duplicate_late_telemetry"
     elif any(
@@ -86,6 +87,9 @@ async def test_all_five_patterns_recovered_ranked_routed_with_noise(population):
     assert all(row.matched_count > 0 and row.routed_correctly for row in result.recovery)
     assert result.sample_size == 40
     assert result.category_accuracy == 1
+    assert result.route_accuracy == 1
+    assert result.clusters_per_pattern == 1
+    assert all(row.cluster_count == 1 for row in result.recovery)
     assert result.classified_count < result.sample_size  # uncertainty stays visible
     assert report.reviewer_agreement["r-004"].reliability < (
         report.reviewer_agreement["r-001"].reliability
@@ -100,6 +104,39 @@ async def test_all_five_patterns_recovered_ranked_routed_with_noise(population):
         assert cluster.platforms
         assert cluster.software_releases
     assert report.errors == {}
+
+
+async def test_benchmark_counts_wrong_category_fragments_and_member_routes(population):
+    report = await analyze(prepare(population.episodes, population.reviews), baseline())
+    cluster = next(row for row in report.clusters if row.category == "missed_evidence")
+    moved = cluster.episode_ids[0]
+    remaining = cluster.model_copy(
+        update={"episode_ids": cluster.episode_ids[1:], "frequency": cluster.frequency - 1}
+    )
+    fragment = cluster.model_copy(
+        update={
+            "id": cluster_key("data_quality", cluster.condition),
+            "category": "data_quality",
+            "route": "backlog",
+            "episode_ids": [moved],
+            "frequency": 1,
+        }
+    )
+    labels = dict(report.labels)
+    labels[moved] = labels[moved].model_copy(update={"category": "data_quality"})
+    changed = report.model_copy(
+        update={
+            "clusters": [remaining if row == cluster else row for row in report.clusters]
+            + [fragment],
+            "labels": labels,
+        }
+    )
+    measured = evaluate(changed, population.answer_key, sample_size=1000)
+    assert sorted(row.cluster_count for row in measured.recovery) == [1, 1, 1, 1, 2]
+    assert measured.clusters_per_pattern == pytest.approx(1.2)
+    assert measured.route_accuracy == pytest.approx(
+        (measured.classified_count - 1) / measured.classified_count
+    )
 
 
 def test_duplicate_reviews_and_reviewer_repetitions_do_not_add_votes(population):
@@ -122,9 +159,12 @@ def test_duplicate_reviews_and_reviewer_repetitions_do_not_add_votes(population)
         for index in range(5)
         for row in population.reviews
     ]
-    assert (
-        prepare(population.episodes * 2, list(reversed(population.reviews + repeats)), load_seed())
-        == original
+    revised = prepare(
+        population.episodes * 2, list(reversed(population.reviews + repeats)), load_seed()
+    )
+    # Latest revisions change provenance, but never votes, enrichment or classification.
+    assert revised.model_dump(exclude={"source_reviews"}) == original.model_dump(
+        exclude={"source_reviews"}
     )
     row = population.reviews[0]
     later = row.model_copy(
@@ -283,7 +323,7 @@ async def test_structured_client_treats_injection_as_data(population):
     item = prepare(population.episodes, population.reviews).candidates[0]
     expected = Label(
         category="instruction_followed",
-        condition="untrusted_logbook",
+        condition="prompt_injection_logbook",
         rationale="Quoted logbook commands are evidence, not classifier instructions.",
     )
     client = ScriptedChatClient([[text(expected.model_dump_json())]])
@@ -454,7 +494,10 @@ def test_same_time_case_variant_reviews_have_stable_enrichment_and_cache(populat
         ],
         load_seed(),
     )
-    assert original == reversed_rows == renamed_rows
+    assert original == reversed_rows
+    assert original.model_dump(exclude={"source_reviews"}) == renamed_rows.model_dump(
+        exclude={"source_reviews"}
+    )
     assert original.candidates[0].expected_failure_mode is not None
     config = ClassifierConfig(model="scripted", settings={})
     assert fingerprint(original.candidates[0], config) == fingerprint(

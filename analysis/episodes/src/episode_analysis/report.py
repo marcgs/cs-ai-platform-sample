@@ -32,6 +32,7 @@ def markdown(report: Report) -> str:
         lines += [
             f"## {index}. {_plain(cluster.category)}: {_plain(cluster.condition)}",
             "",
+            f"Stable key: {_plain(cluster.id)}.",
             f"Route: {_plain(cluster.route)}. Frequency: {cluster.frequency}. "
             f"Score: {cluster.score:.2f} proxy hours.",
             _plain(cluster.handoff),
@@ -45,6 +46,18 @@ def markdown(report: Report) -> str:
             "Reviewer-derived expected modes need independent confirmation.",
             "",
         ]
+        for case in cluster.eval_cases:
+            review = case.review_summary
+            lines += [
+                f"- {_plain(case.episode_id)}: "
+                f"{review.independent_reviewers} independent reviewers; "
+                f"weighted verdict agreement {review.agreement:.3f}; "
+                f"verdict {_plain(review.verdict or 'unresolved')}; "
+                f"root cause {_plain(review.expected_mode or 'unsupported')}; "
+                f"root-cause support {review.root_cause_support:.3f}. "
+                "Source reviews: " + ", ".join(_plain(value) for value in case.source_review_ids)
+            ]
+        lines.append("")
     lines += ["## Limitations", ""] + [f"- {_plain(value)}" for value in report.limitations]
     return "\n".join(lines) + "\n"
 

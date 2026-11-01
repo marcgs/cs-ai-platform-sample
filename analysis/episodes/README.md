@@ -1,7 +1,12 @@
-# Episode analysis (iteration 3, Part A)
+# Episode analysis
 
 Offline-first cleaning, enrichment, classification, clustering and owner handoffs.
 No Azure, Fabric, deployment or learner changes occur by default.
+
+Iteration 4's offline L8 changes introduce a closed condition vocabulary, stable
+cluster keys and candidate review evidence. See [the L8 contract and pending
+acceptance](../../docs/iteration-4/l8.md). No fresh L8 cohort or model measurement
+has been run. The iteration 3 pilot and all its outputs below remain frozen.
 
 ## Offline preparation
 
@@ -66,7 +71,7 @@ Reports identify failed episode IDs and sanitized exception types; the CLI exits
 1 after writing a partial report. Retrying explicitly can reuse successful labels.
 Keep JSON, caches and transcripts local: they can contain sensitive real evidence.
 
-Classifier v2 forwards the supported generation settings `temperature` and
+Classifier v3 forwards the supported generation settings `temperature` and
 `top_p` to the SDK and rejects other settings, including attempts to override
 model, schema, `store=False` or the explicit output-token budget. Connection
 metadata (`project_endpoint`) is separate from generation settings and remains
@@ -78,7 +83,9 @@ caches/preflights are invalidated; obtain a fresh estimate before any approved r
 - One vote per normalized reviewer identity per episode, regardless of review
   row ID or repetition. The latest revision wins; equal-time content breaks ties
   deterministically, using case-preserving content when normalized values tie,
-  never row IDs. Anonymous feedback is conservatively one voice.
+  with row IDs used only to select stable provenance for fully identical content.
+  Anonymous feedback is conservatively one voice. Conflicting reuse of a review
+  ID fails preparation.
 - Reviewer reliability is smoothed leave-one-out majority agreement. Ties are
   excluded. A verdict needs two named supporters and more than 60% of weighted
   votes. These are consensus policy parameters, **not classifier quality gates**.
@@ -96,13 +103,21 @@ caches/preflights are invalidated; obtain a fresh estimate before any approved r
   Cluster score is frequency x mean proxy downtime, not estimated savings.
 - Fixed taxonomy: `missed_evidence`, `wrong_ranking`, `knowledge_gap`,
   `data_quality`, `tool_error`, `ambiguous_input`, `instruction_followed`.
-  Grouping combines category with a normalized evidence/condition signature.
+  Grouping combines category with a closed canonical condition from catalog
+  mechanisms/signals and the observational taxonomy. `Label` structured output
+  uses an enum, not free text. `episode_analysis.vocabulary.canonical_condition`
+  accepts known aliases and rejects unknown mechanisms. `cluster_key` derives
+  identity only from category and canonical condition, not rationale or rank.
   Unrelated pressure and temperature omissions do not become one taxonomy-only
   cluster. Platforms, releases and asserted modes remain visible in each cluster.
 - Behavior and ambiguity route to `learner_brief`; knowledge to
   `knowledge_proposal`; tool/data to `backlog`. Handoffs include evidence
   rationales, representative IDs and **every member's reproducing eval case**.
-  These replay candidates retain calls/notes and need expert-confirmed expected
+  New v2 reports retain each candidate's `review_summary`, `source_review_ids`
+  and cleaned `source_reviews`, including actual cause claims. These replay
+  candidates retain calls/notes and required `capture_truncated` metadata, so
+  incomplete episodes cannot become replay inputs by losing their flags.
+  They need expert-confirmed expected
   outcomes before promotion into an eval suite. No proposal is applied.
 
 Review a sample of labels/rationales against the captured evidence before trusting
@@ -126,7 +141,9 @@ read **only here**, after classification and blind audit are frozen. Denominator
 then cover only the report's sampled episodes; unsampled episodes are not counted
 as misses or controls. Unknown episode IDs still fail validation.
 
-It reports per-pattern best-cluster rank, coverage, purity and route, plus category
+It reports per-pattern best-cluster rank, coverage, purity, route and fragment
+count (including wrong-category fragments), plus mean clusters per nonempty
+pattern, member-level route accuracy and category
 accuracy on a deterministic hash-selected sample of planted misses. Unclassified
 cases are excluded from category accuracy but included in end-to-end category
 recall; control false positives are counted separately. It enforces matching
@@ -134,6 +151,12 @@ populations and invents no pass threshold. It does not enforce training isolatio
 the operator must reserve a distinct population.
 
 ## Small held-out pilot (separate approval, not a population run)
+
+**Historical iteration 3 procedure, not permission to rerun it with classifier
+v3.** Its v1 reports lack L9's required review evidence and are not promotion
+inputs. Do not overwrite or migrate frozen artifacts. Use the frozen L3 revision
+to reproduce historical benchmarks. L8's distinct proposed seeds, criteria and
+approval prerequisites are in the [L8 record](../../docs/iteration-4/l8.md).
 
 Reserve generation seed `20261030` and selection seed `l3-pilot-v1` before
 inspecting transcripts or labels. Neither is used by the scripted recovery tests.
