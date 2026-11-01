@@ -151,3 +151,91 @@ Each PR includes the problem, the change, tests, sanitized evidence, limitations
 Proposed branches: `it4/q8-durable-capture`, `it4/q9-foundry-evals`, `it4/l8-stable-clusters`, `it4/l9a-replayable-feedback`, `it4/l9-feedback-cases`. L9 is one backlog item with two PRs.
 
 While work is pending, the four backlog rows carry target `it4`. When an item meets its acceptance criteria, mark it done with its PR link and record its evidence in `docs/iteration-4/<item>.md`. New findings get the next free ID in their theme.
+
+## Implementation and validation status
+
+The reviewed implementation is committed in five stacked item pull requests.
+The original dirty checkout and the uncommitted integration snapshot were
+preserved. All domain data and measurements are synthetic and fictional.
+
+| Item | Implementation PR | Stacked offline tests | Still outstanding |
+|---|---|---|---|
+| Q8 | [#20](https://github.com/marcgs/cs-ai-platform-sample/pull/20) | 426 | PR review and merge |
+| Q9 | [#21](https://github.com/marcgs/cs-ai-platform-sample/pull/21) | 454 | Approved deployment, hosted smoke test, publication and parity comparison |
+| L9 Part A | [#23](https://github.com/marcgs/cs-ai-platform-sample/pull/23) | 456 | PR review and merge |
+| L8 | [#24](https://github.com/marcgs/cs-ai-platform-sample/pull/24) | 478 | Fresh approved measurement and person acceptance |
+| L9 Part B | [#22](https://github.com/marcgs/cs-ai-platform-sample/pull/22) | 497 | First fresh-cohort case PR reviewed and merged by a person |
+
+Each standalone stack passed Ruff lint and formatting, strict Pyright, its
+full offline test suite, staged safety checks and normal pre-commit hooks.
+Bicep build passed. All 43 modified or new non-Markdown source, test, data and
+configuration files in the final stack match the reviewed integration
+snapshot exactly. Agent behavior, original cases, thresholds and frozen
+iteration-3 evidence remain unchanged.
+
+Parallel reviews fixed journal-integrity and frozen-gate checks, gate-safe
+publishing errors, truncated-evidence rejection, blank root-cause claims,
+and feedback provenance validation. A freshly recreated environment initially
+lacked the packaging test's `hatchling` backend; restoring it locally made
+all 497 tests pass without a dependency-manifest change. S7 records the
+reproducibility follow-up.
+
+### Approved live local validation
+
+The user approved one live local eval: 50 synthetic cases, one repeat,
+concurrency one, no publication. An initial invocation lacked the worktree's
+azd configuration and stopped before any case started (exit 2). Its incomplete
+record was retained. The public offline report rebuild kept zero completed
+case-runs and failed the gate (exit 1).
+
+The configured invocation used the root checkout's azd values privately in
+the child process. It completed with exit 0: 50 unique case-runs, 50 successful
+episodes and 50 transcripts, with no failed attempts, interrupted or
+never-started case-runs, or truncated episodes. Provenance records synthetic
+data and the uncommitted harness actually measured. The later commits do not
+relabel that run as a clean-commit measurement. No case was rerun to seek a pass.
+
+| Metric | Original 18 (gated) | Challenge 32 (reported) | All 50 |
+|---|---|---|---|
+| Schema valid | 1.000 | 0.875 | 0.920 |
+| Hit at 1 | 1.000 | 0.656 | 0.780 |
+| Hit at 3 | 1.000 | 0.875 | 0.920 |
+| Evidence grounded | 1.000 | 1.000 | 1.000 |
+| Tool coverage | 0.900 | 0.906 | 0.904 |
+| Used knowledge | 0.889 | 0.719 | 0.780 |
+
+Original-18 thresholds are unchanged. Tool coverage sits exactly at its
+0.90 threshold (95% bootstrap interval 0.856-0.944); a single-repeat pass does
+not establish reliability or replace previous failed measurements. The
+knowledge-use interval is 0.722-1.000. Saturation and threshold-gap warnings
+remain in the summary.
+
+The completed run's public offline report rebuild also exited 0 and produced
+the identical complete summary. Results and all durable journal files stayed
+byte-identical. Raw records and deployment previews remain private, outside
+tracked files.
+
+### Remaining acceptance
+
+A fresh subscription what-if showed one capability-host create,
+44 modifications and five unsupported resources, with no resource deletions
+or replacements. Removing only the new host from the same compiled template
+produced identical modification resource sets and complete modification
+payloads for all 44 resources. They predate Q9, but are not automatically safe
+to apply. Both previews have five unsupported resources; their payloads
+differ. No infrastructure was applied or accepted for provisioning.
+
+Q10 keeps sparse-score parity explicitly blocked: one Foundry run per
+measurement, sparse scores retained in rows, no invented missing scores and
+no gate changes. Publication remains unperformed.
+
+The user confirmed L8's proposed criteria before any fresh population
+generation or key inspection: best-cluster recall at least 0.8 per planted
+pattern, at most 1.5 clusters per planted pattern, no cluster formed by the
+over-strict reviewer, and category agreement and route accuracy reported
+against the frozen pilot. This does not approve classification traffic.
+
+Implementation PR review and merge do not complete the remaining live or
+human acceptance. The first reviewed feedback-case batch and the approved
+three-repeat baseline still follow fresh L8 measurement and publication
+setup. This single-repeat validation is not the new iteration baseline.
