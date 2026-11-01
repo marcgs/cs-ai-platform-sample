@@ -24,6 +24,7 @@ def private_receipts(tmp_path, monkeypatch):
 
 def publication(*, scores=None, tool_calls=None, tool_definitions=None):
     return foundry.Publication(
+        coordination="shared-v1",
         suite="rca",
         metadata={
             "started_at": "2026-10-30T12:00:00+00:00",
@@ -50,6 +51,17 @@ def publication(*, scores=None, tool_calls=None, tool_definitions=None):
                 gated=True,
             )
         ],
+    )
+
+
+def existing_suite(recorded):
+    return SimpleNamespace(
+        id="eval-id",
+        metadata={
+            "csai_suite": recorded.suite,
+            "definition_key": recorded.definition_key,
+            "judge_model": "judge",
+        },
     )
 
 
@@ -191,7 +203,7 @@ def test_legacy_pending_migrates_and_blocks_copied_measurement_retry(monkeypatch
     with eval_receipts.publication_receipt(foundry.LEGACY_RECEIPT_DIRECTORY, key) as legacy:
         legacy.write(eval_receipts.PublicationReceipt(key=key, evaluation_id="eval-id"))
         original = legacy.path.read_bytes()
-    calls = fake_boundary(monkeypatch)
+    calls = fake_boundary(monkeypatch, existing=[existing_suite(recorded)])
     with pytest.raises(foundry.FoundryEvalError, match="outcome is unknown"):
         foundry.publish(recorded, endpoint="unused", model="judge")
     assert (foundry.LEGACY_RECEIPT_DIRECTORY / f"{key}.json").read_bytes() == original
@@ -203,6 +215,109 @@ def test_legacy_pending_migrates_and_blocks_copied_measurement_retry(monkeypatch
     with pytest.raises(foundry.FoundryEvalError, match="outcome is unknown"):
         foundry.publish(recorded.model_copy(deep=True), endpoint="unused", model="judge")
     assert not any(name == "run" for name, _ in calls)
+
+
+def test_first_copied_legacy_invocation_cannot_ignore_unseen_pending(monkeypatch, tmp_path):
+    modern = publication()
+    recorded = modern.model_copy(update={"coordination": None}, deep=True)
+    assert recorded.measurement_id == modern.measurement_id
+    key = hashlib.sha256(
+        json.dumps([recorded.measurement_id, "unused", "judge"]).encode()
+    ).hexdigest()
+    origin = tmp_path / "original-worktree" / "receipts"
+    with eval_receipts.publication_receipt(origin, key) as receipt:
+        receipt.write(eval_receipts.PublicationReceipt(key=key, evaluation_id="eval-id"))
+        before = receipt.path.read_bytes()
+    copied = tmp_path / "copied-worktree"
+    copied.mkdir()
+    monkeypatch.chdir(copied)
+    calls = fake_boundary(monkeypatch, list_hook=lambda _: [], run_list_hook=lambda _: [])
+    with pytest.raises(foundry.FoundryEvalError, match="Legacy publication origin is unknown"):
+        foundry.publish(recorded, endpoint="unused", model="judge")
+    assert calls == []
+    assert (origin / f"{key}.json").read_bytes() == before
+    assert not list(foundry.RECEIPT_DIRECTORY.glob("*.json"))
+
+
+def test_explicit_original_pending_import_never_creates_on_empty_remote_listing(
+    monkeypatch, tmp_path
+):
+    recorded = publication().model_copy(update={"coordination": None})
+    key = hashlib.sha256(
+        json.dumps([recorded.measurement_id, "unused", "judge"]).encode()
+    ).hexdigest()
+    origin = tmp_path / "original-evidence"
+    with eval_receipts.publication_receipt(origin, key) as receipt:
+        receipt.write(eval_receipts.PublicationReceipt(key=key, evaluation_id="eval-id"))
+        before = receipt.path.read_bytes()
+    calls = fake_boundary(
+        monkeypatch,
+        existing=[existing_suite(recorded)],
+        list_hook=lambda _: [],
+        run_list_hook=lambda _: [],
+    )
+    with pytest.raises(foundry.FoundryEvalError, match="outcome is unknown"):
+        foundry.publish(recorded, endpoint="unused", model="judge", legacy_directory=origin)
+    assert calls == []
+    assert (foundry.RECEIPT_DIRECTORY / f"{key}.json").read_bytes() == before
+
+
+def test_unavailable_legacy_origin_fails_before_authentication(monkeypatch, tmp_path):
+    def forbidden():
+        pytest.fail("Unknown legacy origin must not authenticate or submit.")
+
+    monkeypatch.setattr(foundry, "DefaultAzureCredential", forbidden)
+    recorded = publication().model_copy(update={"coordination": None})
+    missing = tmp_path / "unavailable-origin"
+    with pytest.raises(foundry.FoundryEvalError, match="unavailable"):
+        foundry.publish(recorded, endpoint="unused", model="judge", legacy_directory=missing)
+    assert not missing.exists()
+    missing.mkdir()
+    with pytest.raises(foundry.FoundryEvalError, match="unavailable"):
+        foundry.publish(recorded, endpoint="unused", model="judge", legacy_directory=missing)
+    assert not list(missing.iterdir())
+    with pytest.raises(foundry.FoundryEvalError, match="Legacy publication origin is unknown"):
+        foundry.publish(recorded, endpoint="unused", model="judge")
+
+
+def test_positive_legacy_run_evidence_resumes_only_the_original_measurement(monkeypatch, tmp_path):
+    modern = publication()
+    calls = fake_boundary(monkeypatch, run_list_hook=lambda _: [])
+    foundry.publish(modern, endpoint="unused", model="judge")
+    key = hashlib.sha256(
+        json.dumps([modern.measurement_id, "unused", "judge"]).encode()
+    ).hexdigest()
+    with eval_receipts.publication_receipt(foundry.RECEIPT_DIRECTORY, key) as shared:
+        receipt = shared.read()
+        assert receipt is not None
+        origin = tmp_path / "original-evidence"
+        with eval_receipts.publication_receipt(origin, key) as legacy:
+            legacy.write(receipt)
+        shared.clear()
+    recorded = modern.model_copy(update={"coordination": None})
+    assert foundry.publish(
+        recorded, endpoint="unused", model="judge", legacy_directory=origin
+    ).endswith("/report")
+    assert sum(name == "run" for name, _ in calls) == 1
+
+
+def test_positive_origin_input_cannot_substitute_another_measurement(monkeypatch, tmp_path):
+    other = publication()
+    calls = fake_boundary(monkeypatch, run_list_hook=lambda _: [])
+    foundry.publish(other, endpoint="unused", model="judge")
+    recorded = publication().model_copy(update={"coordination": None}, deep=True)
+    recorded.rows[0].case_id = "different-measurement"
+    key = hashlib.sha256(
+        json.dumps([recorded.measurement_id, "unused", "judge"]).encode()
+    ).hexdigest()
+    origin = tmp_path / "original-evidence"
+    with eval_receipts.publication_receipt(origin, key) as receipt:
+        receipt.write(
+            eval_receipts.PublicationReceipt(key=key, evaluation_id="eval-id", run_id="run-id")
+        )
+    with pytest.raises(foundry.FoundryEvalError, match="conflicts with the frozen measurement"):
+        foundry.publish(recorded, endpoint="unused", model="judge", legacy_directory=origin)
+    assert sum(name == "run" for name, _ in calls) == 1
 
 
 @pytest.mark.parametrize("status", [403, 429])

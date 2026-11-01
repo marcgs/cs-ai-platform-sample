@@ -53,6 +53,9 @@ The writer holds a run-scoped POSIX lock through report promotion. Offline rebui
 refuse an active writer and lock their own load-and-export transaction. Requested episode
 destinations retain an exclusive writable descriptor before targets start.
 The CLI passes `--retries` and `--backoff-s` to both the manifest and the actual loop.
+New captures declare `publication_coordination: shared-v1` in the frozen manifest.
+The publisher trusts this only with a valid completion certificate; older captures
+without coordination evidence cannot initiate publication merely because receipts are absent.
 `load_run(path)` reads the frozen manifest and committed events, without loading evaluators.
 Its `RunRecord` exposes the `SuiteResult`, all actual episodes and retry attempts, status,
 never-started/interrupted case-run keys and the disk-derived gate failures.

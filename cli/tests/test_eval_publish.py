@@ -1,6 +1,7 @@
 """Publish real durable records through the public CLI with Foundry faked."""
 
 import json
+from contextlib import nullcontext
 from datetime import datetime
 from types import SimpleNamespace
 
@@ -124,6 +125,8 @@ def test_disk_mapping_preserves_pinned_versions_ground_truth_and_tool_results(sa
     assert row.tool_definitions[0]["name"] == row.tool_calls[0]["name"]
     assert row.tool_definitions[0]["description"] == "Pinned description"
     assert row.cohort == "original"
+    assert publication.coordination == "shared-v1"
+    assert "coordination" not in publication.model_dump(mode="json")
 
 
 def test_public_publish_command_reads_disk_and_does_not_change_records(saved_run, monkeypatch):
@@ -151,6 +154,116 @@ def test_public_publish_command_reads_disk_and_does_not_change_records(saved_run
         "model": "configured-judge",
     }
     assert before == {path: path.read_bytes() for path in saved_run.rglob("*") if path.is_file()}
+
+
+def test_public_cli_unknown_legacy_archive_fails_without_submitting(saved_run, monkeypatch):
+    manifest_path = saved_run / "results.run" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    del manifest["publication_coordination"]
+    del manifest["completion_protocol"]
+    manifest_path.write_text(json.dumps(manifest))
+    (saved_run / "results.run" / "completion.json").unlink()
+    monkeypatch.setattr(foundry, "RECEIPT_DIRECTORY", saved_run / "private-shared-state")
+    monkeypatch.setattr(foundry, "LEGACY_RECEIPT_DIRECTORY", saved_run / "unknown-origin")
+    monkeypatch.setattr(
+        PlatformSettings,
+        "from_env",
+        lambda: SimpleNamespace(foundry_project_endpoint="unused", model_deployment="judge"),
+    )
+
+    def forbidden():
+        pytest.fail("Legacy archive without evidence must not authenticate or submit.")
+
+    monkeypatch.setattr(foundry, "DefaultAzureCredential", forbidden)
+    original_events = (saved_run / "results.run" / "events.jsonl").read_bytes()
+    result = CliRunner().invoke(app, ["--no-azd", "eval", "publish", str(saved_run)])
+    assert result.exit_code == 2
+    assert "Legacy publication origin is unknown" in result.output
+    assert (saved_run / "results.run" / "events.jsonl").read_bytes() == original_events
+    assert read_run(saved_run).failures == []
+
+
+def test_uncommitted_capture_cannot_claim_shared_coordination(saved_run):
+    (saved_run / "results.run" / "completion.json").unlink()
+    publication = eval_publish.publication_from_record(saved_run)
+    assert publication.coordination is None
+    assert publication.metadata["status"] == "incomplete"
+
+
+def test_certified_new_capture_can_initiate_shared_publication(saved_run, monkeypatch):
+    submitted = []
+    state = saved_run.parent / f"{saved_run.name}-publication-state"
+    monkeypatch.setattr(foundry, "RECEIPT_DIRECTORY", state / "shared")
+    monkeypatch.setattr(foundry, "LEGACY_RECEIPT_DIRECTORY", state / "legacy")
+    monkeypatch.setattr(foundry, "SUITE_DIRECTORY", state / "suites")
+
+    def create_run(**kwargs):
+        submitted.append(kwargs)
+        return SimpleNamespace(
+            id="run-id",
+            status="completed",
+            result_counts=SimpleNamespace(errored=0),
+            error=None,
+            report_url="report",
+        )
+
+    client = SimpleNamespace(
+        evals=SimpleNamespace(
+            list=lambda: [],
+            create=lambda **kwargs: SimpleNamespace(id="eval-id", metadata=kwargs["metadata"]),
+            runs=SimpleNamespace(list=lambda **kwargs: [], create=create_run),
+        )
+    )
+    project = SimpleNamespace(
+        beta=SimpleNamespace(
+            evaluators=SimpleNamespace(
+                create_version=lambda **kwargs: SimpleNamespace(version="1"),
+            )
+        ),
+        get_openai_client=lambda **kwargs: nullcontext(client),
+    )
+    monkeypatch.setattr(foundry, "DefaultAzureCredential", lambda: nullcontext(object()))
+    monkeypatch.setattr(foundry, "AIProjectClient", lambda *args: nullcontext(project))
+    before = {p: p.read_bytes() for p in (saved_run / "results.run").iterdir() if p.is_file()}
+    assert (
+        foundry.publish(
+            eval_publish.publication_from_record(saved_run), endpoint="unused", model="judge"
+        )
+        == "report"
+    )
+    assert len(submitted) == 1
+    assert before == {
+        p: p.read_bytes() for p in (saved_run / "results.run").iterdir() if p.is_file()
+    }
+
+
+def test_public_cli_passes_original_receipt_directory_without_trust_override(
+    saved_run, monkeypatch
+):
+    submissions = []
+
+    def publish(recorded, **kwargs):
+        submissions.append(kwargs)
+        return "report"
+
+    monkeypatch.setattr(eval_publish, "publish", publish)
+    monkeypatch.setattr(
+        PlatformSettings,
+        "from_env",
+        lambda: SimpleNamespace(foundry_project_endpoint="unused", model_deployment="judge"),
+    )
+    origin = saved_run / "original-evidence"
+    result = CliRunner().invoke(
+        app, ["--no-azd", "eval", "publish", str(saved_run), "--legacy-receipts", str(origin)]
+    )
+    assert result.exit_code == 0, result.output
+    assert submissions == [
+        {
+            "endpoint": "unused",
+            "model": "judge",
+            "legacy_directory": origin,
+        }
+    ]
 
 
 def test_public_publish_reports_failure_without_changing_saved_gate(saved_run, monkeypatch):
