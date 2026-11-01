@@ -1,7 +1,5 @@
 """Pure preparation and async analysis, also callable from a notebook."""
 
-import hashlib
-import re
 from collections import defaultdict
 from statistics import mean
 from typing import TYPE_CHECKING
@@ -19,7 +17,8 @@ from episode_analysis.models import (
     ReviewerAgreement,
     Route,
 )
-from episode_analysis.reviews import summarize
+from episode_analysis.reviews import clean_reviews, summarize
+from episode_analysis.vocabulary import Category, Condition, canonical_condition, cluster_key
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -39,6 +38,7 @@ class Prepared(Record):
     uncertain_count: int
     agreement: dict[str, ReviewerAgreement]
     candidates: list[EnrichedEpisode]
+    source_reviews: dict[str, list[Review]]
 
 
 def prepare(
@@ -70,7 +70,16 @@ def prepare(
                     feedback=episode.feedback,
                 )
             )
+    review_ids: dict[str, Review] = {}
+    for row in combined:
+        previous = review_ids.get(row.id)
+        if previous is not None and previous != row:
+            raise ValueError(f"Conflicting duplicate review: {row.id}")
+        review_ids[row.id] = row
     summaries, agreement = summarize(combined)
+    source_reviews: dict[str, list[Review]] = defaultdict(list)
+    for row in clean_reviews(combined):
+        source_reviews[row.episode_id].append(row)
     candidates: list[EnrichedEpisode] = []
     uncertain = 0
     for episode in sorted(unique.values(), key=lambda row: row.id):
@@ -89,6 +98,7 @@ def prepare(
         uncertain_count=uncertain,
         agreement=agreement,
         candidates=candidates,
+        source_reviews=dict(source_reviews),
     )
 
 
@@ -118,11 +128,13 @@ def _handoff(category: str) -> str:
     )
 
 
-def _clusters(rows: Sequence[LabeledEpisode]) -> list[Cluster]:
-    groups: dict[tuple[str, str], list[LabeledEpisode]] = defaultdict(list)
+def _clusters(
+    rows: Sequence[LabeledEpisode], source_reviews: dict[str, list[Review]]
+) -> list[Cluster]:
+    groups: dict[tuple[Category, Condition], list[LabeledEpisode]] = defaultdict(list)
     for row in rows:
-        condition = re.sub(r"[^a-z0-9]+", "_", row.label.condition.casefold()).strip("_")
-        groups[(row.label.category, condition or "unspecified")].append(row)
+        condition = canonical_condition(row.label.condition)
+        groups[(row.label.category, condition)].append(row)
     clusters: list[Cluster] = []
     for (category, condition), members in sorted(groups.items()):
         members.sort(key=lambda row: (-row.input.downtime_hours, row.input.episode.id))
@@ -130,7 +142,7 @@ def _clusters(rows: Sequence[LabeledEpisode]) -> list[Cluster]:
         impact = mean(item.downtime_hours for item in inputs)
         clusters.append(
             Cluster(
-                id=hashlib.sha256(f"{category}:{condition}".encode()).hexdigest()[:16],
+                id=cluster_key(category, condition),
                 category=members[0].label.category,
                 condition=condition,
                 route=_route(category),
@@ -158,7 +170,11 @@ def _clusters(rows: Sequence[LabeledEpisode]) -> list[Cluster]:
                         tool_calls=[
                             call.model_dump(mode="json") for call in item.episode.tool_calls
                         ],
+                        capture_truncated=item.episode.truncated,
                         review_notes=item.review.notes,
+                        review_summary=item.review,
+                        source_review_ids=sorted(row.id for row in source_reviews[item.episode.id]),
+                        source_reviews=source_reviews[item.episode.id],
                     )
                     for item in inputs
                 ],
@@ -184,6 +200,7 @@ async def analyze(prepared: Prepared, classifier: CachedClassifier | None = None
         labels[item.episode.id] = label
         rows.append(LabeledEpisode(input=item, label=label))
     return Report(
+        schema_version="episode-analysis-v2",
         source="synthetic" if prepared.source == "synthetic" else "real",
         classifier=classifier.config.model if classifier else "unlabeled-offline",
         episode_count=prepared.episode_count,
@@ -191,7 +208,7 @@ async def analyze(prepared: Prepared, classifier: CachedClassifier | None = None
         reviewed_count=prepared.reviewed_count,
         uncertain_count=prepared.uncertain_count,
         reviewer_agreement=prepared.agreement,
-        clusters=_clusters(rows),
+        clusters=_clusters(rows, prepared.source_reviews),
         labels=labels,
         unclassified=[item for item in prepared.candidates if item.episode.id not in labels],
         errors=errors,
