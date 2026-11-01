@@ -16,6 +16,26 @@ not part of that gate's denominator. Selecting only report-only cases does not
 claim that a regression gate passed. The regression gate is not an execution
 filter; use repeated `--case` options to restrict execution to original18.
 
+## Reviewed feedback cohort
+
+`load_suite()` also reads `feedback_cases.jsonl` when present. This is a reviewed
+file, not generator output; manifest regeneration never rewrites it. Cases carry
+`cohort: feedback` and synthetic cluster/episode/review/fingerprint provenance.
+The loader rejects duplicate incident identities and conflicting machine splits.
+Feedback is informational and does not change the original18 gate or thresholds.
+
+Prepare a local branch and proposed cases with:
+
+```bash
+uv run csai --no-azd cases propose path/to/l8-v2-report.json
+```
+
+No commit, push or PR opening is automatic. Reviewers establish the expected cause;
+incident category comes from source metadata. No decisive refs or other unsupported
+truth fields are invented. Those metrics, specific injection canaries and collection
+anomaly judges are not applicable without reviewed truth. See
+[L9 Part B](../../docs/iteration-4/l9b.md) for admission, duplicate and split rules.
+
 ## Ground-truth metrics
 
 - `decisive_evidence_recall`: fraction of declared decisive refs cited, not merely real refs.
@@ -99,15 +119,48 @@ run or rerun until green.
 
 Each run writes:
 
+- `results.run/manifest.json`: schema version, frozen cases/truth/splits/cohorts, thresholds,
+  selection, retry configuration and provenance captured before execution;
+- `results.run/events.jsonl`: authoritative append-only case starts, attempt starts/outcomes,
+  actual episodes, completed case-results and the final run status, flushed and fsynced;
+- `results.run/episodes.jsonl`: actual captured episodes, including failed attempts;
 - `results.jsonl`: one record per case/repeat, with structured errors and tool traces;
-- `results.summary.json`: provenance, means, confidence intervals, groups and failures;
+- `results.summary.json`: provenance, completion status, never-started/interrupted case-runs,
+  means, confidence intervals, groups and failures;
 - `results.html`: an escaped static report;
 - `results-transcripts/`: input, tool arguments/results, output and scores per case-run.
 
 Artifacts are private and gitignored under `.eval-results/`. An incomplete tool
 transcript is explicitly flagged, not treated as an empty successful trace.
 All artifact destinations, including episode exports, must be distinct and unused.
-Collisions are rejected before model calls; writers refuse to overwrite existing files.
+Collisions are rejected before model calls; new runs refuse existing files or journals.
+The report command may replace only derived artifacts for an existing run. Symlink export
+destinations are refused; HTML remains escaped with a restrictive content security policy.
+
+### Interruptions and offline reporting
+
+The CLI records completed results and real episodes immediately, including retry failures.
+A graceful cancellation or fatal scoring/export error ends the run as `incomplete`.
+Every selected case/repeat is accounted for: completed, started but interrupted, or never
+started. Even perfect partial quality scores cannot pass an incomplete run.
+
+```bash
+uv run csai --no-azd eval report .eval-results/baseline
+# Also accepts results.run directly, or the results.jsonl path.
+```
+
+Reporting reads only the journal and frozen manifest. It rebuilds results, episode export,
+transcripts, summary and HTML without credentials, evaluators or model calls. Exit 1 means
+an incomplete run or a failed original gate; exit 2 means unreadable/invalid records.
+It never resumes execution, retries a case, edits the journal, or synthesizes missing
+episodes from scores. Hosted/unavailable episodes stay unavailable.
+
+An ungraceful process stop cannot write a final status. Rebuilding treats the missing
+completion marker as incomplete, and ignores only an unterminated final journal fragment.
+A corrupt newline-terminated event is an error, not silently discarded. Disk or store
+failures may prevent the current episode from being saved; earlier committed records remain.
+Legacy JSONL exports without a durable manifest cannot prove completion or recover episodes
+and are deliberately not imported as a durable run.
 
 ## Errors and uncertainty
 

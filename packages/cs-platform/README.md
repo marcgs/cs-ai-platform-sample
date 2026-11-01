@@ -79,6 +79,12 @@ explicitly for a separate synthetic population. `load_episodes` requires every r
 to have an explicit matching label. Neither helper connects to or mutates a store.
 See the [synthetic feedback generator](../diagnostics-domain/README.md).
 
+`EvalCase.cohort` and `EvalCase.provenance` optionally identify reviewed feedback
+cases. They are excluded from serialization when absent, preserving existing
+manifests. `FeedbackProvenance` records synthetic cluster, episode, review and tool
+fingerprint origins, not additional causal truth. RCA loads these cases additively
+without changing its explicit original18 gate.
+
 `foundry_client()` disables the OpenAI SDK's broader automatic retries and retries only
 model 429s: at most four attempts and 120 seconds of total waiting per turn. Server
 `Retry-After` (seconds or HTTP date) and millisecond delays take precedence over exponential

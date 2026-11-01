@@ -1,5 +1,6 @@
 """Evaluation suite for the RCA agent."""
 
+from dataclasses import replace
 from importlib import resources
 from pathlib import Path
 
@@ -16,13 +17,14 @@ from rca_evals.evaluators import (
     ruled_out_correctly,
     tool_coverage,
 )
+from rca_evals.feedback import load_feedback_cases
 
 __all__ = ["load_suite"]
 
 
-def load_suite() -> EvalSuite:
+def load_suite(*, feedback_cases: Path | None = None) -> EvalSuite:
     data = Path(str(resources.files("rca_evals")))
-    return EvalSuite.from_files(
+    suite = EvalSuite.from_files(
         "rca",
         cases=data / "cases.jsonl",
         thresholds=data / "thresholds.yaml",
@@ -40,3 +42,7 @@ def load_suite() -> EvalSuite:
         ),
         gate_case_ids=frozenset(f"SC-{number:03d}" for number in range(1, 19)),
     )
+    feedback = load_feedback_cases(
+        feedback_cases or data / "feedback_cases.jsonl", existing=suite.cases
+    )
+    return replace(suite, cases=(*suite.cases, *feedback))
