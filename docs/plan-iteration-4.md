@@ -282,3 +282,22 @@ After the second restack, **561 offline tests**, Ruff lint/format, strict
 Pyright and diff checks pass. No further model traffic, publication or
 deployment ran. The live and human acceptance gaps above remain outstanding;
 another current-head Copilot review precedes implementation merge.
+
+The third review surfaced three inline findings and five additional Q8
+findings in the review body. Results opens now reject symlinks atomically;
+rebuilds refuse active writers, preventing stale exports from replacing
+finalized measurements. Requested episode outputs are reserved before target
+calls. Manifests accept the effective retry/backoff settings, and an offline
+concurrent interruption regression verifies sibling cancellation and retained
+attempt identities.
+
+Publication uses shared per-user measurement coordination and migrates legacy
+receipts. Confirmed creation rejections clear pending receipts durably;
+ambiguous outcomes remain blocked. The remaining knowledge-gate test now
+explicitly excludes feedback without changing its threshold assertions.
+
+After the third restack, **575 offline tests**, Ruff lint/format, strict
+Pyright and diff checks pass. Original data, gates and agent behavior remain
+unchanged. No new model traffic, publication or deployment ran; another
+current-head review is required before merge, and live/human acceptance
+remains outstanding.
