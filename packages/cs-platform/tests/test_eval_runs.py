@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def writer(path: Path) -> RunWriter:
+def writer(path: Path, *, episodes_path: Path | None = None) -> RunWriter:
     return RunWriter(
         EvalSuite(
             "synthetic",
@@ -35,6 +35,7 @@ def writer(path: Path) -> RunWriter:
         path,
         RunMetadata(agent_revision="a", harness_revision="h", model="scripted", target="local"),
         concurrency=1,
+        episodes_path=episodes_path,
     )
 
 
@@ -47,6 +48,44 @@ def complete(run: RunWriter, *, finish: bool = True) -> None:
     run.completed(CaseResult(case_id=case.id, scores={"exact": 1}, output=output))
     if finish:
         run.finish()
+
+
+@pytest.mark.parametrize("fail_sync", [False, True])
+def test_direct_finalization_writes_and_syncs_requested_episodes_before_completion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fail_sync: bool
+) -> None:
+    destination = tmp_path / "requested" / "episodes.jsonl"
+    run = writer(tmp_path / "results.jsonl", episodes_path=destination)
+    episode = Episode(agent="test", agent_version="1", input=run.manifest.cases[0].input)
+    run.episode(episode)
+    complete(run, finish=False)
+    synced: set[int] = set()
+    inodes = {destination.stat().st_ino, destination.parent.stat().st_ino}
+    original = os.fsync
+
+    def sync(descriptor: int) -> None:
+        inode = os.fstat(descriptor).st_ino
+        if inode in inodes:
+            assert not (run.directory / "completion.json").exists()
+            assert destination.read_text() == episode.model_dump_json() + "\n"
+            if fail_sync:
+                raise OSError("requested export sync failed")
+            synced.add(inode)
+        original(descriptor)
+
+    monkeypatch.setattr(os, "fsync", sync)
+    if fail_sync:
+        with pytest.raises(OSError, match="requested export sync failed"):
+            run.finalize()
+        assert load_run(run.directory).status == "incomplete"
+        assert not (run.directory / "completion.json").exists()
+    else:
+        record = run.finalize()
+        assert record.status == "complete"
+        assert record.episodes == [episode]
+        assert synced == inodes
+        assert destination.read_text() == episode.model_dump_json() + "\n"
+        assert stat.S_IMODE(destination.stat().st_mode) == 0o600
 
 
 def test_results_append_kernel_rejects_symlink_swap(

@@ -21,7 +21,6 @@ from cs_platform.eval_reporting import RunMetadata
 from cs_platform.eval_runs import (
     ReservedArtifact,
     RunWriter,
-    load_run,
     rebuild_report,
     validate_run_destinations,
     write_private_artifact,
@@ -326,8 +325,6 @@ def eval_command(
         asyncio.run(
             evaluate(entry, suite, target, concurrency, repeats, episodes=episodes, writer=writer)
         )
-        if writer.episode_export is not None:
-            export_local_episodes(load_run(output).episodes, writer.episode_export)
         record = writer.finalize()
     except BaseException as error:
         try:

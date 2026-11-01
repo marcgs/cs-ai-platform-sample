@@ -239,7 +239,9 @@ def test_requested_episode_export_is_private_and_synced_before_completion(
         os.umask(previous)
     assert result.exit_code == 0, result.output
     assert scripted == [3]
-    assert len(destination.read_text().splitlines()) == 3
+    exported = [json.loads(line) for line in destination.read_text().splitlines()]
+    assert len(exported) == 3
+    assert exported == [episode.model_dump(mode="json") for episode in load_run(output).episodes]
 
 
 def test_requested_episode_export_fsync_failure_prevents_completion(
@@ -406,7 +408,7 @@ def test_public_cli_export_interruption_keeps_all_results_and_report_can_rebuild
         assert len(record.result.cases) == len(record.episodes) == 3
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(cli, "export_local_episodes", interrupt)
+    monkeypatch.setattr(eval_runs.ReservedArtifact, "write", interrupt)
     result = invoke(output, "--episodes-output", str(tmp_path / "external.jsonl"))
     assert result.exit_code == 1, result.output
     before = load_run(tmp_path)
