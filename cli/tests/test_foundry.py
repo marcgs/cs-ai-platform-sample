@@ -1,11 +1,18 @@
 """Foundry is faked at the SDK boundary; these tests never authenticate or call a model."""
 
+import json
+import stat
 from contextlib import nullcontext
 from types import SimpleNamespace
 
 import pytest
 
 from csai import foundry
+
+
+@pytest.fixture(autouse=True)
+def private_receipts(tmp_path, monkeypatch):
+    monkeypatch.setattr(foundry, "RECEIPT_DIRECTORY", tmp_path / "receipts")
 
 
 def publication(*, scores=None, tool_calls=None, tool_definitions=None):
@@ -30,6 +37,7 @@ def publication(*, scores=None, tool_calls=None, tool_definitions=None):
                 response="synthetic answer",
                 ground_truth={"failure_mode_id": "FM-01"},
                 tool_calls=tool_calls or [],
+                tool_trace_complete=True,
                 tool_definitions=tool_definitions or [],
                 scores={"hit_at_1": 1.0} if scores is None else scores,
                 gated=True,
@@ -38,8 +46,12 @@ def publication(*, scores=None, tool_calls=None, tool_definitions=None):
     )
 
 
-def fake_boundary(monkeypatch, *, status="completed", errored=0, existing=None):
+def fake_boundary(
+    monkeypatch, *, status="completed", errored=0, existing=None, run_state=None, create_error=None
+):
     calls = []
+    evaluations = list(existing or [])
+    runs = [] if run_state is None else run_state
 
     def create_evaluator(**kwargs):
         calls.append(("evaluator", kwargs))
@@ -47,28 +59,43 @@ def fake_boundary(monkeypatch, *, status="completed", errored=0, existing=None):
 
     def create_evaluation(**kwargs):
         calls.append(("evaluation", kwargs))
-        return SimpleNamespace(id="eval-id")
+        evaluation = SimpleNamespace(id="eval-id", metadata=kwargs["metadata"])
+        evaluations.append(evaluation)
+        return evaluation
 
     def create_run(**kwargs):
         calls.append(("run", kwargs))
-        return SimpleNamespace(
+        run = SimpleNamespace(
             id="run-id",
+            metadata=kwargs["metadata"],
             status=status,
             result_counts=SimpleNamespace(errored=errored),
             error=None,
             report_url="https://example.test/report",
         )
+        runs.append(run)
+        if create_error is not None:
+            raise create_error
+        return run
+
+    def retrieve(run_id, **kwargs):
+        calls.append(("retrieve", kwargs))
+        return next(run for run in runs if run.id == run_id)
 
     client = SimpleNamespace(
         evals=SimpleNamespace(
-            list=lambda: existing or [],
+            list=lambda: evaluations,
             create=create_evaluation,
-            runs=SimpleNamespace(create=create_run),
+            runs=SimpleNamespace(create=create_run, list=lambda **_: runs, retrieve=retrieve),
         )
     )
     project = SimpleNamespace(
         beta=SimpleNamespace(evaluators=SimpleNamespace(create_version=create_evaluator)),
-        get_openai_client=lambda: nullcontext(client),
+        get_openai_client=lambda **options: (
+            nullcontext(client)
+            if options == {"max_retries": 0}
+            else pytest.fail(f"Unexpected client options: {options}")
+        ),
     )
     monkeypatch.setattr(foundry, "DefaultAzureCredential", lambda: nullcontext(object()))
     monkeypatch.setattr(foundry, "AIProjectClient", lambda *args: nullcontext(project))
@@ -81,7 +108,10 @@ def test_published_rows_preserve_scores_truth_and_metadata(monkeypatch):
     calls = fake_boundary(monkeypatch)
     assert foundry.publish(saved, endpoint="unused", model="judge") == "https://example.test/report"
     payload = next(value for name, value in calls if name == "run")
-    assert payload["metadata"] == saved.metadata
+    assert payload["metadata"] == {
+        **saved.metadata,
+        "csai_measurement": saved.measurement_id,
+    }
     row = payload["data_source"]["source"]["content"][0]["item"]
     assert row["scores"] == saved.rows[0].scores
     assert row["ground_truth"] == {"failure_mode_id": "FM-01"}
@@ -194,3 +224,88 @@ def test_missing_tool_definitions_are_not_reconstructed():
             endpoint="unused",
             model="judge",
         )
+
+
+@pytest.mark.parametrize("calls", [[], [{"name": "lookup_error_code"}]])
+def test_incomplete_traces_fail_before_authentication(calls):
+    recorded = publication(
+        tool_calls=calls,
+        tool_definitions=[{"type": "function", "name": "lookup_error_code"}],
+    )
+    recorded.rows[0].tool_trace_complete = False
+    with pytest.raises(foundry.FoundryEvalError, match="incomplete"):
+        foundry.publish(recorded, endpoint="unused", model="judge")
+
+
+def test_calibration_mirror_retains_loss_and_declares_lower_is_better():
+    metric = foundry.evaluator_definition("calibration")["definition"]["metrics"]["result"]
+    assert metric["desirable_direction"] == "decrease"
+    assert (
+        foundry.evaluator_definition("hit_at_1")["definition"]["metrics"]["result"][
+            "desirable_direction"
+        ]
+        == "increase"
+    )
+    namespace = {}
+    exec(foundry.mirror_code("calibration"), namespace)
+    for loss in (0.01, 0.81):
+        assert namespace["grade"]({}, {"scores": {"calibration": loss}}) == loss
+
+
+def test_timeout_retry_resumes_the_same_run_without_more_judge_calls(monkeypatch):
+    recorded = publication()
+    original = recorded.model_dump_json()
+    runs = []
+    calls = fake_boundary(monkeypatch, status="queued", run_state=runs)
+    monkeypatch.setattr(foundry, "TIMEOUT_S", 0)
+    with pytest.raises(foundry.FoundryEvalError, match="queued"):
+        foundry.publish(recorded, endpoint="unused", model="judge")
+    assert len(runs) == 1
+    runs[0].status = "completed"
+    assert foundry.publish(recorded, endpoint="unused", model="judge").endswith("/report")
+    assert sum(name == "run" for name, _ in calls) == 1
+    assert any(name == "retrieve" for name, _ in calls)
+    assert recorded.model_dump_json() == original
+
+
+def test_remote_measurement_lookup_reuses_run_without_local_receipt(monkeypatch):
+    recorded = publication()
+    calls = fake_boundary(monkeypatch)
+    foundry.publish(recorded, endpoint="unused", model="judge")
+    for receipt in foundry.RECEIPT_DIRECTORY.glob("*.json"):
+        receipt.unlink()
+    foundry.publish(recorded, endpoint="unused", model="judge")
+    assert sum(name == "run" for name, _ in calls) == 1
+
+
+def test_ambiguous_submission_recovers_via_remote_identity_without_resubmitting(monkeypatch):
+    recorded = publication()
+    calls = fake_boundary(monkeypatch, create_error=OSError("response lost after submission"))
+    with pytest.raises(foundry.FoundryEvalError, match="response lost"):
+        foundry.publish(recorded, endpoint="unused", model="judge")
+    assert foundry.publish(recorded, endpoint="unused", model="judge").endswith("/report")
+    assert sum(name == "run" for name, _ in calls) == 1
+
+
+def test_unknown_submission_blocks_retry_if_remote_run_is_not_visible(monkeypatch):
+    recorded = publication()
+    runs = []
+    calls = fake_boundary(monkeypatch, run_state=runs, create_error=OSError("response lost"))
+    with pytest.raises(foundry.FoundryEvalError):
+        foundry.publish(recorded, endpoint="unused", model="judge")
+    runs.clear()
+    with pytest.raises(foundry.FoundryEvalError, match="outcome is unknown"):
+        foundry.publish(recorded, endpoint="unused", model="judge")
+    assert sum(name == "run" for name, _ in calls) == 1
+
+
+def test_receipts_are_private_and_contain_no_measured_rows(monkeypatch):
+    recorded = publication()
+    fake_boundary(monkeypatch)
+    foundry.publish(recorded, endpoint="unused", model="judge")
+    directory = foundry.RECEIPT_DIRECTORY
+    assert stat.S_IMODE(directory.stat().st_mode) == 0o700
+    for path in directory.iterdir():
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+        if path.suffix == ".json":
+            assert set(json.loads(path.read_text())) == {"key", "evaluation_id", "run_id"}

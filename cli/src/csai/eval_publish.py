@@ -54,10 +54,12 @@ def publication_from_record(path: Path) -> Publication:
                             "name": call.name,
                             "arguments": call.arguments,
                             "result": call.result,
+                            "result_truncated": call.result_truncated,
                             "error": call.error,
                         }
                         for index, call in enumerate(result.output.tool_trace)
                     ],
+                    "tool_trace_complete": result.output.tool_trace_complete,
                     "tool_definitions": _definitions(
                         result.output.tool_definitions
                         if result.output.tool_definitions is not None
