@@ -310,3 +310,15 @@ Missing origins, including never-published legacy archives, require
 reconciliation rather than treating an empty remote listing as proof.
 After restacking this fix, **584 offline tests**, Ruff lint/format, strict
 Pyright and diff checks pass. No additional cloud or model traffic ran.
+
+The fourth review's three inline findings are addressed. Finalization owns
+writing and syncing the reserved episode export before completion, including
+direct writer callers; the CLI no longer writes it separately. An absent
+default legacy directory stays untouched, while existing or explicit origins
+remain locked and fail closed. Blank reviewer causes no longer contradict
+consensus and do not count as cause support; actual disagreement still
+requires expert review.
+
+The combined fourth-round stack passes **590 offline tests**, Ruff
+lint/format, strict Pyright and diff checks. Fresh current-head Copilot reviews
+are required before merge. Live and human acceptance remain outstanding.
