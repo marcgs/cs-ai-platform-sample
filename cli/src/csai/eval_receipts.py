@@ -22,23 +22,35 @@ class PublicationReceipt(BaseModel):
     run_id: str | None = None
 
 
-class ReceiptStore:
+class SuiteReceipt(BaseModel):
+    """Canonical suite identity or an ambiguous creation, independent of measurements."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    definition_key: str
+    judge_model: str
+    evaluation_id: str | None = None
+
+
+class ReceiptStore[Receipt: BaseModel]:
     """Atomically retain submission receipts under an exclusive publisher lock."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, schema: type[Receipt]) -> None:
         self.path = path
+        self.schema = schema
 
-    def read(self) -> PublicationReceipt | None:
+    def read(self) -> Receipt | None:
         """Read only the private receipt, never a measurement artifact."""
         if self.path.is_symlink():
             raise ValueError("Refusing a symlink publication receipt.")
         return (
-            PublicationReceipt.model_validate_json(self.path.read_text("utf-8"))
+            self.schema.model_validate_json(self.path.read_text("utf-8"))
             if self.path.exists()
             else None
         )
 
-    def write(self, receipt: PublicationReceipt) -> None:
+    def write(self, receipt: Receipt) -> None:
         """Flush a receipt and atomically replace the previous outcome."""
         if self.path.is_symlink():
             raise ValueError("Refusing a symlink publication receipt.")
@@ -78,8 +90,7 @@ def _private_directory(directory: Path) -> None:
 
 
 @contextmanager
-def publication_receipt(directory: Path, key: str) -> Generator[ReceiptStore]:
-    """Serialize local publishers and retain ambiguous submissions without resubmitting."""
+def _receipt_lock(directory: Path, key: str, *, wait: bool) -> Generator[Path]:
     if os.name != "posix":
         raise OSError("Private publication coordination requires POSIX filesystem locks.")
     import fcntl
@@ -89,7 +100,21 @@ def publication_receipt(directory: Path, key: str) -> Generator[ReceiptStore]:
     _private_directory(directory)
     descriptor = os.open(directory / f"{key}.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     try:
-        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        yield ReceiptStore(directory / f"{key}.json")
+        fcntl.flock(descriptor, fcntl.LOCK_EX | (0 if wait else fcntl.LOCK_NB))
+        yield directory / f"{key}.json"
     finally:
         os.close(descriptor)
+
+
+@contextmanager
+def publication_receipt(directory: Path, key: str) -> Generator[ReceiptStore[PublicationReceipt]]:
+    """Serialize each measurement, rejecting another active submission of that measurement."""
+    with _receipt_lock(directory, key, wait=False) as path:
+        yield ReceiptStore(path, PublicationReceipt)
+
+
+@contextmanager
+def suite_receipt(directory: Path, key: str) -> Generator[ReceiptStore[SuiteReceipt]]:
+    """Wait for endpoint-and-suite creation across independent measurement directories."""
+    with _receipt_lock(directory, key, wait=True) as path:
+        yield ReceiptStore(path, SuiteReceipt)
