@@ -301,3 +301,12 @@ Pyright and diff checks pass. Original data, gates and agent behavior remain
 unchanged. No new model traffic, publication or deployment ran; another
 current-head review is required before merge, and live/human acceptance
 remains outstanding.
+
+The copied-legacy-archive gap is now enforced rather than left as a warning.
+New captures carry certificate-verified shared-coordination provenance.
+Legacy captures without matching receipt evidence fail before authentication
+or SDK calls; original evidence can be imported with `--legacy-receipts`.
+Missing origins, including never-published legacy archives, require
+reconciliation rather than treating an empty remote listing as proof.
+After restacking this fix, **584 offline tests**, Ruff lint/format, strict
+Pyright and diff checks pass. No additional cloud or model traffic ran.
