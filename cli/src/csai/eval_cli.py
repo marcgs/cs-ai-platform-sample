@@ -13,12 +13,15 @@ from csai import foundry
 from csai.environment import load_environment
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from typing import Protocol
 
     from typer._click.core import Context
 
     from cs_platform.episodes import Episode
     from cs_platform.eval_runs import RunWriter
+
+    class Publisher(Protocol):
+        def __call__(self, path: Path, *, legacy_receipts: Path | None = None) -> str: ...
 
 
 @dataclass(frozen=True)
@@ -59,11 +62,13 @@ def configure_eval(ctx: typer.Context) -> None:
         load_environment(use_azd=options.use_azd if isinstance(options, EvalEnvironment) else True)
 
 
-def publish_record(path: Path) -> str:
+def publish_record(path: Path, *, legacy_receipts: Path | None = None) -> str:
     """Load Q9's publishing adapter only when explicitly requested."""
     try:
         module = import_module("csai.eval_publish")
-        publisher: Callable[[Path], str] = module.publish_record
+        publisher: Publisher = module.publish_record
+        if legacy_receipts is not None:
+            return publisher(path, legacy_receipts=legacy_receipts)
         return publisher(path)
     except ImportError as error:
         raise foundry.FoundryEvalError("the eval publishing adapter is unavailable") from error
@@ -80,10 +85,20 @@ def publish_command(
     results_dir: Annotated[
         Path, typer.Argument(help="Results directory, .run directory or JSONL.")
     ],
+    legacy_receipts: Annotated[
+        Path | None,
+        typer.Option(
+            help="Original legacy receipt directory; requires positive submission evidence."
+        ),
+    ] = None,
 ) -> None:
     """Explicitly publish a previously captured run; this never changes its gate."""
     try:
-        url = publish_record(results_dir)
+        url = (
+            publish_record(results_dir, legacy_receipts=legacy_receipts)
+            if legacy_receipts is not None
+            else publish_record(results_dir)
+        )
     except (foundry.FoundryEvalError, OSError, ValueError) as error:
         typer.echo(f"error: {error}", err=True)
         raise typer.Exit(2) from error

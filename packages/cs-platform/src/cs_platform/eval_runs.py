@@ -46,6 +46,7 @@ class RunManifest(BaseModel):
 
     schema_version: Literal[1] = 1
     completion_protocol: Literal["certificate-v1"] | None = None
+    publication_coordination: Literal["shared-v1"] | None = None
     suite: str
     cases: tuple[EvalCase, ...]
     cohorts: dict[str, str] = Field(default_factory=dict[str, str])
@@ -326,6 +327,7 @@ class RunWriter:
         self.directory = run_directory(output)
         self.manifest = RunManifest(
             completion_protocol="certificate-v1",
+            publication_coordination="shared-v1",
             suite=suite.name,
             cases=assign_splits(suite.cases),
             cohorts={case.id: _cohort(suite, case) for case in suite.cases},

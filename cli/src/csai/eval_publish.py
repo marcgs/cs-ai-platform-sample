@@ -77,6 +77,11 @@ def publication_from_record(path: Path) -> Publication:
             )
         )
     publication = Publication(
+        coordination=(
+            manifest.publication_coordination
+            if manifest.completion_protocol == "certificate-v1" and record.status == "complete"
+            else None
+        ),
         suite=manifest.suite,
         metadata={
             "revision": metadata.agent_revision,
@@ -106,12 +111,17 @@ def publication_from_record(path: Path) -> Publication:
     return publication
 
 
-def publish_record(path: Path) -> str:
+def publish_record(path: Path, *, legacy_receipts: Path | None = None) -> str:
     """Publish exactly one saved measurement; configuration supplies only endpoint and judge."""
     publication = publication_from_record(path)
     settings = PlatformSettings.from_env()
+    if legacy_receipts is not None:
+        return publish(
+            publication,
+            endpoint=settings.foundry_project_endpoint,
+            model=settings.model_deployment,
+            legacy_directory=legacy_receipts,
+        )
     return publish(
-        publication,
-        endpoint=settings.foundry_project_endpoint,
-        model=settings.model_deployment,
+        publication, endpoint=settings.foundry_project_endpoint, model=settings.model_deployment
     )

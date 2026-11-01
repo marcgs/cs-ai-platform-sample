@@ -5,13 +5,13 @@ import json
 import math
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from azure.ai.projects import AIProjectClient
 from azure.core.exceptions import AzureError
 from azure.identity import DefaultAzureCredential
 from openai import APIStatusError, OpenAIError
-from pydantic import BaseModel, ConfigDict, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from csai.eval_receipts import (
     PublicationReceipt,
@@ -100,6 +100,7 @@ class Publication(BaseModel):
     suite: str
     metadata: dict[str, str]
     rows: list[PublishedRow]
+    coordination: Literal["shared-v1"] | None = Field(default=None, exclude=True)
 
     @property
     def metric_names(self) -> tuple[str, ...]:
@@ -229,6 +230,7 @@ def _evaluation(
     model: str,
     cache: ReceiptStore[SuiteReceipt],
     cache_key: str,
+    known_evaluation_id: str | None = None,
 ) -> str:
     receipt = cache.read()
     if receipt is not None and (
@@ -247,10 +249,14 @@ def _evaluation(
     ]
     if len(matches) > 1:
         raise FoundryEvalError("Multiple suite evaluations exist; select the canonical one first")
-    if receipt is not None and receipt.evaluation_id is not None:
-        if matches and matches[0].id != receipt.evaluation_id:
+    cached_id = receipt.evaluation_id if receipt is not None else None
+    if cached_id is not None and known_evaluation_id not in {None, cached_id}:
+        raise FoundryEvalError("Measurement receipt conflicts with the suite evaluation.")
+    evaluation_id = cached_id or known_evaluation_id
+    if evaluation_id is not None:
+        if matches and matches[0].id != evaluation_id:
             raise FoundryEvalError("Suite receipt conflicts with the visible evaluation.")
-        evaluation = client.evals.retrieve(receipt.evaluation_id)
+        evaluation = client.evals.retrieve(evaluation_id)
     elif matches:
         evaluation = matches[0]
     else:
@@ -340,7 +346,10 @@ def _publication_run(
         receipts.write(
             PublicationReceipt(key=receipt_key, evaluation_id=evaluation_id, run_id=run_id)
         )
-        return client.evals.runs.retrieve(run_id, eval_id=evaluation_id)
+        run = client.evals.runs.retrieve(run_id, eval_id=evaluation_id)
+        if (run.metadata or {}).get("csai_measurement") != measurement_id:
+            raise FoundryEvalError("Original run evidence conflicts with the frozen measurement.")
+        return run
     if receipt is not None:
         raise FoundryEvalError(
             "The prior submission outcome is unknown and no matching run is visible. "
@@ -367,7 +376,13 @@ def _publication_run(
     return run
 
 
-def publish(publication: Publication, *, endpoint: str, model: str) -> str:
+def publish(
+    publication: Publication,
+    *,
+    endpoint: str,
+    model: str,
+    legacy_directory: Path | None = None,
+) -> str:
     """Publish a saved run, returning its report URL; never mutate the local record."""
     if not publication.rows:
         raise FoundryEvalError("The record has no completed case-runs to publish")
@@ -393,30 +408,60 @@ def publish(publication: Publication, *, endpoint: str, model: str) -> str:
         json.dumps([publication.measurement_id, endpoint, model]).encode()
     ).hexdigest()
     suite_key = hashlib.sha256(json.dumps([endpoint, publication.suite]).encode()).hexdigest()
+    if legacy_directory is not None and (
+        not legacy_directory.is_dir() or not (legacy_directory / f"{receipt_key}.json").is_file()
+    ):
+        raise FoundryEvalError(
+            "Original legacy receipt evidence is unavailable; no submission. "
+            "--legacy-receipts requires a matching receipt, not an assertion of non-submission."
+        )
     try:
         with (
             publication_receipt(RECEIPT_DIRECTORY, receipt_key) as receipts,
-            legacy_publication_receipt(LEGACY_RECEIPT_DIRECTORY, receipt_key) as legacy,
-            DefaultAzureCredential() as credential,
-            AIProjectClient(endpoint, credential) as project,
-            project.get_openai_client(max_retries=0) as client,
+            legacy_publication_receipt(
+                legacy_directory if legacy_directory is not None else LEGACY_RECEIPT_DIRECTORY,
+                receipt_key,
+            ) as legacy,
         ):
             _migrate_receipt(receipts, legacy, receipt_key)
-            with suite_receipt(SUITE_DIRECTORY, suite_key) as cache:
-                evaluation_id = _evaluation(publication, project, client, model, cache, suite_key)
-            run = _publication_run(
-                publication, client, evaluation_id, receipts, receipt_key, legacy
-            )
-            deadline = time.monotonic() + TIMEOUT_S
-            while run.status in {"queued", "in_progress"} and time.monotonic() < deadline:
-                time.sleep(POLL_INTERVAL_S)
-                run = client.evals.runs.retrieve(run.id, eval_id=evaluation_id)
-            if run.status != "completed" or run.result_counts.errored:
-                reason = run.error.message if run.error else "timed out or item evaluator errors"
+            prior = receipts.read()
+            if publication.coordination is None and prior is None:
                 raise FoundryEvalError(
-                    f"Foundry evaluation {run.status}: {reason}. "
-                    "Sparse metrics remain inapplicable; inspect per-item evaluator errors."
+                    "Legacy publication origin is unknown; no submission was made. "
+                    "Supply original receipt evidence with --legacy-receipts, or reconcile "
+                    "the legacy publication explicitly. Missing receipts or empty remote listings "
+                    "do not prove non-submission, even for a never-published legacy archive."
                 )
-            return run.report_url or run.id
+            with (
+                DefaultAzureCredential() as credential,
+                AIProjectClient(endpoint, credential) as project,
+                project.get_openai_client(max_retries=0) as client,
+            ):
+                with suite_receipt(SUITE_DIRECTORY, suite_key) as cache:
+                    evaluation_id = _evaluation(
+                        publication,
+                        project,
+                        client,
+                        model,
+                        cache,
+                        suite_key,
+                        prior.evaluation_id if prior else None,
+                    )
+                run = _publication_run(
+                    publication, client, evaluation_id, receipts, receipt_key, legacy
+                )
+                deadline = time.monotonic() + TIMEOUT_S
+                while run.status in {"queued", "in_progress"} and time.monotonic() < deadline:
+                    time.sleep(POLL_INTERVAL_S)
+                    run = client.evals.runs.retrieve(run.id, eval_id=evaluation_id)
+                if run.status != "completed" or run.result_counts.errored:
+                    reason = (
+                        run.error.message if run.error else "timed out or item evaluator errors"
+                    )
+                    raise FoundryEvalError(
+                        f"Foundry evaluation {run.status}: {reason}. "
+                        "Sparse metrics remain inapplicable; inspect per-item evaluator errors."
+                    )
+                return run.report_url or run.id
     except (AzureError, OpenAIError, OSError) as error:
         raise FoundryEvalError(f"Foundry publication failed: {error}") from error
