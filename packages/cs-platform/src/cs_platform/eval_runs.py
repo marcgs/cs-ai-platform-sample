@@ -469,6 +469,10 @@ class RunWriter:
         if self._journal_failed or record.journal_warning:
             raise EvalPersistenceError("Cannot finalize a failed journal.")
         _export_record(self.directory, record)
+        if self.episode_export is not None:
+            self.episode_export.write(
+                "".join(episode.model_dump_json() + "\n" for episode in record.episodes)
+            )
         prospective = record.model_copy(
             update={
                 "status": "complete",
