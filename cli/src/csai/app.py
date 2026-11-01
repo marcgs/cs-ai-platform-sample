@@ -19,6 +19,7 @@ from cs_platform import evals as eval_harness
 from cs_platform.episodes import Verdict  # noqa: TC001 - typer reads annotations at runtime
 from cs_platform.eval_reporting import RunMetadata
 from cs_platform.eval_runs import (
+    ReservedArtifact,
     RunWriter,
     load_run,
     rebuild_report,
@@ -107,14 +108,16 @@ def report(suite: EvalSuite, result: SuiteResult) -> list[str]:
     return result.failures(suite.thresholds)
 
 
-def export_local_episodes(episodes: list[Episode], path: Path) -> None:
+def export_local_episodes(episodes: list[Episode], path: Path | ReservedArtifact) -> None:
     """Write explicitly real local episodes, including legacy records, without overwriting."""
     records = [episode.model_dump(mode="json") for episode in episodes]
     if any(record.get("source", "real") != "real" for record in records):
         raise ValueError("Expected only real episodes")
-    write_private_artifact(
-        path, "".join(json.dumps({**record, "source": "real"}) + "\n" for record in records)
-    )
+    rendered = "".join(json.dumps({**record, "source": "real"}) + "\n" for record in records)
+    if isinstance(path, ReservedArtifact):
+        path.write(rendered)
+    else:
+        write_private_artifact(path, rendered)
 
 
 def make_target(
@@ -171,6 +174,8 @@ async def evaluate(
             selected_target,
             concurrency=concurrency,
             repeats=repeats,
+            retries=writer.manifest.retries if writer else 2,
+            backoff_s=writer.manifest.backoff_s if writer else 20.0,
             on_result=completed,
             on_start=writer.start if writer else None,
             on_attempt_start=writer.start_attempt if writer else None,
@@ -220,6 +225,8 @@ def eval_command(
     case: Annotated[list[str] | None, typer.Option(help="Run only these case IDs.")] = None,
     concurrency: Annotated[int, typer.Option(min=1, help="Cases run in parallel.")] = 3,
     repeats: Annotated[int, typer.Option(min=1, help="Independent runs per case.")] = 1,
+    retries: Annotated[int, typer.Option(min=0, help="Retries of plumbing failures.")] = 2,
+    backoff_s: Annotated[float, typer.Option(min=0, help="Linear retry backoff seconds.")] = 20.0,
     split: Annotated[
         EvalSplit, typer.Option(help="Machine-grouped evaluation split.")
     ] = EvalSplit.ALL,
@@ -310,14 +317,17 @@ def eval_command(
             source="synthetic",
         ),
         concurrency=concurrency,
+        retries=retries,
+        backoff_s=backoff_s,
+        episodes_path=episodes_output,
     )
     episodes = DurableEpisodes(writer)
     try:
         asyncio.run(
             evaluate(entry, suite, target, concurrency, repeats, episodes=episodes, writer=writer)
         )
-        if episodes_output is not None:
-            export_local_episodes(load_run(output).episodes, episodes_output)
+        if writer.episode_export is not None:
+            export_local_episodes(load_run(output).episodes, writer.episode_export)
         record = writer.finalize()
     except BaseException as error:
         try:

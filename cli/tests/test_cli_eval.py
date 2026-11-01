@@ -362,11 +362,20 @@ def test_malformed_lazy_output_is_scored_once_with_text_and_tools(
 
     monkeypatch.setattr(targets, "configure_telemetry", lambda *_, **__: None)
     monkeypatch.setitem(targets.AGENTS, "rca", replace(targets.AGENTS["rca"], create=create))
-    monkeypatch.setattr(cli, "run_suite", partial(run_suite, backoff_s=0))
     output = tmp_path / "results.jsonl"
     result = runner.invoke(
         cli.app,
-        ["--no-azd", "eval", "rca", "--case", "SC-001", "--output", str(output)],
+        [
+            "--no-azd",
+            "eval",
+            "rca",
+            "--case",
+            "SC-001",
+            "--backoff-s",
+            "0",
+            "--output",
+            str(output),
+        ],
     )
     assert result.exit_code == 1, result.output
     [record] = [json.loads(line) for line in output.read_text().splitlines()]

@@ -4,11 +4,11 @@ import hashlib
 import html
 import json
 import os
-from contextlib import suppress
+from contextlib import contextmanager, suppress
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Literal
 from urllib.parse import quote
 from uuid import uuid4
 
@@ -26,6 +26,10 @@ from cs_platform.evals import (
     Thresholds,
     assign_splits,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
+    from contextlib import AbstractContextManager
 
 
 class CaseRunKey(BaseModel, frozen=True):
@@ -166,7 +170,7 @@ def _sync_directory(path: Path) -> None:
 def _write(path: Path, text: str, *, append: bool = False) -> None:
     if path.is_symlink():
         raise ValueError(f"refusing symlink artifact destination: {path}")
-    flags = os.O_WRONLY | os.O_CREAT | (os.O_APPEND if append else os.O_EXCL)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW | (os.O_APPEND if append else os.O_EXCL)
     descriptor = os.open(path, flags, 0o600)
     with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
         stream.write(text)
@@ -212,6 +216,63 @@ def write_private_artifact(path: Path, text: str) -> None:
     _write(path, text)
 
 
+class ReservedArtifact:
+    """Retain the exclusively created export inode through the measurement."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.descriptor: int | None = None
+        _mkdir(path.parent, parents=True)
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        try:
+            os.fsync(descriptor)
+            _sync_directory(path.parent)
+        except BaseException:
+            os.close(descriptor)
+            raise
+        self.descriptor = descriptor
+
+    def write(self, text: str) -> None:
+        """Write only the reserved inode, verifying its path and syncing before completion."""
+        if self.descriptor is None:
+            raise EvalPersistenceError("Episode export reservation is closed.")
+        reserved = os.fstat(self.descriptor)
+        current = self.path.stat(follow_symlinks=False)
+        if (reserved.st_dev, reserved.st_ino) != (current.st_dev, current.st_ino):
+            raise EvalPersistenceError("Episode export reservation was replaced.")
+        remaining = memoryview(text.encode("utf-8"))
+        while remaining:
+            written = os.write(self.descriptor, remaining)
+            if written == 0:
+                raise EvalPersistenceError("Episode export write made no progress.")
+            remaining = remaining[written:]
+        os.fsync(self.descriptor)
+        _sync_directory(self.path.parent)
+
+    def close(self) -> None:
+        """Release the held export descriptor."""
+        if self.descriptor is not None:
+            os.close(self.descriptor)
+            self.descriptor = None
+
+
+@contextmanager
+def _run_lock(directory: Path) -> Generator[None]:
+    if os.name != "posix":
+        raise OSError("Run coordination requires POSIX filesystem locks.")
+    import fcntl
+
+    descriptor = os.open(directory / ".writer.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise OSError("Run is active; report rebuild refused.") from error
+        yield
+    finally:
+        os.close(descriptor)
+
+
 def _completion_certificate(directory: Path) -> str:
     return json.dumps(
         {
@@ -250,9 +311,17 @@ class RunWriter:
     """Single-process append writer. Each event is flushed and fsynced before returning."""
 
     def __init__(
-        self, suite: EvalSuite, output: Path, metadata: RunMetadata, *, concurrency: int
+        self,
+        suite: EvalSuite,
+        output: Path,
+        metadata: RunMetadata,
+        *,
+        concurrency: int,
+        retries: int = 2,
+        backoff_s: float = 20.0,
+        episodes_path: Path | None = None,
     ) -> None:
-        validate_run_destinations(output)
+        validate_run_destinations(output, episodes_path=episodes_path)
         self.output = output
         self.directory = run_directory(output)
         self.manifest = RunManifest(
@@ -265,25 +334,52 @@ class RunWriter:
             metadata=metadata,
             result_filename=output.name,
             concurrency=concurrency,
+            retries=retries,
+            backoff_s=backoff_s,
         )
         self._current = ContextVar[tuple[CaseRunKey, int] | None]("eval_attempt", default=None)
         self._journal_failed = False
         self.committed = False
+        self._finalizing = False
+        self._lease: AbstractContextManager[None] | None = None
+        self.episode_export: ReservedArtifact | None = None
         _mkdir(output.parent, parents=True)
         _mkdir(self.directory)
-        _mkdir(artifact_paths(output)[3])
-        for path in (
-            self.directory / "events.jsonl",
-            self.directory / "episodes.jsonl",
-            *artifact_paths(output)[:3],
-        ):
-            _write(path, "")
-        _write(self.directory / "manifest.json", self.manifest.model_dump_json(indent=2) + "\n")
+        try:
+            self._acquire()
+            _mkdir(artifact_paths(output)[3])
+            for path in (
+                self.directory / "events.jsonl",
+                self.directory / "episodes.jsonl",
+                *artifact_paths(output)[:3],
+            ):
+                _write(path, "")
+            if episodes_path is not None:
+                self.episode_export = ReservedArtifact(episodes_path)
+            _write(self.directory / "manifest.json", self.manifest.model_dump_json(indent=2) + "\n")
+        except BaseException:
+            self.close()
+            raise
+
+    def _acquire(self) -> None:
+        if self._lease is None:
+            lease = _run_lock(self.directory)
+            lease.__enter__()
+            self._lease = lease
+
+    def close(self) -> None:
+        """Release run ownership after finalization or abort."""
+        if self.episode_export is not None:
+            self.episode_export.close()
+        if self._lease is not None:
+            self._lease.__exit__(None, None, None)
+            self._lease = None
 
     def append(self, event: RunEvent) -> None:
         if self._journal_failed:
             raise EvalPersistenceError("Journal write previously failed; no further appends.")
         try:
+            self._acquire()
             _write(self.directory / "events.jsonl", event.model_dump_json() + "\n", append=True)
         except BaseException as error:
             self._journal_failed = True
@@ -325,6 +421,14 @@ class RunWriter:
         )
 
     def finish(self, *, error: BaseException | None = None) -> None:
+        """Commit final status, releasing ownership unless report promotion is in progress."""
+        try:
+            self._finish(error=error)
+        finally:
+            if not self._finalizing:
+                self.close()
+
+    def _finish(self, *, error: BaseException | None = None) -> None:
         self.append(
             Finished(
                 status="complete" if error is None else "incomplete",
@@ -350,6 +454,15 @@ class RunWriter:
 
     def finalize(self) -> RunRecord:
         """Prepare durable reports, commit completion, then expose passing reports."""
+        self._finalizing = True
+        try:
+            self._acquire()
+            return self._finalize()
+        finally:
+            self._finalizing = False
+            self.close()
+
+    def _finalize(self) -> RunRecord:
         record = load_run(self.directory)
         if record.never_started or record.interrupted:
             raise ValueError("Cannot finalize missing case-runs.")
@@ -470,8 +583,9 @@ read_run = load_run
 def rebuild_report(results_dir: Path) -> RunRecord:
     """Rebuild derived exports, summary and escaped HTML from disk, never running a case."""
     directory = _locate(results_dir)
-    record = load_run(directory)
-    return _export_record(directory, record)
+    with _run_lock(directory):
+        record = load_run(directory)
+        return _export_record(directory, record)
 
 
 def _export_record(directory: Path, record: RunRecord, *, stage_reports: bool = False) -> RunRecord:
