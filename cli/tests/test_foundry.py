@@ -1,5 +1,6 @@
 """Foundry is faked at the SDK boundary; these tests never authenticate or call a model."""
 
+import hashlib
 import json
 import stat
 import threading
@@ -8,6 +9,8 @@ from contextlib import contextmanager, nullcontext
 from types import SimpleNamespace
 
 import pytest
+from httpx2 import Request, Response
+from openai import APIStatusError
 
 from csai import eval_receipts, foundry
 
@@ -15,6 +18,7 @@ from csai import eval_receipts, foundry
 @pytest.fixture(autouse=True)
 def private_receipts(tmp_path, monkeypatch):
     monkeypatch.setattr(foundry, "RECEIPT_DIRECTORY", tmp_path / "receipts")
+    monkeypatch.setattr(foundry, "LEGACY_RECEIPT_DIRECTORY", tmp_path / "legacy")
     monkeypatch.setattr(foundry, "SUITE_DIRECTORY", tmp_path / "user-state" / "suites")
 
 
@@ -60,10 +64,15 @@ def fake_boundary(
     list_hook=None,
     create_hook=None,
     evaluation_error=None,
+    run_hook=None,
+    run_list_hook=None,
 ):
     calls = []
     evaluations = list(existing or [])
     runs = [] if run_state is None else run_state
+
+    def next_error(error):
+        return (error.pop(0) if error else None) if isinstance(error, list) else error
 
     def create_evaluator(**kwargs):
         calls.append(("evaluator", kwargs))
@@ -73,14 +82,22 @@ def fake_boundary(
         if create_hook:
             create_hook()
         calls.append(("evaluation", kwargs))
+        error = next_error(evaluation_error)
+        if isinstance(error, APIStatusError):
+            raise error
         evaluation = SimpleNamespace(id="eval-id", metadata=kwargs["metadata"])
         evaluations.append(evaluation)
-        if evaluation_error is not None:
-            raise evaluation_error
+        if error is not None:
+            raise error
         return evaluation
 
     def create_run(**kwargs):
         calls.append(("run", kwargs))
+        error = next_error(create_error)
+        if isinstance(error, APIStatusError):
+            raise error
+        if run_hook is not None:
+            run_hook()
         run = SimpleNamespace(
             id="run-id",
             metadata=kwargs["metadata"],
@@ -90,8 +107,8 @@ def fake_boundary(
             report_url="https://example.test/report",
         )
         runs.append(run)
-        if create_error is not None:
-            raise create_error
+        if error is not None:
+            raise error
         return run
 
     def retrieve(run_id, **kwargs):
@@ -105,7 +122,11 @@ def fake_boundary(
                 evaluation for evaluation in evaluations if evaluation.id == evaluation_id
             ),
             create=create_evaluation,
-            runs=SimpleNamespace(create=create_run, list=lambda **_: runs, retrieve=retrieve),
+            runs=SimpleNamespace(
+                create=create_run,
+                list=lambda **_: run_list_hook(runs) if run_list_hook else runs,
+                retrieve=retrieve,
+            ),
         )
     )
     project = SimpleNamespace(
@@ -119,6 +140,112 @@ def fake_boundary(
     monkeypatch.setattr(foundry, "DefaultAzureCredential", lambda: nullcontext(object()))
     monkeypatch.setattr(foundry, "AIProjectClient", lambda *args: nullcontext(project))
     return calls
+
+
+def test_copied_measurement_reuses_receipt_across_working_directories(monkeypatch, tmp_path):
+    calls = fake_boundary(monkeypatch, run_list_hook=lambda _: [])
+    recorded = publication()
+    first = tmp_path / "first-worktree"
+    second = tmp_path / "second-worktree"
+    first.mkdir()
+    second.mkdir()
+    monkeypatch.chdir(first)
+    foundry.publish(recorded, endpoint="unused", model="judge")
+    monkeypatch.chdir(second)
+    foundry.publish(recorded.model_copy(deep=True), endpoint="unused", model="judge")
+    assert sum(name == "run" for name, _ in calls) == 1
+
+
+def test_concurrent_copies_share_measurement_submission_lock(monkeypatch):
+    creating = threading.Event()
+    release = threading.Event()
+
+    def hold():
+        creating.set()
+        assert release.wait(5)
+
+    calls = fake_boundary(monkeypatch, run_hook=hold, run_list_hook=lambda _: [])
+    recorded = publication()
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(foundry.publish, recorded, endpoint="unused", model="judge")
+        try:
+            assert creating.wait(5)
+            with pytest.raises(foundry.FoundryEvalError, match="publication failed"):
+                executor.submit(
+                    foundry.publish,
+                    recorded.model_copy(deep=True),
+                    endpoint="unused",
+                    model="judge",
+                ).result(timeout=2)
+        finally:
+            release.set()
+        assert first.result(timeout=5).endswith("/report")
+    assert sum(name == "run" for name, _ in calls) == 1
+
+
+def test_legacy_pending_migrates_and_blocks_copied_measurement_retry(monkeypatch, tmp_path):
+    recorded = publication()
+    key = hashlib.sha256(
+        json.dumps([recorded.measurement_id, "unused", "judge"]).encode()
+    ).hexdigest()
+    with eval_receipts.publication_receipt(foundry.LEGACY_RECEIPT_DIRECTORY, key) as legacy:
+        legacy.write(eval_receipts.PublicationReceipt(key=key, evaluation_id="eval-id"))
+        original = legacy.path.read_bytes()
+    calls = fake_boundary(monkeypatch)
+    with pytest.raises(foundry.FoundryEvalError, match="outcome is unknown"):
+        foundry.publish(recorded, endpoint="unused", model="judge")
+    assert (foundry.LEGACY_RECEIPT_DIRECTORY / f"{key}.json").read_bytes() == original
+    assert (foundry.RECEIPT_DIRECTORY / f"{key}.json").read_bytes() == original
+    other = tmp_path / "copied-worktree"
+    other.mkdir()
+    monkeypatch.chdir(other)
+    monkeypatch.setattr(foundry, "LEGACY_RECEIPT_DIRECTORY", other / "legacy")
+    with pytest.raises(foundry.FoundryEvalError, match="outcome is unknown"):
+        foundry.publish(recorded.model_copy(deep=True), endpoint="unused", model="judge")
+    assert not any(name == "run" for name, _ in calls)
+
+
+@pytest.mark.parametrize("status", [403, 429])
+@pytest.mark.parametrize("creation", ["suite", "run"])
+def test_confirmed_creation_rejection_allows_retry(monkeypatch, status, creation):
+    error = APIStatusError(
+        "confirmed rejection",
+        response=Response(status, request=Request("POST", "/evals")),
+        body=None,
+    )
+    calls = (
+        fake_boundary(monkeypatch, evaluation_error=[error, None])
+        if creation == "suite"
+        else fake_boundary(monkeypatch, create_error=[error, None])
+    )
+    recorded = publication()
+    with pytest.raises(foundry.FoundryEvalError, match="confirmed rejection"):
+        foundry.publish(recorded, endpoint="unused", model="judge")
+    directory = foundry.SUITE_DIRECTORY if creation == "suite" else foundry.RECEIPT_DIRECTORY
+    assert not list(directory.glob("*.json"))
+    assert foundry.publish(recorded, endpoint="unused", model="judge").endswith("/report")
+    name = "evaluation" if creation == "suite" else "run"
+    assert sum(call == name for call, _ in calls) == 2
+
+
+@pytest.mark.parametrize("creation", ["suite", "run"])
+def test_ambiguous_server_failure_does_not_clear_pending(monkeypatch, creation):
+    error = APIStatusError(
+        "ambiguous server failure",
+        response=Response(500, request=Request("POST", "/evals")),
+        body=None,
+    )
+    calls = (
+        fake_boundary(monkeypatch, evaluation_error=error)
+        if creation == "suite"
+        else fake_boundary(monkeypatch, create_error=error)
+    )
+    with pytest.raises(foundry.FoundryEvalError, match="ambiguous server failure"):
+        foundry.publish(publication(), endpoint="unused", model="judge")
+    with pytest.raises(foundry.FoundryEvalError, match="outcome is unknown"):
+        foundry.publish(publication(), endpoint="unused", model="judge")
+    name = "evaluation" if creation == "suite" else "run"
+    assert sum(call == name for call, _ in calls) == 1
 
 
 @pytest.mark.parametrize("second_model", ["judge", "other-judge"])

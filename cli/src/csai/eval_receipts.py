@@ -71,6 +71,17 @@ class ReceiptStore[Receipt: BaseModel]:
             if pending.exists():
                 pending.unlink()
 
+    def clear(self) -> None:
+        """Durably forget a confirmed rejected creation, never an ambiguous submission."""
+        if self.path.is_symlink():
+            raise ValueError("Refusing a symlink publication receipt.")
+        self.path.unlink(missing_ok=True)
+        descriptor = os.open(self.path.parent, os.O_RDONLY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+
 
 def _private_directory(directory: Path) -> None:
     if not directory.parent.is_dir():
@@ -118,3 +129,12 @@ def suite_receipt(directory: Path, key: str) -> Generator[ReceiptStore[SuiteRece
     """Wait for endpoint-and-suite creation across independent measurement directories."""
     with _receipt_lock(directory, key, wait=True) as path:
         yield ReceiptStore(path, SuiteReceipt)
+
+
+@contextmanager
+def legacy_publication_receipt(
+    directory: Path, key: str
+) -> Generator[ReceiptStore[PublicationReceipt]]:
+    """Hold the old working-directory lock while importing its submission evidence."""
+    with _receipt_lock(directory, key, wait=False) as path:
+        yield ReceiptStore(path, PublicationReceipt)

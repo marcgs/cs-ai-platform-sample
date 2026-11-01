@@ -10,13 +10,14 @@ from typing import TYPE_CHECKING, Any
 from azure.ai.projects import AIProjectClient
 from azure.core.exceptions import AzureError
 from azure.identity import DefaultAzureCredential
-from openai import OpenAIError
+from openai import APIStatusError, OpenAIError
 from pydantic import BaseModel, ConfigDict, JsonValue
 
 from csai.eval_receipts import (
     PublicationReceipt,
     ReceiptStore,
     SuiteReceipt,
+    legacy_publication_receipt,
     publication_receipt,
     suite_receipt,
 )
@@ -34,12 +35,39 @@ BUILTIN_EVALUATORS = (
 )
 POLL_INTERVAL_S = 10.0
 TIMEOUT_S = 900.0
-RECEIPT_DIRECTORY = Path(".eval-results/.publications")
+RECEIPT_DIRECTORY = Path.home() / ".csai" / "publication-measurements"
+LEGACY_RECEIPT_DIRECTORY = Path(".eval-results/.publications")
 SUITE_DIRECTORY = Path.home() / ".csai" / "publication-suites"
 
 
 class FoundryEvalError(RuntimeError):
     """Publishing failed; the saved measurement and its gate are unchanged."""
+
+
+def _confirmed_rejection(error: APIStatusError) -> bool:
+    return error.status_code in {400, 401, 403, 404, 422, 429}
+
+
+def _migrate_receipt(
+    receipts: ReceiptStore[PublicationReceipt],
+    legacy: ReceiptStore[PublicationReceipt],
+    key: str,
+) -> None:
+    old = legacy.read()
+    if old is None:
+        return
+    current = receipts.read()
+    if old.key != key or (
+        current is not None
+        and (
+            current.key != key
+            or current.evaluation_id != old.evaluation_id
+            or (current.run_id is not None and old.run_id not in {None, current.run_id})
+        )
+    ):
+        raise FoundryEvalError("Legacy publication receipt conflicts with shared submission state.")
+    if current is None or (current.run_id is None and old.run_id is not None):
+        receipts.write(old)
 
 
 class PublishedRow(BaseModel):
@@ -242,20 +270,25 @@ def _evaluation(
                 key=cache_key, definition_key=publication.definition_key, judge_model=model
             )
         )
-        evaluation = client.evals.create(
-            name=f"{publication.suite} agent",
-            metadata={
-                "csai_suite": publication.suite,
-                "definition_key": publication.definition_key,
-                "judge_model": model,
-            },
-            data_source_config={
-                "type": "custom",
-                "item_schema": PublishedRow.model_json_schema(),
-                "include_sample_schema": False,
-            },
-            testing_criteria=testing_criteria(publication.metric_names, versions, model),  # pyright: ignore[reportArgumentType]
-        )
+        try:
+            evaluation = client.evals.create(
+                name=f"{publication.suite} agent",
+                metadata={
+                    "csai_suite": publication.suite,
+                    "definition_key": publication.definition_key,
+                    "judge_model": model,
+                },
+                data_source_config={
+                    "type": "custom",
+                    "item_schema": PublishedRow.model_json_schema(),
+                    "include_sample_schema": False,
+                },
+                testing_criteria=testing_criteria(publication.metric_names, versions, model),  # pyright: ignore[reportArgumentType]
+            )
+        except APIStatusError as error:
+            if _confirmed_rejection(error):
+                cache.clear()
+            raise
     metadata = evaluation.metadata or {}
     if (
         metadata.get("csai_suite") != publication.suite
@@ -283,6 +316,7 @@ def _publication_run(
     evaluation_id: str,
     receipts: ReceiptStore[PublicationReceipt],
     receipt_key: str,
+    legacy: ReceiptStore[PublicationReceipt],
 ) -> RunCreateResponse | RunRetrieveResponse:
     measurement_id = publication.measurement_id
     receipt = receipts.read()
@@ -313,15 +347,22 @@ def _publication_run(
             "No duplicate was submitted; retry lookup later or inspect the remote evaluation."
         )
     receipts.write(PublicationReceipt(key=receipt_key, evaluation_id=evaluation_id))
-    run = client.evals.runs.create(
-        eval_id=evaluation_id,
-        name=f"{publication.suite}-{publication.metadata['started_at']}",
-        metadata={**publication.metadata, "csai_measurement": measurement_id},
-        data_source={
-            "type": "jsonl",
-            "source": {"type": "file_content", "content": publication.items()},
-        },  # pyright: ignore[reportArgumentType]
-    )
+    try:
+        run = client.evals.runs.create(
+            eval_id=evaluation_id,
+            name=f"{publication.suite}-{publication.metadata['started_at']}",
+            metadata={**publication.metadata, "csai_measurement": measurement_id},
+            data_source={
+                "type": "jsonl",
+                "source": {"type": "file_content", "content": publication.items()},
+            },  # pyright: ignore[reportArgumentType]
+        )
+    except APIStatusError as error:
+        if _confirmed_rejection(error):
+            # Clear legacy first so a failed shared clear cannot reimport stale pending state.
+            legacy.clear()
+            receipts.clear()
+        raise
     receipts.write(PublicationReceipt(key=receipt_key, evaluation_id=evaluation_id, run_id=run.id))
     return run
 
@@ -355,13 +396,17 @@ def publish(publication: Publication, *, endpoint: str, model: str) -> str:
     try:
         with (
             publication_receipt(RECEIPT_DIRECTORY, receipt_key) as receipts,
+            legacy_publication_receipt(LEGACY_RECEIPT_DIRECTORY, receipt_key) as legacy,
             DefaultAzureCredential() as credential,
             AIProjectClient(endpoint, credential) as project,
             project.get_openai_client(max_retries=0) as client,
         ):
+            _migrate_receipt(receipts, legacy, receipt_key)
             with suite_receipt(SUITE_DIRECTORY, suite_key) as cache:
                 evaluation_id = _evaluation(publication, project, client, model, cache, suite_key)
-            run = _publication_run(publication, client, evaluation_id, receipts, receipt_key)
+            run = _publication_run(
+                publication, client, evaluation_id, receipts, receipt_key, legacy
+            )
             deadline = time.monotonic() + TIMEOUT_S
             while run.status in {"queued", "in_progress"} and time.monotonic() < deadline:
                 time.sleep(POLL_INTERVAL_S)
