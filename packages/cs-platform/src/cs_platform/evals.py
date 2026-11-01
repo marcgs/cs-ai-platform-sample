@@ -16,7 +16,7 @@ from statistics import mean
 from typing import TYPE_CHECKING, Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from cs_platform.episodes import ToolCall
 
@@ -118,6 +118,7 @@ class RunOutput(BaseModel):
     tool_calls: list[str] = Field(default_factory=list[str])
     tool_trace: list[ToolCall] = Field(default_factory=list[ToolCall])
     tool_trace_complete: bool = False
+    tool_definitions: list[dict[str, JsonValue]] | None = None
     error: str | None = None
     failure: RunError | None = None
     duration_s: float = 0.0
@@ -417,6 +418,9 @@ async def run_suite(
     backoff_s: float = 20.0,
     repeats: int = 1,
     on_result: Callable[[CaseResult], None] | None = None,
+    on_start: Callable[[EvalCase, int], None] | None = None,
+    on_attempt_start: Callable[[EvalCase, int, int], None] | None = None,
+    on_attempt: Callable[[EvalCase, int, RunOutput], None] | None = None,
 ) -> SuiteResult:
     """Run every case through ``target`` (at most ``concurrency`` at a time) and score it.
 
@@ -428,52 +432,82 @@ async def run_suite(
     if concurrency < 1 or repeats < 1 or retries < 0:
         raise ValueError("concurrency/repeats must be positive and retries nonnegative")
     semaphore = asyncio.Semaphore(concurrency)
+    aborted = False
 
-    async def attempt(case: EvalCase) -> RunOutput:
+    async def attempt(case: EvalCase, repeat: int) -> RunOutput:
         attempts = 0
         while True:
             attempts += 1
+            if on_attempt_start is not None:
+                on_attempt_start(case, repeat, attempts)
             started = time.perf_counter()
             try:
                 output = await target(case)
-            except Exception as error:
-                output = RunOutput(error=f"{type(error).__name__}: {error}")
+            except BaseException as error:
+                if isinstance(error, Exception):
+                    output = RunOutput(error=f"{type(error).__name__}: {error}")
+                else:
+                    output = RunOutput(
+                        error=type(error).__name__,
+                        failure=RunError(kind="plumbing", code="interrupted"),
+                    )
+                    output.duration_s = time.perf_counter() - started
+                    output.attempts = attempts
+                    if on_attempt is not None:
+                        on_attempt(case, repeat, output)
+                    raise
             output.duration_s = time.perf_counter() - started
             output.attempts = attempts
             output.failure = classify_error(output)
+            if on_attempt is not None:
+                on_attempt(case, repeat, output)
             if not is_plumbing(output) or attempts > retries:
                 return output
             await asyncio.sleep(backoff_s * attempts)
 
     async def run_case(case: EvalCase, repeat: int) -> CaseResult:
+        nonlocal aborted
         async with semaphore:
-            output = await attempt(case)
-        scores = {} if is_plumbing(output) else score(suite, case, output)
-        if output.failure is None and any(
-            scores.get(name, 0.0) < 1.0 for name in suite.thresholds.minimums
-        ):
-            output.failure = RunError(kind="wrong_answer", code="quality_miss")
-        result = CaseResult(
-            case_id=case.id,
-            scores=scores,
-            output=output,
-            repeat=repeat,
-            input=case.input,
-            category=case.truth.category if case.truth else "clean",
-            split=case.split,
-            gated=suite.gate_case_ids is None or case.id in suite.gate_case_ids,
-        )
-        if on_result is not None:
-            on_result(result)
+            if aborted:
+                raise asyncio.CancelledError
+            try:
+                if on_start is not None:
+                    on_start(case, repeat)
+                output = await attempt(case, repeat)
+                scores = {} if is_plumbing(output) else score(suite, case, output)
+                if output.failure is None and any(
+                    scores.get(name, 0.0) < 1.0 for name in suite.thresholds.minimums
+                ):
+                    output.failure = RunError(kind="wrong_answer", code="quality_miss")
+                result = CaseResult(
+                    case_id=case.id,
+                    scores=scores,
+                    output=output,
+                    repeat=repeat,
+                    input=case.input,
+                    category=case.truth.category if case.truth else "clean",
+                    split=case.split,
+                    gated=suite.gate_case_ids is None or case.id in suite.gate_case_ids,
+                )
+                if on_result is not None:
+                    on_result(result)
+            except BaseException:
+                aborted = True
+                raise
         return result
 
-    results = await asyncio.gather(
-        *(
-            run_case(case, repeat)
-            for case in assign_splits(suite.cases)
-            for repeat in range(1, repeats + 1)
-        )
-    )
+    tasks = [
+        asyncio.create_task(run_case(case, repeat))
+        for case in assign_splits(suite.cases)
+        for repeat in range(1, repeats + 1)
+    ]
+    try:
+        results = await asyncio.gather(*tasks)
+    except BaseException:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
     return SuiteResult(
         suite=suite.name,
         cases=list(results),

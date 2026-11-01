@@ -63,6 +63,10 @@ episode is unverified rather than selecting a similar incident.
 
 For repeated evals with confidence intervals and private transcripts, run
 `uv run csai eval rca --target local --repeats 3 --concurrency 1`.
+Results and actual episodes are flushed to a durable journal as each case-run finishes.
+After an interruption, `uv run csai --no-azd eval report .eval-results/<run>`
+rebuilds the summary and HTML offline. An incomplete run always fails the gate;
+reporting never reruns a case or reconstructs an episode.
 See the [eval guide](evals/rca/README.md) for splits, artifacts and paired comparisons.
 
 ### Clean up

@@ -1,6 +1,7 @@
 """``csai``: the CS AI platform's command line."""
 
 import asyncio
+import hashlib
 import inspect
 import json
 import os
@@ -16,16 +17,14 @@ from azure.identity.aio import DefaultAzureCredential
 
 from cs_platform import evals as eval_harness
 from cs_platform.episodes import Verdict  # noqa: TC001 - typer reads annotations at runtime
-from cs_platform.eval_reporting import (
-    RunMetadata,
-    validate_artifact_destinations,
-    write_artifacts,
-)
+from cs_platform.eval_reporting import RunMetadata
+from cs_platform.eval_runs import RunWriter, load_run, rebuild_report, validate_run_destinations
 from cs_platform.evals import EvalCase, EvalSuite, RunOutput, assign_splits, run_suite
 from cs_platform.settings import PlatformSettings, SettingsError
 from cs_platform.telemetry import flush_telemetry
 from csai import foundry
 from csai.environment import load_environment
+from csai.eval_cli import DurableEpisodes, EvalEnvironment, eval_app
 from csai.platform import PlatformApiError, PlatformClient
 from csai.targets import AGENTS, hosted_target, local_target
 from platform_api.api import FeedbackRequest
@@ -38,15 +37,20 @@ if TYPE_CHECKING:
     from csai.targets import AgentEntry
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
+app.add_typer(eval_app, name="eval")
 
 
 @app.callback()
 def configure(
+    ctx: typer.Context,
     azd: Annotated[
         bool, typer.Option(help="Read settings from the active azd environment.")
     ] = True,
 ) -> None:
     """Command line for the CS AI platform."""
+    if ctx.invoked_subcommand == "eval":
+        ctx.obj = EvalEnvironment(use_azd=azd)
+        return
     load_environment(use_azd=azd)
 
 
@@ -137,7 +141,13 @@ async def evaluate(
     repeats: int = 1,
     *,
     episodes: list[Episode] | None = None,
+    writer: RunWriter | None = None,
 ) -> SuiteResult:
+    def completed(result: CaseResult) -> None:
+        if writer is not None:
+            writer.completed(result)
+        typer.echo(describe(result))
+
     async with DefaultAzureCredential() as credential:
         selected_target = (
             make_target(entry, target, credential)
@@ -149,7 +159,10 @@ async def evaluate(
             selected_target,
             concurrency=concurrency,
             repeats=repeats,
-            on_result=lambda r: typer.echo(describe(r)),
+            on_result=completed,
+            on_start=writer.start if writer else None,
+            on_attempt_start=writer.start_attempt if writer else None,
+            on_attempt=writer.attempt if writer else None,
         )
 
 
@@ -188,7 +201,7 @@ def git_provenance(source: Path | None = None) -> tuple[str, bool]:
     return revision, revision == "unknown" or status.returncode != 0 or bool(status.stdout.strip())
 
 
-@app.command("eval")
+@eval_app.command("rca")
 def eval_command(
     agent: Annotated[str, typer.Argument(help=f"One of: {', '.join(AGENTS)}.")] = "rca",
     target: Annotated[TargetKind, typer.Option(help="Where the agent runs.")] = TargetKind.LOCAL,
@@ -223,6 +236,9 @@ def eval_command(
     if episodes_output is not None and target is not TargetKind.LOCAL:
         raise typer.BadParameter("episode export requires --target local")
     suite = entry.load_suite()
+    dataset_version = hashlib.sha256(
+        "\n".join(item.model_dump_json() for item in suite.cases).encode()
+    ).hexdigest()
     if case and (unknown := set(case) - {item.id for item in suite.cases}):
         raise typer.BadParameter(
             f"unknown case IDs: {', '.join(sorted(unknown))}", param_hint="--case"
@@ -238,7 +254,7 @@ def eval_command(
     started_at = datetime.now(UTC)
     output = output or Path(".eval-results") / f"{started_at:%Y%m%d-%H%M%S-%f}" / "results.jsonl"
     try:
-        validate_artifact_destinations(output, episodes_path=episodes_output)
+        validate_run_destinations(output, episodes_path=episodes_output)
     except (OSError, ValueError) as error:
         raise typer.BadParameter(str(error), param_hint="--output/--episodes-output") from error
     revision, dirty = git_provenance(Path(eval_harness.__file__))
@@ -255,19 +271,16 @@ def eval_command(
             candidate_revision, candidate_dirty = git_provenance(Path(factory_source))
             if not candidate_dirty:
                 agent_revision = candidate_revision
-    episodes: list[Episode] | None = [] if episodes_output is not None else None
-    try:
-        result = asyncio.run(
-            evaluate(entry, suite, target, concurrency, repeats, episodes=episodes)
-        )
-    except SettingsError as error:
-        typer.echo(f"error: {error}", err=True)
-        raise typer.Exit(2) from error
-    if episodes_output is not None and episodes is not None:
-        export_local_episodes(episodes, episodes_output)
-    write_artifacts(
+    agent_version = None
+    skill_version = None
+    if target is TargetKind.LOCAL and entry.service == "rca-agent":
+        from rca_agent.agent import load_rca_spec
+        from rca_agent.skill import load_investigation_skill
+
+        agent_version = load_rca_spec().version
+        skill_version = load_investigation_skill().metadata.version
+    writer = RunWriter(
         suite,
-        result,
         output,
         RunMetadata(
             agent_revision=agent_revision or "unknown",
@@ -279,17 +292,41 @@ def eval_command(
             or os.environ.get("FOUNDRY_MODEL_DEPLOYMENT_NAME")
             or os.environ.get("AZURE_AI_MODEL_DEPLOYMENT_NAME", "gpt-5.4-mini"),
             started_at=started_at,
+            agent_version=agent_version,
+            skill_version=skill_version,
+            dataset_version=dataset_version,
+            source="synthetic",
         ),
+        concurrency=concurrency,
     )
+    episodes = DurableEpisodes(writer)
+    try:
+        asyncio.run(
+            evaluate(entry, suite, target, concurrency, repeats, episodes=episodes, writer=writer)
+        )
+        if episodes_output is not None:
+            export_local_episodes(load_run(output).episodes, episodes_output)
+        writer.finish()
+        record = rebuild_report(output)
+    except BaseException as error:
+        writer.finish(error=error)
+        try:
+            rebuild_report(output)
+        except (OSError, ValueError) as export_error:
+            typer.echo(f"warning: report export failed: {export_error}", err=True)
+        typer.echo(f"error: {error or type(error).__name__}; run incomplete: {output}", err=True)
+        raise typer.Exit(2 if isinstance(error, SettingsError) else 1) from error
+    result = record.result
     typer.echo(f"Results: {output} (HTML: {output.with_suffix('.html')})")
-    failures = report(suite, result)
+    report(record.suite(), result)
+    failures = record.failures
     if publish:
         settings = PlatformSettings.from_env()
         label = f"{target}-{datetime.now(UTC):%Y%m%d-%H%M%S}"
         typer.echo(f"\nPublishing {label} to Foundry (built-in evaluators)...")
         try:
             url = foundry.publish(
-                suite,
+                record.suite(),
                 result,
                 endpoint=settings.foundry_project_endpoint,
                 model=settings.model_deployment,
