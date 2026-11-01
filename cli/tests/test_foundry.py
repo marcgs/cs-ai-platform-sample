@@ -237,6 +237,28 @@ def test_first_copied_legacy_invocation_cannot_ignore_unseen_pending(monkeypatch
     assert calls == []
     assert (origin / f"{key}.json").read_bytes() == before
     assert not list(foundry.RECEIPT_DIRECTORY.glob("*.json"))
+    assert not foundry.LEGACY_RECEIPT_DIRECTORY.exists()
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+def test_existing_legacy_origin_remains_locked_before_authentication(monkeypatch, explicit):
+    recorded = publication()
+    key = hashlib.sha256(
+        json.dumps([recorded.measurement_id, "unused", "judge"]).encode()
+    ).hexdigest()
+    origin = foundry.LEGACY_RECEIPT_DIRECTORY
+    calls = fake_boundary(monkeypatch)
+    with eval_receipts.publication_receipt(origin, key) as receipt:
+        receipt.write(eval_receipts.PublicationReceipt(key=key, evaluation_id="eval-id"))
+        with pytest.raises(foundry.FoundryEvalError):
+            foundry.publish(
+                recorded,
+                endpoint="unused",
+                model="judge",
+                legacy_directory=origin if explicit else None,
+            )
+    assert calls == []
+    assert not list(foundry.RECEIPT_DIRECTORY.glob("*.json"))
 
 
 def test_explicit_original_pending_import_never_creates_on_empty_remote_listing(

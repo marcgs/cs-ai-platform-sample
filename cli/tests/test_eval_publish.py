@@ -1,6 +1,7 @@
 """Publish real durable records through the public CLI with Foundry faked."""
 
 import json
+import stat
 from contextlib import nullcontext
 from datetime import datetime
 from types import SimpleNamespace
@@ -190,12 +191,20 @@ def test_uncommitted_capture_cannot_claim_shared_coordination(saved_run):
     assert publication.metadata["status"] == "incomplete"
 
 
-def test_certified_new_capture_can_initiate_shared_publication(saved_run, monkeypatch):
+@pytest.mark.parametrize("readonly_cwd", [False, True])
+def test_certified_new_capture_can_initiate_shared_publication(
+    saved_run, monkeypatch, readonly_cwd
+):
     submitted = []
     state = saved_run.parent / f"{saved_run.name}-publication-state"
     monkeypatch.setattr(foundry, "RECEIPT_DIRECTORY", state / "shared")
     monkeypatch.setattr(foundry, "LEGACY_RECEIPT_DIRECTORY", state / "legacy")
     monkeypatch.setattr(foundry, "SUITE_DIRECTORY", state / "suites")
+    working_directory = saved_run / "working-directory"
+    working_directory.mkdir()
+    monkeypatch.chdir(working_directory)
+    legacy = working_directory / ".eval-results" / ".publications"
+    monkeypatch.setattr(foundry, "LEGACY_RECEIPT_DIRECTORY", legacy)
 
     def create_run(**kwargs):
         submitted.append(kwargs)
@@ -225,13 +234,24 @@ def test_certified_new_capture_can_initiate_shared_publication(saved_run, monkey
     monkeypatch.setattr(foundry, "DefaultAzureCredential", lambda: nullcontext(object()))
     monkeypatch.setattr(foundry, "AIProjectClient", lambda *args: nullcontext(project))
     before = {p: p.read_bytes() for p in (saved_run / "results.run").iterdir() if p.is_file()}
-    assert (
-        foundry.publish(
-            eval_publish.publication_from_record(saved_run), endpoint="unused", model="judge"
+    if readonly_cwd:
+        working_directory.chmod(0o500)
+    try:
+        assert (
+            foundry.publish(
+                eval_publish.publication_from_record(saved_run), endpoint="unused", model="judge"
+            )
+            == "report"
         )
-        == "report"
-    )
+        assert list(working_directory.iterdir()) == []
+        if readonly_cwd:
+            assert stat.S_IMODE(working_directory.stat().st_mode) == 0o500
+    finally:
+        working_directory.chmod(0o700)
+    assert not legacy.exists()
     assert len(submitted) == 1
+    assert list((state / "shared").glob("*.json"))
+    assert list((state / "suites").glob("*.json"))
     assert before == {
         p: p.read_bytes() for p in (saved_run / "results.run").iterdir() if p.is_file()
     }
