@@ -267,3 +267,13 @@ manifest, retaining its existing 13-of-18 pass and 12-of-18 failure assertions.
 The full offline suite passes **561 tests**; Ruff lint/format and strict
 Pyright pass. Additive loading and original18 production gates are unchanged.
 No model traffic, publication or deployment ran.
+
+### Round-four blank-cause consensus
+
+Copilot comment **4436761858** is addressed: a whitespace-only actual cause
+does not contradict otherwise admissible reviewer consensus. The public CLI
+regression retains two distinct named cause supporters, ignores a third blank
+cause, and excludes that review from supporting provenance. Single-review
+waiting and explicit-disagreement expert routing remain covered and unchanged.
+The full offline suite passes **585 tests**, Ruff lint/format and strict
+Pyright. No new model or cloud traffic ran.

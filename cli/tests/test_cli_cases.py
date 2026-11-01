@@ -11,7 +11,7 @@ from typer.testing import CliRunner
 from cs_platform.episodes import Verdict
 from cs_platform.evals import EvalTruth, RunOutput, run_suite
 from csai.app import app
-from csai.case_consensus import review_consensus
+from csai.case_consensus import review_consensus, reviewer_identity
 from csai.case_proposal import CaseProposal, propose_cases, report_digest
 from csai.cases import FEEDBACK, MANIFEST
 from diagnostics_domain.dataset import load_seed
@@ -291,8 +291,8 @@ def test_completed_failed_candidate_forwards_actual_lifecycle_to_replay(
     assert proposal(repo).cases
 
 
-@pytest.mark.parametrize("kind", ["single", "disagree"])
-def test_public_command_waits_or_sends_disagreement_to_expert(
+@pytest.mark.parametrize("kind", ["single", "disagree", "blank"])
+def test_public_command_applies_reviewer_consensus(
     feedback_report, tmp_path: Path, kind: str
 ) -> None:
     _, report = feedback_report
@@ -307,11 +307,26 @@ def test_public_command_waits_or_sends_disagreement_to_expert(
     assert len(selected) == 2
     if kind == "single":
         selected = selected[:1]
-    else:
+    elif kind == "disagree":
         selected[1] = selected[1].model_copy(
             update={
                 "feedback": selected[1].feedback.model_copy(update={"actual_root_cause": "FM-08"})
             }
+        )
+    else:
+        reviewers = {reviewer_identity(row) for row in selected}
+        reviewer = next(
+            name for name in report.reviewer_agreement if name.strip().casefold() not in reviewers
+        )
+        selected.append(
+            selected[0].model_copy(
+                update={
+                    "id": f"{selected[0].id}-blank",
+                    "feedback": selected[0].feedback.model_copy(
+                        update={"reviewer": reviewer, "actual_root_cause": " \t\n"}
+                    ),
+                }
+            )
         )
     weights = {name: metric.reliability for name, metric in report.reviewer_agreement.items()}
     consensus = review_consensus(
@@ -320,6 +335,8 @@ def test_public_command_waits_or_sends_disagreement_to_expert(
         source_review_ids=[row.id for row in selected],
         reviewer_weights=weights,
     )
+    if kind == "blank":
+        assert consensus.status == "admit"
     summary = ReviewSummary.model_validate(
         {
             "episode_id": candidate.episode_id,
@@ -348,8 +365,15 @@ def test_public_command_waits_or_sends_disagreement_to_expert(
     response = invoke(report, repo)
     assert response.exit_code == 0, response.output
     result = proposal(repo)
-    assert not result.cases
-    assert result.decisions[0].status == ("wait" if kind == "single" else "expert")
+    if kind == "blank":
+        assert len(result.cases) == 1, result.decisions
+        origin = result.cases[0].provenance
+        assert origin is not None
+        assert len(origin.supporting_review_ids) == 2
+        assert selected[-1].id not in origin.supporting_review_ids
+    else:
+        assert not result.cases
+        assert result.decisions[0].status == ("wait" if kind == "single" else "expert")
 
 
 def test_legacy_and_forged_cohort_weights_fail_before_branch_changes(

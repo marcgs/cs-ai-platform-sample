@@ -284,6 +284,7 @@ def propose_cases(report: Report, existing: Sequence[EvalCase]) -> CaseProposal:
                     row.feedback.verdict != consensus.verdict
                     or (
                         row.feedback.actual_root_cause
+                        and row.feedback.actual_root_cause.strip()
                         and row.feedback.actual_root_cause.strip() != consensus.failure_mode
                     )
                 )
