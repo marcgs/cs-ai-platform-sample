@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from cs_platform.episodes import ToolCall
+from cs_platform.episodes import ToolCall, Verdict
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Mapping
@@ -52,6 +52,22 @@ class EvalTruth(BaseModel):
     injection_markers: tuple[str, ...] = ()
 
 
+class FeedbackProvenance(BaseModel):
+    """Review-supported origin of a feedback case; never a generator answer key."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    cluster_key: str
+    episode_id: str
+    review_ids: tuple[str, ...]
+    supporting_review_ids: tuple[str, ...]
+    source: Literal["synthetic"]
+    analysis_category: str
+    condition: str
+    verdict: Verdict
+    tool_fingerprints: tuple[str, ...]
+
+
 class EvalCase(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -60,6 +76,10 @@ class EvalCase(BaseModel):
     expected: dict[str, str] = Field(description="Ground truth, interpreted by the evaluators.")
     truth: EvalTruth | None = None
     split: Split | None = None
+    cohort: Literal["feedback"] | None = Field(default=None, exclude_if=lambda value: value is None)
+    provenance: FeedbackProvenance | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 def assign_splits(cases: tuple[EvalCase, ...]) -> tuple[EvalCase, ...]:

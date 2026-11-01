@@ -36,6 +36,7 @@ from cs_platform.evals import (
 from cs_platform.settings import PlatformSettings, SettingsError
 from cs_platform.telemetry import flush_telemetry
 from csai import foundry
+from csai.cases import app as cases_app
 from csai.environment import load_environment
 from csai.eval_cli import DurableEpisodes, EvalEnvironment, eval_app, publish_record
 from csai.platform import PlatformApiError, PlatformClient
@@ -51,6 +52,7 @@ if TYPE_CHECKING:
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 app.add_typer(eval_app, name="eval")
+app.add_typer(cases_app, name="cases")
 
 
 @app.callback()
