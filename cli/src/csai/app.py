@@ -18,7 +18,13 @@ from azure.identity.aio import DefaultAzureCredential
 from cs_platform import evals as eval_harness
 from cs_platform.episodes import Verdict  # noqa: TC001 - typer reads annotations at runtime
 from cs_platform.eval_reporting import RunMetadata
-from cs_platform.eval_runs import RunWriter, load_run, rebuild_report, validate_run_destinations
+from cs_platform.eval_runs import (
+    RunWriter,
+    load_run,
+    rebuild_report,
+    validate_run_destinations,
+    write_private_artifact,
+)
 from cs_platform.evals import (
     EvalCase,
     EvalPersistenceError,
@@ -106,10 +112,9 @@ def export_local_episodes(episodes: list[Episode], path: Path) -> None:
     records = [episode.model_dump(mode="json") for episode in episodes]
     if any(record.get("source", "real") != "real" for record in records):
         raise ValueError("Expected only real episodes")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("x", encoding="utf-8") as stream:
-        for record in records:
-            stream.write(json.dumps({**record, "source": "real"}) + "\n")
+    write_private_artifact(
+        path, "".join(json.dumps({**record, "source": "real"}) + "\n" for record in records)
+    )
 
 
 def make_target(
@@ -316,14 +321,15 @@ def eval_command(
         record = writer.finalize()
     except BaseException as error:
         try:
-            writer.finish(error=error)
+            if not writer.committed:
+                writer.finish(error=error)
         except EvalPersistenceError as journal_error:
             typer.echo(f"warning: {journal_error}", err=True)
         try:
             rebuild_report(output)
         except (OSError, ValueError) as export_error:
             typer.echo(f"warning: report export failed: {export_error}", err=True)
-        typer.echo(f"error: {error or type(error).__name__}; run incomplete: {output}", err=True)
+        typer.echo(f"error: {error or type(error).__name__}; run stopped: {output}", err=True)
         raise typer.Exit(2 if isinstance(error, SettingsError) else 1) from error
     result = record.result
     typer.echo(f"Results: {output} (HTML: {output.with_suffix('.html')})")

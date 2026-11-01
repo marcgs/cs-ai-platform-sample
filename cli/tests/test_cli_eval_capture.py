@@ -1,5 +1,7 @@
 import asyncio
 import json
+import os
+import stat
 from dataclasses import replace
 from functools import partial
 from typing import TYPE_CHECKING, Any
@@ -69,6 +71,84 @@ def invoke(path: Path, *arguments: str) -> Any:
             *arguments,
         ],
     )
+
+
+@pytest.mark.parametrize("suffix", [".summary.json", ".html"])
+def test_initial_report_reservation_collision_never_calls_target(
+    scripted: list[int], monkeypatch: pytest.MonkeyPatch, tmp_path: Path, suffix: str
+) -> None:
+    output = tmp_path / "results.jsonl"
+    destination = tmp_path / f"results{suffix}"
+    original = eval_runs._write
+
+    def race(path: Path, text: str, *, append: bool = False) -> None:
+        if path == destination and text == "":
+            path.write_text("another process")
+        original(path, text, append=append)
+
+    monkeypatch.setattr(eval_runs, "_write", race)
+    result = invoke(output)
+    assert result.exit_code != 0
+    assert scripted == [0]
+    assert destination.read_text() == "another process"
+
+
+@pytest.mark.parametrize("new_parent", [False, True])
+def test_requested_episode_export_is_private_and_synced_before_completion(
+    scripted: list[int], monkeypatch: pytest.MonkeyPatch, tmp_path: Path, new_parent: bool
+) -> None:
+    output = tmp_path / "results.jsonl"
+    parent = tmp_path / "new" / "nested" if new_parent else tmp_path
+    destination = parent / "episodes.jsonl"
+    synced: list[tuple[int, int]] = []
+    original_sync = os.fsync
+    original_finalize = eval_runs.RunWriter.finalize
+
+    def sync(descriptor: int) -> None:
+        info = os.fstat(descriptor)
+        synced.append((info.st_dev, info.st_ino))
+        original_sync(descriptor)
+
+    def finalize(self: eval_runs.RunWriter) -> Any:
+        for path in (destination, parent):
+            info = path.stat()
+            assert (info.st_dev, info.st_ino) in synced
+        assert stat.S_IMODE(destination.stat().st_mode) == 0o600
+        if new_parent:
+            assert stat.S_IMODE(parent.stat().st_mode) == 0o700
+            assert stat.S_IMODE(parent.parent.stat().st_mode) == 0o700
+        return original_finalize(self)
+
+    monkeypatch.setattr(os, "fsync", sync)
+    monkeypatch.setattr(eval_runs.RunWriter, "finalize", finalize)
+    previous = os.umask(0o022)
+    try:
+        result = invoke(output, "--episodes-output", str(destination))
+    finally:
+        os.umask(previous)
+    assert result.exit_code == 0, result.output
+    assert scripted == [3]
+    assert len(destination.read_text().splitlines()) == 3
+
+
+def test_requested_episode_export_fsync_failure_prevents_completion(
+    scripted: list[int], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    output = tmp_path / "results.jsonl"
+    destination = tmp_path / "episodes.jsonl"
+    original = os.fsync
+
+    def fail(descriptor: int) -> None:
+        if destination.exists() and os.fstat(descriptor).st_ino == destination.stat().st_ino:
+            raise OSError("requested episode export fsync failed")
+        original(descriptor)
+
+    monkeypatch.setattr(os, "fsync", fail)
+    result = invoke(output, "--episodes-output", str(destination))
+    assert result.exit_code == 1
+    assert scripted == [3]
+    assert load_run(output).status == "incomplete"
+    assert not (eval_runs.run_directory(output) / "completion.json").exists()
 
 
 def test_hard_stop_during_required_export_has_no_complete_marker(

@@ -35,14 +35,143 @@ def writer(path: Path) -> RunWriter:
     )
 
 
-def complete(run: RunWriter) -> None:
+def complete(run: RunWriter, *, finish: bool = True) -> None:
     case = run.manifest.cases[0]
     run.start(case, 1)
     run.start_attempt(case, 1, 1)
     output = RunOutput(text="<script>answer</script>", episode_id="unavailable")
     run.attempt(case, 1, output)
     run.completed(CaseResult(case_id=case.id, scores={"exact": 1}, output=output))
-    run.finish()
+    if finish:
+        run.finish()
+
+
+@pytest.mark.parametrize("suffix", [".summary.json", ".html"])
+def test_reports_are_reserved_exclusively_before_cases(tmp_path: Path, suffix: str) -> None:
+    run = writer(tmp_path / "results.jsonl")
+    with pytest.raises(FileExistsError):
+        (tmp_path / f"results{suffix}").open("x")
+    assert load_run(run.directory).result.cases == []
+
+
+def test_manifest_publication_interruption_has_a_recoverable_empty_journal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = eval_runs._write
+
+    def interrupt(path: Path, text: str, *, append: bool = False) -> None:
+        original(path, text, append=append)
+        if path.name == "manifest.json":
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(eval_runs, "_write", interrupt)
+    output = tmp_path / "results.jsonl"
+    with pytest.raises(KeyboardInterrupt):
+        writer(output)
+    record = rebuild_report(output)
+    assert record.status == "incomplete"
+    assert len(record.never_started) == 1
+    assert not record.events
+
+
+def test_precommit_visible_reports_never_claim_completion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run = writer(tmp_path / "results.jsonl")
+    complete(run, finish=False)
+
+    def interrupt(**_: object) -> None:
+        summary = json.loads((tmp_path / "results.summary.json").read_text())
+        assert summary["status"] == "incomplete"
+        assert summary["failures"]
+        assert '"status": "complete"' not in (tmp_path / "results.html").read_text()
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(run, "finish", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        run.finalize()
+    assert load_run(run.directory).status == "incomplete"
+
+
+@pytest.mark.parametrize("failure", ["file", "directory"])
+def test_full_completion_line_with_failed_fsync_cannot_pass(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    run = writer(tmp_path / "results.jsonl")
+    complete(run, finish=False)
+    original = os.fsync
+
+    def fail(descriptor: int) -> None:
+        is_directory = stat.S_ISDIR(os.fstat(descriptor).st_mode)
+        if is_directory == (failure == "directory"):
+            raise OSError("completion fsync failed")
+        original(descriptor)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "fsync", fail)
+        with pytest.raises(EvalPersistenceError):
+            run.finish()
+    events = (run.directory / "events.jsonl").read_bytes()
+    assert json.loads(events.splitlines()[-1])["status"] == "complete"
+    with pytest.raises(EvalPersistenceError):
+        run.finish(error=OSError())
+    assert rebuild_report(run.directory).status == "incomplete"
+    assert events == (run.directory / "events.jsonl").read_bytes()
+
+
+def test_failed_certificate_directory_sync_removes_visible_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run = writer(tmp_path / "results.jsonl")
+    complete(run, finish=False)
+    original = eval_runs._sync_directory
+
+    def fail(path: Path) -> None:
+        if (run.directory / "completion.json").exists():
+            raise OSError("certificate directory fsync failed")
+        original(path)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(eval_runs, "_sync_directory", fail)
+        with pytest.raises(EvalPersistenceError):
+            run.finish()
+    assert not (run.directory / "completion.json").exists()
+    assert rebuild_report(run.directory).status == "incomplete"
+
+
+def test_hard_stop_after_complete_line_before_commit_remains_incomplete(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run = writer(tmp_path / "results.jsonl")
+    complete(run, finish=False)
+    original = eval_runs._sync_directory
+
+    def interrupt(path: Path) -> None:
+        if (
+            json.loads((run.directory / "events.jsonl").read_bytes().splitlines()[-1]).get("status")
+            == "complete"
+        ):
+            raise KeyboardInterrupt
+        original(path)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(eval_runs, "_sync_directory", interrupt)
+        with pytest.raises(KeyboardInterrupt):
+            run.finalize()
+    assert load_run(run.directory).status == "incomplete"
+    assert json.loads((tmp_path / "results.summary.json").read_text())["status"] == "incomplete"
+    assert '"status": "complete"' not in (tmp_path / "results.html").read_text()
+
+
+def test_legacy_completion_without_certificate_is_still_readable(tmp_path: Path) -> None:
+    run = writer(tmp_path / "results.jsonl")
+    complete(run)
+    manifest_path = run.directory / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    del manifest["completion_protocol"]
+    manifest_path.write_text(json.dumps(manifest))
+    (run.directory / "completion.json").unlink()
+    assert load_run(run.directory).status == "complete"
 
 
 def test_torn_final_event_remains_incomplete_without_reconstructing_an_episode(
@@ -90,6 +219,7 @@ def test_rebuild_refuses_symlink_export_without_touching_target(tmp_path: Path) 
     complete(run)
     retained = tmp_path / "retained"
     retained.write_text("retained")
+    (tmp_path / "results.html").unlink()
     (tmp_path / "results.html").symlink_to(retained)
     with pytest.raises(ValueError, match="symlink"):
         rebuild_report(tmp_path)
