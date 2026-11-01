@@ -10,11 +10,37 @@ if TYPE_CHECKING:
 
 
 def feedback_scenarios(dataset: DiagnosticsDataset) -> tuple[Scenario, ...]:
-    """Expose the incident metadata copied onto the four feedback-only machines."""
-    return tuple(
-        scenario.model_copy(update={"machine_id": f"M-{53 + index:04d}"})
-        for index, scenario in enumerate(dataset.scenarios[:4])
-    )
+    """Expose copied incident metadata with the same IDs allocated by seed extension."""
+    copied: list[Scenario] = []
+    for index, scenario in enumerate(dataset.scenarios[:4]):
+        machine_id = f"M-{53 + index:04d}"
+        refs = {
+            f"TS:{scenario.machine_id}:{series.signal}": f"TS:{machine_id}:{series.signal}"
+            for series in dataset.telemetry
+            if series.machine_id == scenario.machine_id
+        }
+        refs.update(
+            {
+                event.id: f"EV-{200000 + index * 1000 + number:06d}"
+                for number, event in enumerate(dataset.events_for(scenario.machine_id))
+                if event.timestamp >= scenario.onset
+            }
+        )
+        refs.update(
+            {
+                entry.id: f"LB-{20000 + index * 1000 + number:05d}"
+                for number, entry in enumerate(dataset.logbook_for(scenario.machine_id))
+            }
+        )
+        copied.append(
+            scenario.model_copy(
+                update={
+                    "machine_id": machine_id,
+                    "decisive_refs": tuple(refs[ref] for ref in scenario.decisive_refs),
+                }
+            )
+        )
+    return tuple(copied)
 
 
 def extend_feedback_seed(dataset: DiagnosticsDataset) -> DiagnosticsDataset:

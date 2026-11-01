@@ -40,6 +40,8 @@ Four additional feedback-only machines (`M-0053`–`M-0056`) copy clean telemetr
 service clues under new record IDs. Their events use `EC-9901`, a documented code
 without mapped causes. They add no eval scenarios and change no existing records
 or tool responses. `feedback_seed.py` appends these records during seed generation.
+Copied feedback scenarios remap their decisive telemetry, event and logbook
+references to those feedback-only records, not the original machines' evidence.
 
 The frozen `services/diagnostics-mcp/tests/fixtures/legacy_golden.json` records hashes taken
 from revision `fae76ff`, before extension: all original seed fields and 791 tool responses

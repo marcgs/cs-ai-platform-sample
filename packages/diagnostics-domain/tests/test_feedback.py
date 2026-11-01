@@ -240,6 +240,35 @@ def test_additive_feedback_seed_preserves_all_existing_records_and_tool_results(
         )
 
 
+@pytest.mark.parametrize("index", range(4))
+def test_feedback_scenario_decisive_refs_resolve_to_its_copied_machine(index: int) -> None:
+    from diagnostics_domain.feedback_seed import feedback_scenarios
+
+    dataset = load_seed()
+    unchanged = dataset.model_dump_json()
+    original = dataset.scenarios[index]
+    copied = feedback_scenarios(dataset)[index]
+    tools = DiagnosticsTools(dataset)
+    events = tools.error_events(copied.machine_id, hours=168)
+    logbook = tools.logbook(copied.machine_id)
+    signal = dataset.failure_mode(copied.expected_failure_mode).signature.signal
+    observed = {
+        tools.telemetry_window(copied.machine_id, signal).ref,
+        *(event.ref for event in events.events),
+        *(entry.ref for entry in logbook.entries),
+    }
+    assert set(copied.decisive_refs) <= observed
+    assert not set(copied.decisive_refs).intersection(original.decisive_refs)
+    assert copied.model_dump(exclude={"machine_id", "decisive_refs"}) == original.model_dump(
+        exclude={"machine_id", "decisive_refs"}
+    )
+    assert any(
+        event.ref in copied.decisive_refs and event.code == "EC-9901" for event in events.events
+    )
+    assert any(entry.ref in copied.decisive_refs for entry in logbook.entries)
+    assert dataset.model_dump_json() == unchanged
+
+
 def test_every_generated_tool_call_replays_and_every_pattern_is_replayable() -> None:
     dataset = load_seed()
     tools = DiagnosticsTools(dataset)
