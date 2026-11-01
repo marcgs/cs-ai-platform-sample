@@ -171,6 +171,9 @@ def _clusters(
                             call.model_dump(mode="json") for call in item.episode.tool_calls
                         ],
                         capture_truncated=item.episode.truncated,
+                        capture_status=item.episode.status,
+                        capture_created_at=item.episode.created_at,
+                        capture_completed_at=item.episode.completed_at,
                         review_notes=item.review.notes,
                         review_summary=item.review,
                         source_review_ids=sorted(row.id for row in source_reviews[item.episode.id]),

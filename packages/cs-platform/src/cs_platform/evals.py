@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 
 
 type Split = Literal["train", "test"]
+type Cohort = Literal["original", "challenge", "feedback"]
 type Category = Literal[
     "clean",
     "overlapping",
@@ -189,6 +190,15 @@ class EvalSuite:
         )
 
 
+def case_cohort(suite: EvalSuite, case: EvalCase) -> Cohort:
+    """Label informational populations without changing the regression gate."""
+    if case.cohort is not None:
+        return case.cohort
+    return (
+        "original" if suite.gate_case_ids is None or case.id in suite.gate_case_ids else "challenge"
+    )
+
+
 class CaseResult(BaseModel):
     case_id: str
     scores: dict[str, float]
@@ -198,6 +208,7 @@ class CaseResult(BaseModel):
     category: str = "clean"
     split: Split | None = None
     gated: bool = True
+    cohort: Cohort | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class SuiteResult(BaseModel):
@@ -249,9 +260,31 @@ class SuiteResult(BaseModel):
                     [case for case in self.quality_cases if str(getattr(case, field)) == value],
                     zero_fill=self.minimum_score_metrics,
                 )
-                for value in sorted({str(getattr(case, field)) for case in self.cases})
+                for value in sorted(
+                    {
+                        str(getattr(case, field))
+                        for case in self.cases
+                        if field != "cohort" or case.cohort is not None
+                    }
+                )
             }
-            for field in ("category", "split")
+            for field in ("category", "split", "cohort")
+        }
+
+    @property
+    def group_intervals(self) -> dict[str, dict[str, dict[str, tuple[float, float]]]]:
+        """Hierarchical 95% intervals for the same informational populations as groups."""
+        return {
+            field: {
+                label: bootstrap_intervals(
+                    [case for case in self.quality_cases if str(getattr(case, field)) == label],
+                    samples=self.bootstrap_samples,
+                    seed=self.bootstrap_seed,
+                    zero_fill=self.minimum_score_metrics,
+                )
+                for label in groups
+            }
+            for field, groups in self.groups.items()
         }
 
     @property
@@ -514,6 +547,7 @@ async def run_suite(
                     category=case.truth.category if case.truth else "clean",
                     split=case.split,
                     gated=suite.gate_case_ids is None or case.id in suite.gate_case_ids,
+                    cohort=case_cohort(suite, case),
                 )
                 if on_result is not None:
                     on_result(result)

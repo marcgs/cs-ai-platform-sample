@@ -1,5 +1,6 @@
 """Analysis contracts deliberately have no dependency on generator truth."""
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -74,6 +75,9 @@ class EvalCase(Record):
     expected_mode_basis: str
     tool_calls: list[dict[str, object]]
     capture_truncated: list[str]
+    capture_status: Literal["running", "succeeded", "failed"]
+    capture_created_at: datetime
+    capture_completed_at: datetime | None
     review_notes: list[str]
     review_summary: ReviewSummary
     source_review_ids: list[str]

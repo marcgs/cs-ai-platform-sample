@@ -213,10 +213,19 @@ async def test_report_preserves_exact_independent_review_evidence(tmp_path: Path
         Report.model_validate(legacy)
     case = next(case for case in report.clusters[0].eval_cases if case.episode_id == episodes[0].id)
     assert case.capture_truncated == ["tool_calls"]
-    missing_capture = report.model_dump()
-    missing_capture["clusters"][0]["eval_cases"][0].pop("capture_truncated")
-    with pytest.raises(ValidationError, match="capture_truncated"):
-        Report.model_validate(missing_capture)
+    assert case.capture_status == episodes[0].status
+    assert case.capture_created_at == episodes[0].created_at
+    assert case.capture_completed_at == episodes[0].completed_at
+    for field in (
+        "capture_truncated",
+        "capture_status",
+        "capture_created_at",
+        "capture_completed_at",
+    ):
+        missing_capture = report.model_dump()
+        missing_capture["clusters"][0]["eval_cases"][0].pop(field)
+        with pytest.raises(ValidationError, match=field):
+            Report.model_validate(missing_capture)
     assert case.source_review_ids == sorted(["revised-one", reviews[1].id, dissent.id])
     assert sorted(review.id for review in case.source_reviews) == case.source_review_ids
     assert len(case.source_reviews) == case.review_summary.independent_reviewers == 3

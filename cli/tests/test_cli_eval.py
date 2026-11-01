@@ -10,7 +10,7 @@ from unittest.mock import Mock
 import pytest
 from typer.testing import CliRunner
 
-from cs_platform.evals import RunOutput, run_suite
+from cs_platform.evals import EvalCase, EvalSuite, RunOutput, Thresholds, run_suite
 from cs_platform.evidence import Evidence
 from cs_platform.factory import build_agent
 from cs_platform.spec import AgentSpec
@@ -22,9 +22,33 @@ from diagnostics_mcp.tools import TOOL_NAMES
 from rca_agent.report import Hypothesis, RcaReport
 
 if TYPE_CHECKING:
-    from cs_platform.evals import EvalCase, Target
+    from cs_platform.evals import Target
 
 runner = CliRunner()
+
+
+async def test_console_reports_feedback_cohort_intervals_without_gating_feedback(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    original = EvalCase(id="original", input="question", expected={})
+    feedback = original.model_copy(update={"id": "feedback", "cohort": "feedback"})
+    suite = EvalSuite(
+        "cohorts",
+        (original, feedback),
+        Thresholds(minimums={"quality": 1}),
+        (lambda case, _: {"quality": float(case.id == "original")},),
+        gate_case_ids=frozenset({"original"}),
+    )
+
+    async def target(_: EvalCase) -> RunOutput:
+        return RunOutput(text="answer")
+
+    result = await run_suite(suite, target)
+    assert cli.report(suite, result) == []
+    assert (
+        "cohort=feedback (informational): quality=0.00 95% CI [0.00, 0.00]"
+        in capsys.readouterr().out
+    )
 
 
 def answering(correct: bool, *, knowledge: bool = True) -> Any:

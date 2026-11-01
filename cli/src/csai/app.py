@@ -100,9 +100,18 @@ def report(suite: EvalSuite, result: SuiteResult) -> list[str]:
         mark = "FAIL" if minimum is not None and value < minimum else "ok  "
         low, high = intervals[name]
         typer.echo(f"  {mark} {name:<20} {value:.2f}  95% CI [{low:.2f}, {high:.2f}]{gate}")
+    group_intervals = result.group_intervals
     for field, groups in result.groups.items():
         for label, scores in groups.items():
-            values = " ".join(f"{name}={value:.2f}" for name, value in scores.items())
+            if field == "cohort":
+                values = " ".join(
+                    f"{name}={value:.2f} 95% CI "
+                    f"[{group_intervals[field][label][name][0]:.2f}, "
+                    f"{group_intervals[field][label][name][1]:.2f}]"
+                    for name, value in scores.items()
+                )
+            else:
+                values = " ".join(f"{name}={value:.2f}" for name, value in scores.items())
             typer.echo(f"  {field}={label} (informational): {values}")
     for warning in result.warnings(suite.thresholds):
         typer.echo(f"warning: {warning}", err=True)

@@ -16,6 +16,7 @@ from csai.case_proposal import CaseProposal, propose_cases, report_digest
 from csai.cases import FEEDBACK, MANIFEST
 from diagnostics_domain.dataset import load_seed
 from diagnostics_domain.feedback import generate_feedback
+from diagnostics_domain.feedback_replay import replay_episode
 from episode_analysis.classifier import CachedClassifier, ClassifierConfig
 from episode_analysis.models import EnrichedEpisode, Label, Report, ReviewSummary
 from episode_analysis.pipeline import analyze, prepare
@@ -30,6 +31,9 @@ from rca_evals.feedback import load_feedback_cases
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from cs_platform.episodes import Episode
+    from diagnostics_domain.feedback_replay import ReplayResult
 
 runner = CliRunner()
 
@@ -196,6 +200,8 @@ def test_public_command_admits_only_planted_review_truth_and_is_idempotent(
         ("non_replayable", "Incomplete tool capture", True),
         ("explicit_metadata", "non-replayable", True),
         ("truncated_episode", "Incomplete episode capture", True),
+        ("running_episode", "Incomplete episode capture", True),
+        ("missing_completion", "Incomplete episode capture", True),
         ("forged_summary", "ReviewSummary", False),
         ("forged_review_id", "source review", False),
         ("copied_identity", "source review", False),
@@ -217,6 +223,10 @@ def test_public_command_rejects_bad_evidence(
         candidate.tool_calls[0]["replayable"] = False
     elif mutation == "truncated_episode":
         candidate.capture_truncated.append("tool_calls")
+    elif mutation == "running_episode":
+        candidate = candidate.model_copy(update={"capture_status": "running"})
+    elif mutation == "missing_completion":
+        candidate = candidate.model_copy(update={"capture_completed_at": None})
     elif mutation == "forged_summary":
         candidate = candidate.model_copy(
             update={
@@ -251,6 +261,34 @@ def test_public_command_rejects_bad_evidence(
     assert result.decisions[0].k4 == k4
     body = next((repo / "docs/iteration-4/proposals").glob("*/pr-body.md")).read_text()
     assert "K4: non-replayable" in body
+
+
+def test_completed_failed_candidate_forwards_actual_lifecycle_to_replay(
+    feedback_report, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, report = feedback_report
+    source = only_mapping(report)
+    cluster = source.clusters[0]
+    candidate = cluster.eval_cases[0].model_copy(update={"capture_status": "failed"})
+    assert candidate.capture_completed_at is not None
+    source = source.model_copy(
+        update={"clusters": [cluster.model_copy(update={"eval_cases": [candidate]})]}
+    )
+    captured: list[Episode] = []
+
+    def replay(episode: Episode) -> ReplayResult:
+        captured.append(episode)
+        assert episode.status == candidate.capture_status
+        assert episode.created_at == candidate.capture_created_at
+        assert episode.completed_at == candidate.capture_completed_at
+        return replay_episode(episode)
+
+    monkeypatch.setattr("csai.case_proposal.replay_episode", replay)
+    repo = repository(tmp_path / "repo")
+    response = invoke(source, repo)
+    assert response.exit_code == 0, response.output
+    assert captured
+    assert proposal(repo).cases
 
 
 @pytest.mark.parametrize("kind", ["single", "disagree"])
@@ -349,7 +387,7 @@ async def test_feedback_loader_is_additive_non_gating_and_refuses_leakage(
     repo = repository(tmp_path / "repo")
     response = invoke(report, repo)
     assert response.exit_code == 0, response.output
-    original = load_suite()
+    original = load_suite(feedback_cases=tmp_path / "absent-feedback.jsonl")
     combined = load_suite(feedback_cases=repo / FEEDBACK)
     assert combined.cases[: len(original.cases)] == original.cases
     assert combined.gate_case_ids == original.gate_case_ids
@@ -382,6 +420,33 @@ async def test_feedback_loader_is_additive_non_gating_and_refuses_leakage(
     path.write_text(malformed.model_dump_json() + "\n")
     with pytest.raises(ValueError, match="expected machine_id"):
         load_feedback_cases(path, existing=original.cases)
+
+
+def test_present_default_feedback_preserves_explicit_seed_baselines(
+    feedback_report, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    package = tmp_path / "rca-package"
+    package.mkdir()
+    for filename in ("cases.jsonl", "thresholds.yaml"):
+        source = resources.files("rca_evals").joinpath(filename)
+        (package / filename).write_bytes(source.read_bytes())
+    absent = tmp_path / "absent-feedback.jsonl"
+    baseline = load_suite(feedback_cases=absent)
+    _, report = feedback_report
+    cases = propose_cases(only_mapping(report), baseline.cases).cases
+    assert cases
+    (package / "feedback_cases.jsonl").write_text(
+        "".join(case.model_dump_json() + "\n" for case in cases)
+    )
+    monkeypatch.setattr(resources, "files", lambda _: package)
+    seeded = load_suite(feedback_cases=absent)
+    combined = load_suite()
+    assert len(seeded.cases) == 50
+    assert len(seeded.gate_case_ids or ()) == 18
+    assert combined.cases[:50] == seeded.cases
+    assert len(combined.cases) == 50 + len(cases)
+    assert combined.gate_case_ids == seeded.gate_case_ids
+    assert all(case.cohort == "feedback" for case in combined.cases[50:])
 
 
 @pytest.mark.parametrize(
@@ -426,7 +491,9 @@ def test_feedback_loader_rejects_inconsistent_provenance(
     path = repo / FEEDBACK
     path.write_text(case.model_dump_json() + "\n")
     with pytest.raises(ValueError, match="expected"):
-        load_feedback_cases(path, existing=load_suite().cases)
+        load_feedback_cases(
+            path, existing=load_suite(feedback_cases=tmp_path / "absent-feedback.jsonl").cases
+        )
 
 
 def repository_contents(repo: Path):
@@ -447,7 +514,9 @@ def test_public_command_rejects_conflicting_existing_case_id_without_mutation(
     _, report = feedback_report
     source = only_mapping(report)
     repo = repository(tmp_path / "repo")
-    incoming = propose_cases(source, load_suite().cases).cases[0]
+    incoming = propose_cases(
+        source, load_suite(feedback_cases=tmp_path / "absent-feedback.jsonl").cases
+    ).cases[0]
     reviewed = incoming.model_copy(
         update={"expected": {**incoming.expected, "failure_mode": "FM-08"}}
     )
@@ -507,7 +576,9 @@ def test_public_command_rejects_symlink_destinations_without_mutation(
             if destination == "original_manifest":
                 target.write_bytes((repo / MANIFEST).read_bytes())
             else:
-                retained = propose_cases(source, load_suite().cases).cases[0]
+                retained = propose_cases(
+                    source, load_suite(feedback_cases=tmp_path / "absent-feedback.jsonl").cases
+                ).cases[0]
                 target.write_text(retained.model_dump_json() + "\n")
         if link.exists():
             link.unlink()
