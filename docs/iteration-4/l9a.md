@@ -150,3 +150,17 @@ The approved live gate was the pre-review uncommitted integration measurement.
 No new model traffic is authorized, so a fresh post-fix live gate is skipped and
 remains outstanding. Restacking the parallel item fixes and their combined
 validation is parent-owned.
+### Round-two replay completion review
+
+Copilot comment **4436545773** is addressed: replay rejects running captures
+and captures without an episode completion timestamp, even when every tool call
+is complete. Completed failed episodes remain replayable when their tool capture
+is complete and matches the current tools. Four focused lifecycle regressions
+and the full native offline suite pass (**479 tests**, 32 existing SDK warnings).
+Repository Ruff lint/format (**138 files**) and strict Pyright pass.
+
+The dependent L9B fix preserves actual lifecycle evidence in the analysis
+candidate and rejects incomplete candidates before reconstruction. No seed,
+manifest, tool golden or frozen pilot artifact changed. The approved live run
+was the pre-review uncommitted integration snapshot; a fresh post-fix live gate
+is unapproved, skipped and outstanding.
