@@ -262,3 +262,23 @@ The approved live run above predates these review fixes. A fresh local eval
 after the capture/data fixes was skipped because further model traffic was
 not authorized; it remains outstanding. Fresh Copilot reviews are required
 before the implementation stack merges.
+
+The second Copilot round identified eight further inline issues and an
+initialization-order gap. Episode exports now use private, durable creation;
+report destinations are reserved before model calls and remain visibly
+incomplete until durable completion. A completion certificate distinguishes
+successful finalization from failed completion fsync, and the journal exists
+before its manifest is published. Suite-scoped publication locking prevents
+different measurements from creating duplicate evaluations.
+
+Replay and promotion reject unfinished captures. Seed-only tests explicitly
+exclude feedback manifests, while additive-loading tests retain their gate
+assertions. Results and rebuilt reports carry separate original, challenge
+and feedback cohort metrics and intervals. Legacy cohort recovery uses frozen
+metadata without rewriting evidence; its fixtures explicitly predate the
+completion-certificate protocol. Production certificate checks are unchanged.
+
+After the second restack, **561 offline tests**, Ruff lint/format, strict
+Pyright and diff checks pass. No further model traffic, publication or
+deployment ran. The live and human acceptance gaps above remain outstanding;
+another current-head Copilot review precedes implementation merge.
