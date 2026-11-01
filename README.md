@@ -69,6 +69,12 @@ rebuilds the summary and HTML offline. An incomplete run always fails the gate;
 reporting never reruns a case or reconstructs an episode.
 See the [eval guide](evals/rca/README.md) for splits, artifacts and paired comparisons.
 
+After explicit publishing approval, `uv run csai eval publish .eval-results/<run>`
+publishes the saved measurement without rerunning the agent. Publishing never
+changes the local gate. Foundry deployment and live metric parity are still
+outstanding; sparse scores remain in rows rather than becoming false zeroes.
+See [Q9's validation and limitations](docs/iteration-4/q9.md).
+
 ### Clean up
 
 ```bash

@@ -1,6 +1,7 @@
 """Offline eval reporting and the extensible eval command group."""
 
 from dataclasses import dataclass
+from importlib import import_module
 from pathlib import Path  # noqa: TC003 - Typer resolves the command annotation at runtime
 from typing import TYPE_CHECKING, Annotated
 
@@ -8,9 +9,12 @@ import typer
 from typer.core import TyperGroup
 
 from cs_platform.eval_runs import rebuild_report
+from csai import foundry
 from csai.environment import load_environment
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from typer._click.core import Context
 
     from cs_platform.episodes import Episode
@@ -34,7 +38,7 @@ class DurableEpisodes(list["Episode"]):
 
 
 class EvalGroup(TyperGroup):
-    """Keep the original default-agent invocation alongside the report subcommand."""
+    """Keep the original default-agent invocation alongside report/publish subcommands."""
 
     def parse_args(self, ctx: Context, args: list[str]) -> list[str]:
         if not args or (args[0] not in self.commands and args[0] not in {"--help", "-h"}):
@@ -49,10 +53,41 @@ eval_app = typer.Typer(
 
 @eval_app.callback()
 def configure_eval(ctx: typer.Context) -> None:
-    """Reporting is entirely offline; only running loads deployment settings."""
+    """Reporting is entirely offline; only running/publishing loads deployment settings."""
     if ctx.invoked_subcommand != "report":
         options = ctx.find_root().obj
         load_environment(use_azd=options.use_azd if isinstance(options, EvalEnvironment) else True)
+
+
+def publish_record(path: Path) -> str:
+    """Load Q9's publishing adapter only when explicitly requested."""
+    try:
+        module = import_module("csai.eval_publish")
+        publisher: Callable[[Path], str] = module.publish_record
+        return publisher(path)
+    except ImportError as error:
+        raise foundry.FoundryEvalError("the eval publishing adapter is unavailable") from error
+    except foundry.FoundryEvalError:
+        raise
+    except Exception as error:
+        raise foundry.FoundryEvalError(
+            f"Foundry publication failed: {type(error).__name__}: {error}"
+        ) from error
+
+
+@eval_app.command("publish")
+def publish_command(
+    results_dir: Annotated[
+        Path, typer.Argument(help="Results directory, .run directory or JSONL.")
+    ],
+) -> None:
+    """Explicitly publish a previously captured run; this never changes its gate."""
+    try:
+        url = publish_record(results_dir)
+    except (foundry.FoundryEvalError, OSError, ValueError) as error:
+        typer.echo(f"error: {error}", err=True)
+        raise typer.Exit(2) from error
+    typer.echo(f"Foundry report: {url}")
 
 
 @eval_app.command("report")
