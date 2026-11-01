@@ -158,19 +158,19 @@ The reviewed implementation is committed in five stacked item pull requests.
 The original dirty checkout and the uncommitted integration snapshot were
 preserved. All domain data and measurements are synthetic and fictional.
 
-| Item | Implementation PR | Stacked offline tests | Still outstanding |
+| Item | Implementation PR | Initial stacked offline tests | Still outstanding |
 |---|---|---|---|
-| Q8 | [#20](https://github.com/marcgs/cs-ai-platform-sample/pull/20) | 426 | PR review and merge |
+| Q8 | [#20](https://github.com/marcgs/cs-ai-platform-sample/pull/20) | 426 | Fresh local eval after capture review fixes |
 | Q9 | [#21](https://github.com/marcgs/cs-ai-platform-sample/pull/21) | 454 | Approved deployment, hosted smoke test, publication and parity comparison |
-| L9 Part A | [#23](https://github.com/marcgs/cs-ai-platform-sample/pull/23) | 456 | PR review and merge |
+| L9 Part A | [#23](https://github.com/marcgs/cs-ai-platform-sample/pull/23) | 456 | No additional live measurement for replay implementation |
 | L8 | [#24](https://github.com/marcgs/cs-ai-platform-sample/pull/24) | 478 | Fresh approved measurement and person acceptance |
 | L9 Part B | [#22](https://github.com/marcgs/cs-ai-platform-sample/pull/22) | 497 | First fresh-cohort case PR reviewed and merged by a person |
 
 Each standalone stack passed Ruff lint and formatting, strict Pyright, its
 full offline test suite, staged safety checks and normal pre-commit hooks.
-Bicep build passed. All 43 modified or new non-Markdown source, test, data and
-configuration files in the final stack match the reviewed integration
-snapshot exactly. Agent behavior, original cases, thresholds and frozen
+Bicep build passed. Before GitHub review, all 43 modified or new non-Markdown
+source, test, data and configuration files in the initial final stack matched
+the reviewed integration snapshot exactly. Agent behavior, original cases, thresholds and frozen
 iteration-3 evidence remain unchanged.
 
 Parallel reviews fixed journal-integrity and frozen-gate checks, gate-safe
@@ -239,3 +239,26 @@ Implementation PR review and merge do not complete the remaining live or
 human acceptance. The first reviewed feedback-case batch and the approved
 three-repeat baseline still follow fresh L8 measurement and publication
 setup. This single-repeat validation is not the new iteration baseline.
+
+### GitHub review fixes
+
+The five PRs form a native GitHub stack in the plan's dependency order.
+Their first Copilot reviews identified eleven code issues; L8 had no open
+code findings and retained its fresh-measurement and person-acceptance gap.
+
+The fixes stop persistence failures from becoming model retries, finalize
+only after required exports, protect private journal permissions, preserve
+recoverable partial-write tails and sync new directory entries. Publishing
+preserves capture-completeness flags, rejects incomplete tool-call judging,
+labels calibration loss as lower-is-better and reuses saved measurements'
+remote runs across publication retries. Copied scenarios now reference their
+own evidence. Proposal writes reject conflicting case IDs and symlinked
+destinations or parents before any branch or file mutation.
+
+After restacking the fixes, the full combined suite passed **524 offline
+tests**, Ruff lint and formatting, strict Pyright and diff checks. The
+original cases, thresholds, agent behavior and frozen pilot remain unchanged.
+The approved live run above predates these review fixes. A fresh local eval
+after the capture/data fixes was skipped because further model traffic was
+not authorized; it remains outstanding. Fresh Copilot reviews are required
+before the implementation stack merges.
