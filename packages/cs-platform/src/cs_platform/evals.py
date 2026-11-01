@@ -110,6 +110,10 @@ class RunError(BaseModel):
     detail: str | None = None
 
 
+class EvalPersistenceError(RuntimeError):
+    """Capture failed; abort the measurement instead of retrying the target."""
+
+
 class RunOutput(BaseModel):
     """What a target observed when running one case."""
 
@@ -443,6 +447,8 @@ async def run_suite(
             started = time.perf_counter()
             try:
                 output = await target(case)
+            except EvalPersistenceError:
+                raise
             except BaseException as error:
                 if isinstance(error, Exception):
                     output = RunOutput(error=f"{type(error).__name__}: {error}")

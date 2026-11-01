@@ -40,6 +40,11 @@ The eval CLI uses `RunWriter` callbacks on case start, attempt start/outcome, re
 capture and completed result. Each journal append is flushed and fsynced before returning;
 the completed result is committed before its derived transcript is exported. Fatal errors
 cancel and await sibling tasks before the final incomplete marker is written.
+Capture persistence failures abort rather than retrying a successful target. A failed
+journal append poisons the writer, preserving a torn final fragment for offline recovery.
+Artifacts are owner-only; creating nested output directories fsyncs their parents.
+`RunWriter.finalize()` exports the prospective complete snapshot before committing the
+complete journal marker. An interruption during any required export therefore cannot pass.
 `load_run(path)` reads the frozen manifest and committed events, without loading evaluators.
 Its `RunRecord` exposes the `SuiteResult`, all actual episodes and retry attempts, status,
 never-started/interrupted case-run keys and the disk-derived gate failures.

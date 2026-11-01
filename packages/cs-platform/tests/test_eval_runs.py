@@ -1,11 +1,21 @@
 import json
+import os
+import stat
 from typing import TYPE_CHECKING
 
 import pytest
 
+from cs_platform import eval_runs
 from cs_platform.eval_reporting import RunMetadata
 from cs_platform.eval_runs import RunWriter, load_run, rebuild_report, validate_run_destinations
-from cs_platform.evals import CaseResult, EvalCase, EvalSuite, RunOutput, Thresholds
+from cs_platform.evals import (
+    CaseResult,
+    EvalCase,
+    EvalPersistenceError,
+    EvalSuite,
+    RunOutput,
+    Thresholds,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -131,3 +141,62 @@ def test_result_cannot_override_the_frozen_regression_gate(tmp_path: Path) -> No
     run.finish()
     with pytest.raises(ValueError, match="frozen regression gate"):
         rebuild_report(tmp_path)
+
+
+def test_partial_journal_failure_poisoning_preserves_committed_results(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run = writer(tmp_path / "results.jsonl")
+    complete(run)
+    journal = run.directory / "events.jsonl"
+    original_write = eval_runs._write
+
+    def partial(path: Path, text: str, *, append: bool = False) -> None:
+        if path == journal:
+            with path.open("ab") as stream:
+                stream.write(b'{"kind":')
+            raise OSError("partial append")
+        original_write(path, text, append=append)
+
+    monkeypatch.setattr(eval_runs, "_write", partial)
+    with pytest.raises(EvalPersistenceError):
+        run.start(run.manifest.cases[0], 1)
+    retained = journal.read_bytes()
+    monkeypatch.setattr(eval_runs, "_write", original_write)
+    with pytest.raises(EvalPersistenceError, match="previously failed"):
+        run.finish(error=OSError("write failed"))
+    assert journal.read_bytes() == retained
+    record = rebuild_report(tmp_path)
+    assert record.status == "incomplete"
+    assert len(record.result.cases) == 1
+    assert record.journal_warning
+    assert journal.read_bytes() == retained
+
+
+def test_private_artifacts_under_permissive_umask(tmp_path: Path) -> None:
+    previous = os.umask(0o022)
+    try:
+        run = writer(tmp_path / "nested" / "results.jsonl")
+        complete(run)
+        rebuild_report(run.directory)
+    finally:
+        os.umask(previous)
+    for path in (tmp_path / "nested").rglob("*"):
+        assert stat.S_IMODE(path.stat().st_mode) == (0o700 if path.is_dir() else 0o600)
+
+
+def test_new_nested_output_directories_sync_their_parents(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    observed: list[tuple[Path, set[str]]] = []
+    sync = eval_runs._sync_directory
+
+    def record(path: Path) -> None:
+        observed.append((path, {child.name for child in path.iterdir()}))
+        sync(path)
+
+    monkeypatch.setattr(eval_runs, "_sync_directory", record)
+    writer(tmp_path / "outer" / "inner" / "results.jsonl")
+    assert (tmp_path, {"outer"}) in observed
+    assert (tmp_path / "outer", {"inner"}) in observed
+    assert (tmp_path / "outer" / "inner", {"results.run"}) in observed
