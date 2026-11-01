@@ -13,6 +13,7 @@ The reusable agent harness. An agent is declared by a spec and built by the plat
 | `episode_io.py` | Explicitly source-separated local JSONL export/import, without accessing an episode store |
 | `hosting.py` | Bind each host-issued Responses ID to its exact episode, independently of input, timing or session |
 | `evals.py` | Eval harness: `EvalCase`, `EvalSuite` (cases, thresholds, evaluators), `run_suite()` with concurrency and retries, `SuiteResult` with metrics and gate failures |
+| `eval_runs.py` | Versioned durable run journal, `RunWriter`, `load_run()` / `read_run()` and offline `rebuild_report()`; summaries and gates derive from disk |
 | `evidence.py` | `Evidence`: the cited unit (source, ref, excerpt) agents put in their output and evaluators verify |
 | `telemetry.py` | `configure_telemetry()` for processes outside Foundry hosting: Azure Monitor export plus agent instrumentation |
 
@@ -31,6 +32,23 @@ episode_id = response.additional_properties["episode_id"]
 ```
 
 Capture is deterministic: the platform writes the episode, not the model. A failing episode store is logged and never fails the user's request.
+Graceful cancellation records the actual failed episode and interrupted tool call before
+propagating cancellation. A hard process stop or repeated cancellation may prevent this
+final store write; missing episodes are never reconstructed.
+
+The eval CLI uses `RunWriter` callbacks on case start, attempt start/outcome, real episode
+capture and completed result. Each journal append is flushed and fsynced before returning;
+the completed result is committed before its derived transcript is exported. Fatal errors
+cancel and await sibling tasks before the final incomplete marker is written.
+`load_run(path)` reads the frozen manifest and committed events, without loading evaluators.
+Its `RunRecord` exposes the `SuiteResult`, all actual episodes and retry attempts, status,
+never-started/interrupted case-run keys and the disk-derived gate failures.
+Local `RunOutput.tool_definitions` snapshots the entered agent's actual function/MCP schemas
+before execution, including raw discovered names. Failed attempts retain them. Legacy and
+hosted outputs whose schemas are unavailable leave this field `None`; no definitions are
+reconstructed from current tools.
+`rebuild_report(path)` regenerates derived exports and escaped HTML without changing the
+journal or executing a target. See [Q8's schema and acceptance](../../docs/iteration-4/q8.md).
 
 `Episode.skill` optionally records the bundled procedure's name and version independently
 of the agent version. It defaults to `None` for legacy records and agents without a

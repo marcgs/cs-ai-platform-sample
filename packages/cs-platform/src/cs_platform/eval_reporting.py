@@ -4,7 +4,7 @@ import hashlib
 import html
 import json
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import quote
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -27,6 +27,11 @@ class RunMetadata(BaseModel):
     target: str
     repeats: int = 1
     started_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    agent_version: str | None = None
+    skill_version: str | None = None
+    dataset_version: str | None = None
+    source: Literal["synthetic", "unknown"] = "unknown"
+    tool_definitions: list[dict[str, Any]] | None = None
 
 
 def artifact_paths(path: Path) -> tuple[Path, Path, Path, Path]:

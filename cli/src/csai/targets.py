@@ -12,9 +12,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from agent_framework import FunctionTool
 from azure.identity.aio import get_bearer_token_provider
 from openai import AsyncOpenAI
-from pydantic import BaseModel, TypeAdapter, ValidationError
+from pydantic import BaseModel, JsonValue, TypeAdapter, ValidationError
 
 from cs_platform.capture import EPISODE_ID_KEY
 from cs_platform.episodes import InMemoryEpisodeStore, ToolCall
@@ -68,6 +69,17 @@ def parse(output_type: type[BaseModel], text: str | None) -> BaseModel | None:
         return None
 
 
+def snapshot_tool_definitions(agent: Agent[Any]) -> list[dict[str, JsonValue]]:
+    """Snapshot actual entered-agent functions, keeping discovered MCP names unchanged."""
+    functions = [
+        tool for tool in agent.default_options.get("tools", []) if isinstance(tool, FunctionTool)
+    ]
+    functions.extend(function for tool in agent.mcp_tools for function in tool.functions)
+    return TypeAdapter(list[dict[str, JsonValue]]).validate_python(
+        [function.to_json_schema_spec() for function in functions]
+    )
+
+
 def local_target(
     entry: AgentEntry,
     settings: PlatformSettings,
@@ -79,20 +91,25 @@ def local_target(
 
     async def run(case: EvalCase) -> RunOutput:
         store = InMemoryEpisodeStore()
+        definitions: list[dict[str, JsonValue]] | None = None
         try:
             async with entry.create(settings, credential, store=store) as agent:
+                definitions = snapshot_tool_definitions(agent)
                 response = await agent.run(case.input)
-        except Exception as error:
+        except BaseException as error:
             episodes = await store.list(limit=1)
             episode = episodes[0] if episodes else None
             if episode is not None and on_episode is not None:
                 on_episode(episode)
+            if not isinstance(error, Exception):
+                raise
             return RunOutput(
                 error=f"{type(error).__name__}: {error}",
                 tool_trace=episode.tool_calls if episode else [],
                 tool_calls=[call.name for call in episode.tool_calls] if episode else [],
                 tool_trace_complete=episode is not None and not episode.truncated,
                 episode_id=episode.id if episode else None,
+                tool_definitions=definitions,
             )
         episode_id = response.additional_properties.get(EPISODE_ID_KEY)
         episode = await store.get(episode_id) if isinstance(episode_id, str) else None
@@ -117,6 +134,7 @@ def local_target(
                 RunError(kind="unparseable", code="invalid_output") if parsed is None else None
             ),
             episode_id=episode.id if episode else None,
+            tool_definitions=definitions,
         )
 
     return run

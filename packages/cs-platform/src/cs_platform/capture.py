@@ -124,7 +124,7 @@ class EpisodeCaptureAgentMiddleware(AgentMiddleware):
 
         try:
             await call_next()
-        except Exception as error:  # cancellation propagates without a store round-trip
+        except BaseException as error:
             await recorder.finish(None, error)
             raise
 
@@ -176,7 +176,7 @@ class EpisodeCaptureFunctionMiddleware(FunctionMiddleware):
         result: str | None = None
         try:
             await call_next()
-        except Exception as exc:
+        except BaseException as exc:
             error = f"{type(exc).__name__}: {exc}"
             raise
         else:

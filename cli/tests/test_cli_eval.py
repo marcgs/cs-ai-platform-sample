@@ -30,7 +30,7 @@ runner = CliRunner()
 def answering(correct: bool, *, knowledge: bool = True) -> Any:
     """A local_target replacement that answers every case right (or wrong) with real refs."""
 
-    def factory(*_: object) -> Target:
+    def factory(*_: object, **_kwargs: object) -> Target:
         async def run(case: EvalCase) -> RunOutput:
             mode = case.expected["failure_mode"] if correct else "FM-99"
             evidence = [Evidence(source="lookup_error_code", ref="EC-2101", excerpt="...")]
@@ -304,7 +304,7 @@ def test_report_only_selection_does_not_evaluate_or_claim_regression_gate(
         gate_case_ids=frozenset({"SC-001"}),
     )
 
-    def factory(*_: object) -> Target:
+    def factory(*_: object, **_kwargs: object) -> Target:
         async def run(case: EvalCase) -> RunOutput:
             return RunOutput(text="no")
 
@@ -449,7 +449,7 @@ def test_sparse_informational_mean_and_ci_are_not_zero_filled(
         (evaluate,),
     )
 
-    def factory(*_: object) -> Target:
+    def factory(*_: object, **_kwargs: object) -> Target:
         async def run(case: EvalCase) -> RunOutput:
             return RunOutput(text="answer")
 
