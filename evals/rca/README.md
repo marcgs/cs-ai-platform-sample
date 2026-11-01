@@ -18,6 +18,13 @@ filter; use repeated `--case` options to restrict execution to original18.
 
 ## Reviewed feedback cohort
 
+Seed-only checks use `load_suite(feedback_cases=<explicit absent path>)`, not
+the default package path. A reviewed default feedback file must remain additive:
+the original 50 seed cases and explicit original18 gate are unchanged.
+Result rows carry cohort labels. Console and JSON summaries expose separate
+`groups["cohort"]` means and `group_intervals["cohort"]` hierarchical 95% intervals;
+feedback scores and failures remain informational, never a replacement gate.
+
 `load_suite()` also reads `feedback_cases.jsonl` when present. This is a reviewed
 file, not generator output; manifest regeneration never rewrites it. Cases carry
 `cohort: feedback` and synthetic cluster/episode/review/fingerprint provenance.

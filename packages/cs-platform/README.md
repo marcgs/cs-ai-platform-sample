@@ -85,6 +85,14 @@ manifests. `FeedbackProvenance` records synthetic cluster, episode, review and t
 fingerprint origins, not additional causal truth. RCA loads these cases additively
 without changing its explicit original18 gate.
 
+New `CaseResult` rows carry `original`, `challenge` or `feedback` cohort labels.
+`SuiteResult.groups["cohort"]` reports separate means, and
+`group_intervals["cohort"]` reports hierarchical 95% intervals. Console and disk
+reports include both; only the unchanged explicit gate selects regression scores.
+Older journal rows without labels recover them from frozen manifest cohorts
+(or frozen case/gate metadata when that map is absent). Rebuild rejects explicit
+label conflicts and never changes journal scores or reconstructs missing episodes.
+
 `foundry_client()` disables the OpenAI SDK's broader automatic retries and retries only
 model 429s: at most four attempts and 120 seconds of total waiting per turn. Server
 `Retry-After` (seconds or HTTP date) and millisecond delays take precedence over exponential

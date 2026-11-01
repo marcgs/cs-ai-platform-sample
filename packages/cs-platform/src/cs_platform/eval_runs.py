@@ -18,6 +18,7 @@ from cs_platform.episodes import Episode
 from cs_platform.eval_reporting import RunMetadata, artifact_paths, validate_artifact_destinations
 from cs_platform.evals import (
     CaseResult,
+    Cohort,
     EvalCase,
     EvalPersistenceError,
     EvalSuite,
@@ -25,6 +26,7 @@ from cs_platform.evals import (
     SuiteResult,
     Thresholds,
     assign_splits,
+    case_cohort,
 )
 
 if TYPE_CHECKING:
@@ -49,7 +51,7 @@ class RunManifest(BaseModel):
     publication_coordination: Literal["shared-v1"] | None = None
     suite: str
     cases: tuple[EvalCase, ...]
-    cohorts: dict[str, str] = Field(default_factory=dict[str, str])
+    cohorts: dict[str, Cohort] = Field(default_factory=dict[str, Cohort])
     thresholds: Thresholds
     gate_case_ids: frozenset[str] | None
     metadata: RunMetadata
@@ -299,15 +301,6 @@ def _transcript(manifest: RunManifest, result: CaseResult) -> str:
     )
 
 
-def _cohort(suite: EvalSuite, case: EvalCase) -> str:
-    declared = case.model_dump().get("cohort")
-    if isinstance(declared, str):
-        return declared
-    return (
-        "original" if suite.gate_case_ids is None or case.id in suite.gate_case_ids else "challenge"
-    )
-
-
 class RunWriter:
     """Single-process append writer. Each event is flushed and fsynced before returning."""
 
@@ -330,7 +323,7 @@ class RunWriter:
             publication_coordination="shared-v1",
             suite=suite.name,
             cases=assign_splits(suite.cases),
-            cohorts={case.id: _cohort(suite, case) for case in suite.cases},
+            cohorts={case.id: case_cohort(suite, case) for case in suite.cases},
             thresholds=suite.thresholds,
             gate_case_ids=suite.gate_case_ids,
             metadata=metadata,
@@ -551,6 +544,25 @@ def load_run(results_dir: Path) -> RunRecord:
         for result in completed.values()
     ):
         raise ValueError("journal result conflicts with the frozen regression gate")
+    frozen_suite = EvalSuite(
+        name=manifest.suite,
+        cases=manifest.cases,
+        thresholds=manifest.thresholds,
+        evaluators=(),
+        gate_case_ids=manifest.gate_case_ids,
+    )
+    frozen_cases = {case.id: case for case in manifest.cases}
+    if not manifest.cohorts.keys() <= frozen_cases.keys():
+        raise ValueError("cohort metadata contains cases outside the frozen selection")
+    for key, case_result in completed.items():
+        case = frozen_cases[key.case_id]
+        cohort = manifest.cohorts.get(case.id, case_cohort(frozen_suite, case))
+        if (case.cohort is not None and case.cohort != cohort) or (
+            case_result.cohort is not None and case_result.cohort != cohort
+        ):
+            raise ValueError("journal result conflicts with the frozen cohort")
+        if case_result.cohort is None:
+            completed[key] = case_result.model_copy(update={"cohort": cohort})
     result = SuiteResult(
         suite=manifest.suite,
         cases=[completed[key] for key in expected if key in completed],
@@ -622,6 +634,7 @@ def _export_record(directory: Path, record: RunRecord, *, stage_reports: bool = 
         "gate_metrics": result.gate_metrics,
         "gate_intervals": result.gate_intervals,
         "groups": result.groups,
+        "group_intervals": result.group_intervals,
         "failures": record.failures,
         "warnings": result.warnings(record.manifest.thresholds)
         + ([record.journal_warning] if record.journal_warning else []),

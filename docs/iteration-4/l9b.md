@@ -228,3 +228,33 @@ The approved live gate remains pre-review evidence from the uncommitted
 integration snapshot. Additional model traffic is not authorized; a fresh
 post-fix live gate is skipped and remains outstanding. The parent owns restacking
 these fixes with the parallel Q8/Q9 fixes and combined acceptance validation.
+### Round-two compatibility and cohort review
+
+- **4436545773**, dependent completion fix: candidates preserve actual status,
+  creation and completion timestamps. Promotion rejects running or unfinished
+  captures before reconstructing replay input, and forwards the original
+  lifecycle fields. Completed failed captures remain supported. The narrow L8
+  boundary model/pipeline/test change is included in this L9B fix, so native
+  item commits remain self-contained; the native L8 branch is unchanged.
+  Classifier behavior, prompts and fixed clustering vocabulary are unchanged.
+- **4436549683**: seed-only manifest, gate and CLI baselines use an explicit
+  absent feedback path. A real feedback file in an isolated package verifies
+  default additive loading, exactly 50 original cases and the same 18 gate IDs.
+  Existing duplicate, split, provenance and leakage assertions are retained.
+- **4436549700**: runtime results propagate original/challenge/feedback labels.
+  Console, legacy artifacts and offline durable rebuild report cohort means
+  and hierarchical 95% intervals. Legacy journal rows recover absent labels
+  from frozen cohort metadata, falling back to frozen case/gate metadata only
+  when absent. Explicit label conflicts are rejected; journal bytes, scores,
+  outputs and missing episodes are not rewritten or fabricated. Original18
+  gate calculations are unchanged.
+
+Focused reporting, lifecycle, loader and CLI regressions pass; the full native
+offline suite passes **537 tests**, with 32 existing SDK warnings. Repository
+Ruff lint/format (**147 files**) and strict Pyright pass. No dependency, SDK range,
+original/Q3 manifest, tool golden or frozen pilot artifact changed.
+
+The approved live evaluation was the pre-review uncommitted integration snapshot.
+Additional model traffic is unapproved: a fresh post-fix live gate is skipped and
+outstanding. Parent restacking must combine these cohort changes with the
+parallel Q8 completion-certificate/load changes before rereview and acceptance.

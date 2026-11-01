@@ -114,7 +114,11 @@ def _incident_categories(
 
 
 def _capture(candidate: Candidate) -> tuple[list[ToolCall], list[str], str | None]:
-    if candidate.capture_truncated:
+    if (
+        candidate.capture_truncated
+        or candidate.capture_status == "running"
+        or candidate.capture_completed_at is None
+    ):
         return [], [], "K4: Incomplete episode capture"
     if any(
         set(raw) - ToolCall.model_fields.keys()
@@ -134,7 +138,9 @@ def _capture(candidate: Candidate) -> tuple[list[ToolCall], list[str], str | Non
         agent_version="feedback-report",
         input=candidate.input,
         tool_calls=calls,
-        status="succeeded",
+        status=candidate.capture_status,
+        created_at=candidate.capture_created_at,
+        completed_at=candidate.capture_completed_at,
     )
     replay = replay_episode(episode)
     if not replay.replayable:

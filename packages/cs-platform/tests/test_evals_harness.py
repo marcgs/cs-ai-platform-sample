@@ -50,6 +50,40 @@ async def test_scores_every_case_and_averages_metrics() -> None:
     assert result.failures(Thresholds(minimums={"exact": 0.75})) == ["exact: 0.50 < 0.75"]
 
 
+async def test_cohort_metrics_and_intervals_do_not_expand_the_original_gate() -> None:
+    original = EvalCase(id="original", input="question", expected={"answer": "yes"})
+    challenge = original.model_copy(update={"id": "challenge"})
+    feedback = original.model_copy(
+        update={"id": "feedback", "expected": {"answer": "no"}, "cohort": "feedback"}
+    )
+    selected = EvalSuite(
+        "cohorts",
+        (original, challenge, feedback),
+        Thresholds(minimums={"exact": 1}),
+        (exact_match,),
+        gate_case_ids=frozenset({original.id}),
+    )
+
+    async def target(_: EvalCase) -> RunOutput:
+        return RunOutput(text="yes")
+
+    result = await run_suite(selected, target)
+    assert [case.cohort for case in result.cases] == ["original", "challenge", "feedback"]
+    assert result.groups["cohort"] == {
+        "original": {"exact": 1},
+        "challenge": {"exact": 1},
+        "feedback": {"exact": 0},
+    }
+    assert result.group_intervals["cohort"] == {
+        "original": {"exact": (1, 1)},
+        "challenge": {"exact": (1, 1)},
+        "feedback": {"exact": (0, 0)},
+    }
+    assert result.gate_metrics == {"exact": 1}
+    assert result.failures(selected.thresholds) == []
+    assert result.metrics["exact"] == pytest.approx(2 / 3)
+
+
 async def test_target_errors_are_recorded_and_scored() -> None:
     async def target(case: EvalCase) -> RunOutput:
         if case.id == "C-1":

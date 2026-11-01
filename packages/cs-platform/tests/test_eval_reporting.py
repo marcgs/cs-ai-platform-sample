@@ -19,7 +19,43 @@ from cs_platform.evals import (
     RunOutput,
     SuiteResult,
     Thresholds,
+    run_suite,
 )
+
+
+async def test_legacy_artifacts_include_feedback_cohort_scores_and_intervals(
+    tmp_path: Path,
+) -> None:
+    original = EvalCase(id="original", input="question", expected={})
+    feedback = original.model_copy(update={"id": "feedback", "cohort": "feedback"})
+    suite = EvalSuite(
+        "cohorts",
+        (original, feedback),
+        Thresholds(minimums={"quality": 1}),
+        (lambda case, _: {"quality": float(case.id == "original")},),
+        gate_case_ids=frozenset({"original"}),
+    )
+
+    async def target(_: EvalCase) -> RunOutput:
+        return RunOutput(text="answer")
+
+    result = await run_suite(suite, target)
+    path = tmp_path / "cohorts.jsonl"
+    write_artifacts(
+        suite,
+        result,
+        path,
+        RunMetadata(agent_revision="a", harness_revision="h", model="scripted", target="local"),
+    )
+    summary = json.loads(path.with_suffix(".summary.json").read_text())
+    assert summary["groups"]["cohort"]["feedback"] == {"quality": 0}
+    assert summary["group_intervals"]["cohort"]["feedback"] == {"quality": [0, 0]}
+    assert summary["gate_metrics"] == {"quality": 1}
+    assert summary["failures"] == []
+    assert [json.loads(line)["cohort"] for line in path.read_text().splitlines()] == [
+        "original",
+        "feedback",
+    ]
 
 
 @pytest.mark.parametrize(

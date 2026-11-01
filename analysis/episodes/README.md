@@ -115,8 +115,10 @@ caches/preflights are invalidated; obtain a fresh estimate before any approved r
   rationales, representative IDs and **every member's reproducing eval case**.
   New v2 reports retain each candidate's `review_summary`, `source_review_ids`
   and cleaned `source_reviews`, including actual cause claims. These replay
-  candidates retain calls/notes and required `capture_truncated` metadata, so
-  incomplete episodes cannot become replay inputs by losing their flags.
+  candidates retain calls/notes and required `capture_truncated`, `capture_status`,
+  `capture_created_at` and `capture_completed_at` evidence. Missing completion
+  timestamps and running captures remain visible but cannot become replay inputs.
+  Old reports without lifecycle evidence must be regenerated, not silently upgraded.
   They need expert-confirmed expected
   outcomes before promotion into an eval suite. No proposal is applied.
 

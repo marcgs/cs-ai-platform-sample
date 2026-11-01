@@ -365,6 +365,58 @@ def test_result_cannot_override_the_frozen_regression_gate(tmp_path: Path) -> No
         rebuild_report(tmp_path)
 
 
+@pytest.mark.parametrize("metadata", ["original", "challenge", "feedback", None])
+def test_legacy_cohort_is_recovered_without_rewriting_evidence(
+    tmp_path: Path, metadata: str | None
+) -> None:
+    run = writer(tmp_path / "results.jsonl")
+    complete(run)
+    manifest_path = run.directory / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    if metadata is None:
+        manifest.pop("cohorts")
+    else:
+        manifest["cohorts"] = {run.manifest.cases[0].id: metadata}
+    manifest_path.write_text(json.dumps(manifest))
+    journal = (run.directory / "events.jsonl").read_bytes()
+    record = rebuild_report(run.directory)
+    cohort = metadata or "original"
+    case = record.result.cases[0]
+    assert case.cohort == cohort
+    assert case.scores == {"exact": 1}
+    assert case.output.episode_id == "unavailable"
+    assert record.episodes == []
+    assert record.result.gate_metrics == {"exact": 1}
+    assert record.status == "complete"
+    summary = json.loads((tmp_path / "results.summary.json").read_text())
+    assert summary["groups"]["cohort"] == {cohort: {"exact": 1}}
+    assert summary["group_intervals"]["cohort"] == {cohort: {"exact": [1, 1]}}
+    assert (run.directory / "events.jsonl").read_bytes() == journal
+
+
+def test_result_cannot_override_the_frozen_cohort(tmp_path: Path) -> None:
+    run = writer(tmp_path / "results.jsonl")
+    case = run.manifest.cases[0]
+    run.start(case, 1)
+    run.completed(
+        CaseResult(case_id=case.id, scores={"exact": 1}, output=RunOutput(), cohort="feedback")
+    )
+    run.finish()
+    with pytest.raises(ValueError, match="frozen cohort"):
+        rebuild_report(run.directory)
+
+
+def test_frozen_cohort_must_agree_with_explicit_case_metadata(tmp_path: Path) -> None:
+    run = writer(tmp_path / "results.jsonl")
+    complete(run)
+    path = run.directory / "manifest.json"
+    manifest = json.loads(path.read_text())
+    manifest["cases"][0]["cohort"] = "feedback"
+    path.write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="frozen cohort"):
+        load_run(run.directory)
+
+
 def test_partial_journal_failure_poisoning_preserves_committed_results(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

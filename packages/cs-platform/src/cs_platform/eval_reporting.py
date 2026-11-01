@@ -92,6 +92,7 @@ def write_artifacts(
         "gate_metrics": result.gate_metrics,
         "gate_intervals": result.gate_intervals,
         "groups": result.groups,
+        "group_intervals": result.group_intervals,
         "failures": result.failures(suite.thresholds),
         "warnings": result.warnings(suite.thresholds),
         "bootstrap": {

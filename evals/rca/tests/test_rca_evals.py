@@ -1,3 +1,5 @@
+from typing import TYPE_CHECKING
+
 import pytest
 
 from cs_platform.evals import CaseResult, EvalCase, RunOutput, SuiteResult, run_suite, score
@@ -20,6 +22,9 @@ from rca_evals.evaluators import (
     tool_coverage,
 )
 from rca_evals.manifest import cases_from_seed, render
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 CASE = EvalCase(
     id="SC-001",
@@ -47,8 +52,8 @@ def output(*hypotheses: Hypothesis, machine_id: str = "M-0001") -> RunOutput:
     return RunOutput(value=report)
 
 
-def test_committed_manifest_matches_the_seed_scenarios() -> None:
-    suite = load_suite()
+def test_committed_manifest_matches_the_seed_scenarios(tmp_path: Path) -> None:
+    suite = load_suite(feedback_cases=tmp_path / "absent-feedback.jsonl")
     assert render(list(suite.cases)) == render(cases_from_seed(load_seed(), previous=suite.cases))
     assert len(suite.cases) == len(load_seed().scenarios)
 
@@ -431,8 +436,10 @@ def test_nonapplicable_metrics_are_sparse_and_calibration_is_brier_loss() -> Non
     assert calibration(clean, observed)["calibration"] == pytest.approx(0.81)
 
 
-async def test_new_categories_are_report_only_and_do_not_weaken_original_gate() -> None:
-    suite = load_suite()
+async def test_new_categories_are_report_only_and_do_not_weaken_original_gate(
+    tmp_path: Path,
+) -> None:
+    suite = load_suite(feedback_cases=tmp_path / "absent-feedback.jsonl")
 
     async def target(case: EvalCase) -> RunOutput:
         if not case.truth or case.truth.category != "clean":
