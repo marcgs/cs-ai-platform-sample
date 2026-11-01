@@ -3,7 +3,6 @@ import json
 import os
 import stat
 from dataclasses import replace
-from functools import partial
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -13,7 +12,7 @@ from typer.testing import CliRunner
 from cs_platform import eval_runs
 from cs_platform.episodes import InMemoryEpisodeStore
 from cs_platform.eval_runs import CaseRunKey, load_run
-from cs_platform.evals import EvalCase, EvalSuite, RunOutput, Thresholds, run_suite
+from cs_platform.evals import EvalCase, EvalSuite, RunOutput, Thresholds
 from cs_platform.factory import build_agent
 from cs_platform.spec import AgentSpec
 from cs_platform.testing import ScriptedChatClient, call, text
@@ -66,11 +65,123 @@ def invoke(path: Path, *arguments: str) -> Any:
             "rca",
             "--concurrency",
             "1",
+            "--backoff-s",
+            "0",
             "--output",
             str(path),
             *arguments,
         ],
     )
+
+
+def test_episode_destination_is_reserved_before_any_target_calls(
+    scripted: list[int], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    destination = tmp_path / "episodes.jsonl"
+    original = os.open
+
+    def refuse(path, flags, mode=0o777, **kwargs):
+        if path == destination:
+            raise PermissionError("episode reservation denied")
+        return original(path, flags, mode, **kwargs)
+
+    monkeypatch.setattr(os, "open", refuse)
+    assert invoke(tmp_path / "results.jsonl", "--episodes-output", str(destination)).exit_code != 0
+    assert scripted == [0]
+
+
+def test_retry_manifest_and_real_loop_use_same_nondefaults(
+    scripted: list[int], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def create(*_: object, **kwargs: Any) -> Any:
+        scripted[0] += 1
+        return build_agent(
+            AgentSpec(name="test", version="1", description="test", instructions="test"),
+            client=ScriptedChatClient(
+                [] if scripted[0] <= 2 else [[text(ANSWER.model_dump_json())]]
+            ),
+            store=kwargs["store"],
+            response_format=RcaReport,
+        )
+
+    monkeypatch.setitem(targets.AGENTS, "rca", replace(targets.AGENTS["rca"], create=create))
+    output = tmp_path / "results.jsonl"
+    result = invoke(output, "--retries", "1", "--backoff-s", "0.01")
+    assert result.exit_code == 1, result.output
+    record = load_run(output)
+    manifest = record.manifest
+    assert manifest.retries == 1
+    assert manifest.backoff_s == 0.01
+    assert scripted == [4]
+    assert record.result.cases[0].output.attempts == 2
+
+
+def test_abort_awaits_multiple_active_siblings_and_keeps_repeat_identity(
+    scripted: list[int], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    active: set[str] = set()
+    cleaned: set[str] = set()
+    ready = asyncio.Event()
+    labels = iter(("A-1", "A-2", "B-1"))
+
+    @tool
+    async def interrupt(label: str) -> str:
+        """Exercise synthetic concurrent cancellation."""
+        active.add(label)
+        if len(active) == 3:
+            ready.set()
+        try:
+            if label == "A-1":
+                await ready.wait()
+                raise asyncio.CancelledError
+            await asyncio.Future()
+            return "unreachable"
+        finally:
+            await asyncio.sleep(0)
+            cleaned.add(label)
+
+    def create(*_: object, **kwargs: Any) -> Any:
+        label = next(labels)
+        return build_agent(
+            AgentSpec(name="test", version="1", description="test", instructions="test"),
+            client=ScriptedChatClient([[call("interrupt", label=label)]]),
+            store=kwargs["store"],
+            tools=[interrupt],
+            response_format=RcaReport,
+        )
+
+    original = cli.evaluate
+
+    async def bounded(*args: Any, **kwargs: Any) -> Any:
+        return await asyncio.wait_for(original(*args, **kwargs), timeout=5)
+
+    monkeypatch.setattr(cli, "evaluate", bounded)
+    monkeypatch.setitem(targets.AGENTS, "rca", replace(targets.AGENTS["rca"], create=create))
+    result = invoke(tmp_path / "results.jsonl", "--concurrency", "3", "--repeats", "2")
+    assert result.exit_code == 1, result.output
+    assert active == cleaned == {"A-1", "A-2", "B-1"}
+    record = load_run(tmp_path)
+    assert record.status == "incomplete"
+    assert {(key.case_id, key.repeat) for key in record.interrupted} == {
+        ("A", 1),
+        ("A", 2),
+        ("B", 1),
+    }
+    assert {(key.case_id, key.repeat) for key in record.never_started} == {
+        ("B", 2),
+        ("C", 1),
+        ("C", 2),
+    }
+    captures = [event for event in record.events if isinstance(event, eval_runs.EpisodeCaptured)]
+    assert {
+        (event.key.case_id, event.key.repeat, event.attempt) for event in captures if event.key
+    } == {
+        ("A", 1, 1),
+        ("A", 2, 1),
+        ("B", 1, 1),
+    }
+    assert len(record.attempts) == len(record.episodes) == 3
+    assert all(episode.status == "failed" for episode in record.episodes)
 
 
 @pytest.mark.parametrize("suffix", [".summary.json", ".html"])
@@ -146,8 +257,8 @@ def test_requested_episode_export_fsync_failure_prevents_completion(
     monkeypatch.setattr(os, "fsync", fail)
     result = invoke(output, "--episodes-output", str(destination))
     assert result.exit_code == 1
-    assert scripted == [3]
-    assert load_run(output).status == "incomplete"
+    assert scripted == [0]
+    assert not (eval_runs.run_directory(output) / "manifest.json").exists()
     assert not (eval_runs.run_directory(output) / "completion.json").exists()
 
 
@@ -338,7 +449,6 @@ def test_failed_retry_attempts_are_retained_without_changing_gate(
         )
 
     monkeypatch.setitem(targets.AGENTS, "rca", replace(targets.AGENTS["rca"], create=create))
-    monkeypatch.setattr(cli, "run_suite", partial(run_suite, backoff_s=0))
     result = invoke(tmp_path / "results.jsonl", "--case", "A")
     assert result.exit_code == 0, result.output
     record = load_run(tmp_path)
@@ -450,8 +560,7 @@ def test_actual_tool_definitions_are_pinned_in_successful_and_failed_case_record
         )
 
     monkeypatch.setitem(targets.AGENTS, "rca", replace(targets.AGENTS["rca"], create=create))
-    monkeypatch.setattr(cli, "run_suite", partial(run_suite, retries=0))
-    result = invoke(tmp_path / "results.jsonl", "--case", "A")
+    result = invoke(tmp_path / "results.jsonl", "--case", "A", "--retries", "0")
     assert result.exit_code == (1 if failed else 0), result.output
     before = load_run(tmp_path)
     output = before.result.cases[0].output

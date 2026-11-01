@@ -1,11 +1,14 @@
+import html
 import json
 import os
 import stat
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
 import pytest
 
 from cs_platform import eval_runs
+from cs_platform.episodes import Episode
 from cs_platform.eval_reporting import RunMetadata
 from cs_platform.eval_runs import RunWriter, load_run, rebuild_report, validate_run_destinations
 from cs_platform.evals import (
@@ -46,6 +49,55 @@ def complete(run: RunWriter, *, finish: bool = True) -> None:
         run.finish()
 
 
+def test_results_append_kernel_rejects_symlink_swap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run = writer(tmp_path / "results.jsonl")
+    retained = tmp_path / "retained"
+    retained.write_text("untouched")
+    original = os.open
+
+    def race(path, flags, mode=0o777, **kwargs):
+        if path == run.output and flags & os.O_APPEND:
+            path.unlink()
+            path.symlink_to(retained)
+        return original(path, flags, mode, **kwargs)
+
+    run.start(run.manifest.cases[0], 1)
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "open", race)
+        with pytest.raises(OSError, match="symbolic"):
+            run.completed(
+                CaseResult(case_id=run.manifest.cases[0].id, scores={}, output=RunOutput())
+            )
+    run.finish(error=OSError())
+    assert retained.read_text() == "untouched"
+
+
+def test_rebuild_cannot_replace_newer_exports_from_an_active_writer(
+    tmp_path: Path,
+) -> None:
+    run = writer(tmp_path / "results.jsonl")
+    case = run.manifest.cases[0]
+    run.start(case, 1)
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        pending = executor.submit(rebuild_report, run.directory)
+        with pytest.raises(OSError, match="active"):
+            pending.result(timeout=2)
+        run.episode(Episode(agent="test", agent_version="1", input=case.input))
+        run.completed(
+            CaseResult(case_id=case.id, scores={"exact": 1}, output=RunOutput(text="answer"))
+        )
+        run.finalize()
+    record = load_run(run.directory)
+    assert record.status == "complete"
+    assert len(run.output.read_text().splitlines()) == len(record.result.cases) == 1
+    assert len((run.directory / "episodes.jsonl").read_text().splitlines()) == 1
+    assert json.loads((tmp_path / "results.summary.json").read_text())["status"] == "complete"
+    assert '"status": "complete"' in html.unescape((tmp_path / "results.html").read_text())
+    assert rebuild_report(run.directory) == record
+
+
 @pytest.mark.parametrize("suffix", [".summary.json", ".html"])
 def test_reports_are_reserved_exclusively_before_cases(tmp_path: Path, suffix: str) -> None:
     run = writer(tmp_path / "results.jsonl")
@@ -84,7 +136,7 @@ def test_precommit_visible_reports_never_claim_completion(
         summary = json.loads((tmp_path / "results.summary.json").read_text())
         assert summary["status"] == "incomplete"
         assert summary["failures"]
-        assert '"status": "complete"' not in (tmp_path / "results.html").read_text()
+        assert '"status": "complete"' not in html.unescape((tmp_path / "results.html").read_text())
         raise KeyboardInterrupt
 
     monkeypatch.setattr(run, "finish", interrupt)
@@ -160,7 +212,7 @@ def test_hard_stop_after_complete_line_before_commit_remains_incomplete(
             run.finalize()
     assert load_run(run.directory).status == "incomplete"
     assert json.loads((tmp_path / "results.summary.json").read_text())["status"] == "incomplete"
-    assert '"status": "complete"' not in (tmp_path / "results.html").read_text()
+    assert '"status": "complete"' not in html.unescape((tmp_path / "results.html").read_text())
 
 
 def test_legacy_completion_without_certificate_is_still_readable(tmp_path: Path) -> None:
@@ -238,6 +290,7 @@ def test_nonfinal_corruption_is_not_silently_discarded(tmp_path: Path) -> None:
 
 def test_manifest_cannot_redirect_exports_outside_its_directory(tmp_path: Path) -> None:
     run = writer(tmp_path / "results.jsonl")
+    run.close()
     manifest_path = run.directory / "manifest.json"
     manifest = json.loads(manifest_path.read_text())
     manifest["result_filename"] = "../retained.jsonl"
