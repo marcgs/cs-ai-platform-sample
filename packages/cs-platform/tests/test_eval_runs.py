@@ -373,6 +373,8 @@ def test_legacy_cohort_is_recovered_without_rewriting_evidence(
     complete(run)
     manifest_path = run.directory / "manifest.json"
     manifest = json.loads(manifest_path.read_text())
+    manifest.pop("completion_protocol")
+    (run.directory / "completion.json").unlink()
     if metadata is None:
         manifest.pop("cohorts")
     else:
