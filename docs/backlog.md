@@ -40,6 +40,7 @@ Everything else goes under [Later](#later) as one line, or is left out. Items re
 | Q7 | **Knowledge-citation reliability** | The pinned iteration-3 baseline cites historical knowledge in only 24 of 54 runs, below the unchanged 0.70 gate despite correct diagnoses; investigate retrieval versus citation failures without forcing irrelevant citations. | | M | |
 | Q8 | **Durable in-progress eval capture** | A fatal interruption can discard completed results and episodes before the CLI's final export; checkpoint actual records without turning cancellation or recovery into quality-seeking resampling. | | M | it4 |
 | Q9 | **Eval runs published in Foundry** | Baselines and replays should be visible and comparable per agent version where the agent lives, not only in a terminal. | Foundry evaluations, capability hosts, custom evaluators | M | it4 |
+| Q10 | **Sparse-score parity in Foundry** | The code-evaluator contract has no documented not-applicable result, so local sparse metrics and plumbing exclusions cannot be mirrored as unconditional per-row grades. | Foundry custom evaluators | S | |
 
 Notes:
 
@@ -54,6 +55,8 @@ Notes:
 - **Q7, separate observation:** the later Q3 control scores 49/54 on knowledge use. It neither replaces the failed Q2 run nor proves consistent citation reliability or a causal L1 improvement.
 - **Q8:** the first isolated L1 measurement was cancelled during MCP tool discovery after 25 completed case-runs. Only rounded console observations survived; no complete result or episode export was written. Private recovery drivers journal actual records immediately, but the public CLI still exports after the suite. Preserve genuine cancellation and failed attempts; do not reconstruct missing episodes from scores.
 - **Q9:** `csai eval --publish` exists since iteration 1 and fails here. Checked 2026-10-30 against Learn and the deployed environment (read-only): a network-injected project needs a capability host at both the account and the project. The account has one (network injection creates it); the project has none and no storage connection. A project capability host of kind `Agents` without connections can be added to an existing project once the account has one (foundry-samples template 15a, `add-project-capability-host.bicep`), so the "only at creation" constraint in AGENTS.md and ADR 0004 looks outdated for this case. The project identity already has Foundry User on the account. Capability hosts can't be updated, only deleted and recreated; deleting one orphans the agent state stored through it. Code-based custom evaluators (preview) run a `grade()` function in a sandbox without network access. Not yet verified: whether a run completes without a storage connection, and whether the host changes anything for the running hosted agent.
+- **Q9, implementation:** durable-record publishing and the project-host declaration are in [#21](https://github.com/marcgs/cs-ai-platform-sample/pull/21), but deployment and live publication are not accepted. With and without the new host, subscription previews have identical modification payloads for 44 resources and five unsupported resources each; the host is the only create. The existing modifications still need review before provisioning. See [Q9 evidence](iteration-4/q9.md).
+- **Q10:** the user chose one run per measurement, retaining applicable sparse scores in rows and explicitly blocking parity acceptance. Only uniformly applicable metrics are mirrored; plumbing-bearing runs do not mirror quality aggregates. A metric-schema change needs a reviewed migration of the suite's single Foundry evaluation. Do not invent missing scores or change local gates.
 
 ## L. Governed learning loop
 
@@ -139,12 +142,14 @@ Notes:
 | S4 | **Fleet view and kill switch** | Someone has to see every agent, its cost and errors, and be able to stop one fast. | Foundry Control Plane, Entra Agent ID | M | |
 | S5 | **Canary diagnosis and alerts** | Failed runs, store outages and rate limiting should page someone. | Foundry monitoring, Azure Monitor alerts | S | |
 | S6 | **SDK dependency compatibility** | A fresh dependency resolution can break the real MCP session even when the baseline local resolution passes; verify compatible SDK ranges without committing a lock file. | Agent Framework, MCP | S | |
+| S7 | **Reproducible offline packaging gate** | A freshly recreated workspace environment lacks `hatchling`, so the offline skill-packaging test fails until its build backend is installed separately. | uv, Hatchling | S | |
 
 Notes:
 
 - **S2:** test with Q3's injection cases, starting in annotate mode.
 - **S6:** found during iteration-3 validation: `agent-framework-core` 1.23.0 with `mcp` 1.30.0 fails both parameterizations of `test_real_mcp_session_propagates_episode_context_in_metadata` because `ClientSession.protocol_version` is absent. Framework core 1.22.0 with MCP 1.30.0 passes. No compatibility constraint was changed as part of Q2.
 - **S6, live observation:** the isolated L1 attempt also encountered cancellation inside `FoundryToolbox.connect` / `session.list_tools` with core 1.22.0 and MCP 1.30.0. Its origin is unproven; the traceback does not distinguish an SDK lifecycle defect from a transient fault.
+- **S7:** integration review passed 496 tests but failed the skill-packaging test with `ModuleNotFoundError: No module named 'hatchling'` after uv recreated the environment. Installing the missing backend locally with `uv pip install hatchling` made all 497 tests pass. No dependency manifest was changed; make the offline test's build requirements reproducible separately.
 
 ## Later
 
