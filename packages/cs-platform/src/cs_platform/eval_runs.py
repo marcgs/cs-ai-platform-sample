@@ -4,6 +4,7 @@ import hashlib
 import html
 import json
 import os
+from contextlib import suppress
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from pathlib import Path
@@ -40,6 +41,7 @@ class RunManifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: Literal[1] = 1
+    completion_protocol: Literal["certificate-v1"] | None = None
     suite: str
     cases: tuple[EvalCase, ...]
     cohorts: dict[str, str] = Field(default_factory=dict[str, str])
@@ -204,6 +206,22 @@ def _mkdir(path: Path, *, parents: bool = False) -> None:
         _sync_directory(path.parent)
 
 
+def write_private_artifact(path: Path, text: str) -> None:
+    """Create an exclusive owner-only export and durably sync its new directory entries."""
+    _mkdir(path.parent, parents=True)
+    _write(path, text)
+
+
+def _completion_certificate(directory: Path) -> str:
+    return json.dumps(
+        {
+            name: hashlib.sha256((directory / name).read_bytes()).hexdigest()
+            for name in ("manifest.json", "events.jsonl")
+        },
+        sort_keys=True,
+    )
+
+
 def _transcript_filename(result: CaseResult) -> str:
     identity = hashlib.sha256(result.case_id.encode()).hexdigest()[:16]
     return f"{identity}-{result.repeat}.json"
@@ -238,6 +256,7 @@ class RunWriter:
         self.output = output
         self.directory = run_directory(output)
         self.manifest = RunManifest(
+            completion_protocol="certificate-v1",
             suite=suite.name,
             cases=assign_splits(suite.cases),
             cohorts={case.id: _cohort(suite, case) for case in suite.cases},
@@ -249,12 +268,17 @@ class RunWriter:
         )
         self._current = ContextVar[tuple[CaseRunKey, int] | None]("eval_attempt", default=None)
         self._journal_failed = False
+        self.committed = False
         _mkdir(output.parent, parents=True)
         _mkdir(self.directory)
         _mkdir(artifact_paths(output)[3])
-        _write(self.directory / "manifest.json", self.manifest.model_dump_json(indent=2) + "\n")
-        for path in (self.directory / "events.jsonl", self.directory / "episodes.jsonl", output):
+        for path in (
+            self.directory / "events.jsonl",
+            self.directory / "episodes.jsonl",
+            *artifact_paths(output)[:3],
+        ):
             _write(path, "")
+        _write(self.directory / "manifest.json", self.manifest.model_dump_json(indent=2) + "\n")
 
     def append(self, event: RunEvent) -> None:
         if self._journal_failed:
@@ -307,18 +331,50 @@ class RunWriter:
                 error=type(error).__name__ if error is not None else None,
             )
         )
+        if error is None:
+            certificate = self.directory / "completion.json"
+            try:
+                _replace(certificate, _completion_certificate(self.directory))
+            except BaseException as commit_error:
+                self._journal_failed = True
+                # A failed rename-directory fsync must not leave a usable certificate.
+                certificate.unlink(missing_ok=True)
+                with suppress(OSError):
+                    _sync_directory(self.directory)
+                if isinstance(commit_error, Exception):
+                    raise EvalPersistenceError(
+                        "Could not commit eval completion."
+                    ) from commit_error
+                raise
+            self.committed = True
 
     def finalize(self) -> RunRecord:
-        """Export the prospective complete snapshot before committing its final marker."""
+        """Prepare durable reports, commit completion, then expose passing reports."""
         record = load_run(self.directory)
         if record.never_started or record.interrupted:
             raise ValueError("Cannot finalize missing case-runs.")
         if self._journal_failed or record.journal_warning:
             raise EvalPersistenceError("Cannot finalize a failed journal.")
-        record.status = "complete"
-        record.failures = record.result.failures(record.manifest.thresholds)
         _export_record(self.directory, record)
+        prospective = record.model_copy(
+            update={
+                "status": "complete",
+                "failures": record.result.failures(record.manifest.thresholds),
+            }
+        )
+        _export_record(self.directory, prospective, stage_reports=True)
         self.finish()
+        for source, destination in zip(
+            (
+                self.directory / ".summary.complete.pending",
+                self.directory / ".html.complete.pending",
+            ),
+            artifact_paths(self.output)[1:3],
+            strict=True,
+        ):
+            source.replace(destination)
+            _sync_directory(destination.parent)
+            _sync_directory(self.directory)
         return load_run(self.directory)
 
 
@@ -388,6 +444,11 @@ def load_run(results_dir: Path) -> RunRecord:
         and events[-1].status == "complete"
         and warning is None
     )
+    if complete and manifest.completion_protocol is not None:
+        certificate = directory / "completion.json"
+        complete = certificate.is_file() and certificate.read_text(
+            "utf-8"
+        ) == _completion_certificate(directory)
     failures = result.failures(manifest.thresholds)
     if not complete:
         failures.insert(0, "Run incomplete; the regression gate cannot pass.")
@@ -413,9 +474,12 @@ def rebuild_report(results_dir: Path) -> RunRecord:
     return _export_record(directory, record)
 
 
-def _export_record(directory: Path, record: RunRecord) -> RunRecord:
+def _export_record(directory: Path, record: RunRecord, *, stage_reports: bool = False) -> RunRecord:
     output = directory.parent / record.manifest.result_filename
     _, summary_path, html_path, transcripts = artifact_paths(output)
+    if stage_reports:
+        summary_path = directory / ".summary.complete.pending"
+        html_path = directory / ".html.complete.pending"
     if transcripts.is_symlink():
         raise ValueError(f"refusing symlink artifact destination: {transcripts}")
     _mkdir(transcripts, parents=True)

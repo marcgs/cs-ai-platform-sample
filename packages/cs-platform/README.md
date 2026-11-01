@@ -43,8 +43,12 @@ cancel and await sibling tasks before the final incomplete marker is written.
 Capture persistence failures abort rather than retrying a successful target. A failed
 journal append poisons the writer, preserving a torn final fragment for offline recovery.
 Artifacts are owner-only; creating nested output directories fsyncs their parents.
-`RunWriter.finalize()` exports the prospective complete snapshot before committing the
-complete journal marker. An interruption during any required export therefore cannot pass.
+New journals are created before the manifest is published, and report destinations are
+reserved exclusively before targets start. `RunWriter.finalize()` writes incomplete visible
+reports and prepares private complete reports before committing completion. A certificate
+covering the manifest and journal is atomically published only after the completion event
+is fsynced; failed publication removes it. Complete reports are exposed only after that
+commit. Explicit legacy episode exports are also exclusive, owner-only and fsynced.
 `load_run(path)` reads the frozen manifest and committed events, without loading evaluators.
 Its `RunRecord` exposes the `SuiteResult`, all actual episodes and retry attempts, status,
 never-started/interrupted case-run keys and the disk-derived gate failures.
