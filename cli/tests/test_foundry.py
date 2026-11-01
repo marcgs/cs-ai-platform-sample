@@ -2,17 +2,20 @@
 
 import json
 import stat
-from contextlib import nullcontext
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager, nullcontext
 from types import SimpleNamespace
 
 import pytest
 
-from csai import foundry
+from csai import eval_receipts, foundry
 
 
 @pytest.fixture(autouse=True)
 def private_receipts(tmp_path, monkeypatch):
     monkeypatch.setattr(foundry, "RECEIPT_DIRECTORY", tmp_path / "receipts")
+    monkeypatch.setattr(foundry, "SUITE_DIRECTORY", tmp_path / "user-state" / "suites")
 
 
 def publication(*, scores=None, tool_calls=None, tool_definitions=None):
@@ -47,7 +50,16 @@ def publication(*, scores=None, tool_calls=None, tool_definitions=None):
 
 
 def fake_boundary(
-    monkeypatch, *, status="completed", errored=0, existing=None, run_state=None, create_error=None
+    monkeypatch,
+    *,
+    status="completed",
+    errored=0,
+    existing=None,
+    run_state=None,
+    create_error=None,
+    list_hook=None,
+    create_hook=None,
+    evaluation_error=None,
 ):
     calls = []
     evaluations = list(existing or [])
@@ -58,9 +70,13 @@ def fake_boundary(
         return SimpleNamespace(version="1")
 
     def create_evaluation(**kwargs):
+        if create_hook:
+            create_hook()
         calls.append(("evaluation", kwargs))
         evaluation = SimpleNamespace(id="eval-id", metadata=kwargs["metadata"])
         evaluations.append(evaluation)
+        if evaluation_error is not None:
+            raise evaluation_error
         return evaluation
 
     def create_run(**kwargs):
@@ -84,7 +100,10 @@ def fake_boundary(
 
     client = SimpleNamespace(
         evals=SimpleNamespace(
-            list=lambda: evaluations,
+            list=lambda: list_hook(evaluations) if list_hook else evaluations,
+            retrieve=lambda evaluation_id: next(
+                evaluation for evaluation in evaluations if evaluation.id == evaluation_id
+            ),
             create=create_evaluation,
             runs=SimpleNamespace(create=create_run, list=lambda **_: runs, retrieve=retrieve),
         )
@@ -100,6 +119,110 @@ def fake_boundary(
     monkeypatch.setattr(foundry, "DefaultAzureCredential", lambda: nullcontext(object()))
     monkeypatch.setattr(foundry, "AIProjectClient", lambda *args: nullcontext(project))
     return calls
+
+
+@pytest.mark.parametrize("second_model", ["judge", "other-judge"])
+def test_concurrent_measurements_in_separate_directories_create_one_suite(
+    monkeypatch, tmp_path, second_model
+):
+    context = threading.local()
+    first_creating = threading.Event()
+    second_attempting = threading.Event()
+    second_listed = threading.Event()
+    allow_create = threading.Event()
+    original_receipt = eval_receipts.publication_receipt
+
+    @contextmanager
+    def separate_receipts(_directory, key):
+        with original_receipt(tmp_path / f"run-{context.index}" / "receipts", key) as receipt:
+            if context.index == 1:
+                second_attempting.set()
+            yield receipt
+
+    def list_hook(evaluations):
+        snapshot = list(evaluations)
+        if context.index == 1:
+            second_listed.set()
+        return snapshot
+
+    def create_hook():
+        if context.index == 0:
+            first_creating.set()
+            assert allow_create.wait(5)
+
+    monkeypatch.setattr(foundry, "publication_receipt", separate_receipts)
+    calls = fake_boundary(monkeypatch, list_hook=list_hook, create_hook=create_hook)
+
+    def submit(index):
+        context.index = index
+        recorded = publication()
+        recorded.rows[0].case_id = f"case-{index}"
+        return foundry.publish(
+            recorded, endpoint="unused", model="judge" if index == 0 else second_model
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(submit, 0)
+        try:
+            assert first_creating.wait(5)
+            second = executor.submit(submit, 1)
+            assert second_attempting.wait(5)
+            second_listed.wait(0.25)
+        finally:
+            allow_create.set()
+        assert first.result(timeout=5).endswith("/report")
+        if second_model == "judge":
+            assert second.result(timeout=5).endswith("/report")
+        else:
+            with pytest.raises(foundry.FoundryEvalError, match="schema differs"):
+                second.result(timeout=5)
+    assert sum(name == "evaluation" for name, _ in calls) == 1
+    assert sum(name == "run" for name, _ in calls) == (2 if second_model == "judge" else 1)
+
+
+def test_canonical_suite_cache_handles_stale_remote_listing(monkeypatch):
+    calls = fake_boundary(monkeypatch, list_hook=lambda _: [])
+    first = publication()
+    second = publication()
+    second.rows[0].case_id = "another-case"
+    foundry.publish(first, endpoint="unused", model="judge")
+    foundry.publish(second, endpoint="unused", model="judge")
+    assert sum(name == "evaluation" for name, _ in calls) == 1
+    assert sum(name == "run" for name, _ in calls) == 2
+
+
+@pytest.mark.parametrize("visible", [False, True])
+def test_ambiguous_suite_creation_never_submits_a_duplicate(monkeypatch, visible):
+    calls = fake_boundary(
+        monkeypatch,
+        list_hook=None if visible else lambda _: [],
+        evaluation_error=OSError("suite response lost"),
+    )
+    recorded = publication()
+    with pytest.raises(foundry.FoundryEvalError, match="suite response lost"):
+        foundry.publish(recorded, endpoint="unused", model="judge")
+    if visible:
+        assert foundry.publish(recorded, endpoint="unused", model="judge").endswith("/report")
+    else:
+        with pytest.raises(foundry.FoundryEvalError, match="suite creation outcome is unknown"):
+            foundry.publish(recorded, endpoint="unused", model="judge")
+    assert sum(name == "evaluation" for name, _ in calls) == 1
+    assert sum(name == "run" for name, _ in calls) == int(visible)
+
+
+def test_user_level_suite_state_is_private_and_contains_no_measurements(monkeypatch):
+    fake_boundary(monkeypatch)
+    foundry.publish(publication(), endpoint="unused", model="judge")
+    assert stat.S_IMODE(foundry.SUITE_DIRECTORY.stat().st_mode) == 0o700
+    for path in foundry.SUITE_DIRECTORY.iterdir():
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+        if path.suffix == ".json":
+            assert set(json.loads(path.read_text())) == {
+                "key",
+                "definition_key",
+                "judge_model",
+                "evaluation_id",
+            }
 
 
 def test_published_rows_preserve_scores_truth_and_metadata(monkeypatch):

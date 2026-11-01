@@ -13,7 +13,13 @@ from azure.identity import DefaultAzureCredential
 from openai import OpenAIError
 from pydantic import BaseModel, ConfigDict, JsonValue
 
-from csai.eval_receipts import PublicationReceipt, ReceiptStore, publication_receipt
+from csai.eval_receipts import (
+    PublicationReceipt,
+    ReceiptStore,
+    SuiteReceipt,
+    publication_receipt,
+    suite_receipt,
+)
 
 if TYPE_CHECKING:
     from openai import OpenAI
@@ -29,6 +35,7 @@ BUILTIN_EVALUATORS = (
 POLL_INTERVAL_S = 10.0
 TIMEOUT_S = 900.0
 RECEIPT_DIRECTORY = Path(".eval-results/.publications")
+SUITE_DIRECTORY = Path.home() / ".csai" / "publication-suites"
 
 
 class FoundryEvalError(RuntimeError):
@@ -192,7 +199,19 @@ def _evaluation(
     project: AIProjectClient,
     client: OpenAI,
     model: str,
+    cache: ReceiptStore[SuiteReceipt],
+    cache_key: str,
 ) -> str:
+    receipt = cache.read()
+    if receipt is not None and (
+        receipt.key != cache_key
+        or receipt.definition_key != publication.definition_key
+        or receipt.judge_model != model
+    ):
+        raise FoundryEvalError(
+            "The suite's published evaluator schema differs. Review its version before "
+            "publishing; no duplicate evaluation was created."
+        )
     matches = [
         evaluation
         for evaluation in client.evals.list()
@@ -200,37 +219,60 @@ def _evaluation(
     ]
     if len(matches) > 1:
         raise FoundryEvalError("Multiple suite evaluations exist; select the canonical one first")
-    if matches:
+    if receipt is not None and receipt.evaluation_id is not None:
+        if matches and matches[0].id != receipt.evaluation_id:
+            raise FoundryEvalError("Suite receipt conflicts with the visible evaluation.")
+        evaluation = client.evals.retrieve(receipt.evaluation_id)
+    elif matches:
         evaluation = matches[0]
-        metadata = evaluation.metadata or {}
-        if (
-            metadata.get("definition_key") != publication.definition_key
-            or metadata.get("judge_model") != model
-        ):
+    else:
+        if receipt is not None:
             raise FoundryEvalError(
-                "The suite's published evaluator schema differs. Review its version before "
-                "publishing; no duplicate evaluation was created."
+                "The prior suite creation outcome is unknown and no evaluation is visible. "
+                "No duplicate was created; retry lookup later."
             )
-        return evaluation.id
-    versions = {
-        metric: project.beta.evaluators.create_version(
-            name=f"csai_{metric}", evaluator_version=evaluator_definition(metric)
-        ).version
-        for metric in publication.metric_names
-    }
-    evaluation = client.evals.create(
-        name=f"{publication.suite} agent",
-        metadata={
-            "csai_suite": publication.suite,
-            "definition_key": publication.definition_key,
-            "judge_model": model,
-        },
-        data_source_config={
-            "type": "custom",
-            "item_schema": PublishedRow.model_json_schema(),
-            "include_sample_schema": False,
-        },
-        testing_criteria=testing_criteria(publication.metric_names, versions, model),  # pyright: ignore[reportArgumentType]
+        versions = {
+            metric: project.beta.evaluators.create_version(
+                name=f"csai_{metric}", evaluator_version=evaluator_definition(metric)
+            ).version
+            for metric in publication.metric_names
+        }
+        cache.write(
+            SuiteReceipt(
+                key=cache_key, definition_key=publication.definition_key, judge_model=model
+            )
+        )
+        evaluation = client.evals.create(
+            name=f"{publication.suite} agent",
+            metadata={
+                "csai_suite": publication.suite,
+                "definition_key": publication.definition_key,
+                "judge_model": model,
+            },
+            data_source_config={
+                "type": "custom",
+                "item_schema": PublishedRow.model_json_schema(),
+                "include_sample_schema": False,
+            },
+            testing_criteria=testing_criteria(publication.metric_names, versions, model),  # pyright: ignore[reportArgumentType]
+        )
+    metadata = evaluation.metadata or {}
+    if (
+        metadata.get("csai_suite") != publication.suite
+        or metadata.get("definition_key") != publication.definition_key
+        or metadata.get("judge_model") != model
+    ):
+        raise FoundryEvalError(
+            "The suite's published evaluator schema differs. Review its version before "
+            "publishing; no duplicate evaluation was created."
+        )
+    cache.write(
+        SuiteReceipt(
+            key=cache_key,
+            definition_key=publication.definition_key,
+            judge_model=model,
+            evaluation_id=evaluation.id,
+        )
     )
     return evaluation.id
 
@@ -239,7 +281,7 @@ def _publication_run(
     publication: Publication,
     client: OpenAI,
     evaluation_id: str,
-    receipts: ReceiptStore,
+    receipts: ReceiptStore[PublicationReceipt],
     receipt_key: str,
 ) -> RunCreateResponse | RunRetrieveResponse:
     measurement_id = publication.measurement_id
@@ -309,6 +351,7 @@ def publish(publication: Publication, *, endpoint: str, model: str) -> str:
     receipt_key = hashlib.sha256(
         json.dumps([publication.measurement_id, endpoint, model]).encode()
     ).hexdigest()
+    suite_key = hashlib.sha256(json.dumps([endpoint, publication.suite]).encode()).hexdigest()
     try:
         with (
             publication_receipt(RECEIPT_DIRECTORY, receipt_key) as receipts,
@@ -316,7 +359,8 @@ def publish(publication: Publication, *, endpoint: str, model: str) -> str:
             AIProjectClient(endpoint, credential) as project,
             project.get_openai_client(max_retries=0) as client,
         ):
-            evaluation_id = _evaluation(publication, project, client, model)
+            with suite_receipt(SUITE_DIRECTORY, suite_key) as cache:
+                evaluation_id = _evaluation(publication, project, client, model, cache, suite_key)
             run = _publication_run(publication, client, evaluation_id, receipts, receipt_key)
             deadline = time.monotonic() + TIMEOUT_S
             while run.status in {"queued", "in_progress"} and time.monotonic() < deadline:
