@@ -133,8 +133,14 @@ def suite_receipt(directory: Path, key: str) -> Generator[ReceiptStore[SuiteRece
 
 @contextmanager
 def legacy_publication_receipt(
-    directory: Path, key: str
-) -> Generator[ReceiptStore[PublicationReceipt]]:
-    """Hold the old working-directory lock while importing its submission evidence."""
+    directory: Path, key: str, *, allow_absent: bool = False
+) -> Generator[ReceiptStore[PublicationReceipt] | None]:
+    """Lock existing legacy evidence; optionally leave an absent default origin untouched."""
+    if allow_absent and not any(path.is_symlink() for path in (directory, *directory.parents)):
+        try:
+            directory.stat(follow_symlinks=False)
+        except FileNotFoundError:
+            yield None
+            return
     with _receipt_lock(directory, key, wait=False) as path:
         yield ReceiptStore(path, PublicationReceipt)

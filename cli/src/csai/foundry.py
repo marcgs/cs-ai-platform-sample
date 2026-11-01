@@ -50,9 +50,11 @@ def _confirmed_rejection(error: APIStatusError) -> bool:
 
 def _migrate_receipt(
     receipts: ReceiptStore[PublicationReceipt],
-    legacy: ReceiptStore[PublicationReceipt],
+    legacy: ReceiptStore[PublicationReceipt] | None,
     key: str,
 ) -> None:
+    if legacy is None:
+        return
     old = legacy.read()
     if old is None:
         return
@@ -322,7 +324,7 @@ def _publication_run(
     evaluation_id: str,
     receipts: ReceiptStore[PublicationReceipt],
     receipt_key: str,
-    legacy: ReceiptStore[PublicationReceipt],
+    legacy: ReceiptStore[PublicationReceipt] | None,
 ) -> RunCreateResponse | RunRetrieveResponse:
     measurement_id = publication.measurement_id
     receipt = receipts.read()
@@ -369,7 +371,8 @@ def _publication_run(
     except APIStatusError as error:
         if _confirmed_rejection(error):
             # Clear legacy first so a failed shared clear cannot reimport stale pending state.
-            legacy.clear()
+            if legacy is not None:
+                legacy.clear()
             receipts.clear()
         raise
     receipts.write(PublicationReceipt(key=receipt_key, evaluation_id=evaluation_id, run_id=run.id))
@@ -421,6 +424,7 @@ def publish(
             legacy_publication_receipt(
                 legacy_directory if legacy_directory is not None else LEGACY_RECEIPT_DIRECTORY,
                 receipt_key,
+                allow_absent=legacy_directory is None,
             ) as legacy,
         ):
             _migrate_receipt(receipts, legacy, receipt_key)
