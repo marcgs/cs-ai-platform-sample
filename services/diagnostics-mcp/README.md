@@ -14,9 +14,14 @@ Read-only diagnostic tools over the synthetic fleet, exposed as a remote **MCP s
 
 ## Layout
 
-- `src/diagnostics_mcp/tools.py`: tool logic, independent of Functions (strictly typed, unit-tested)
+- `src/diagnostics_mcp/tools.py`: compatibility exports from `diagnostics_domain.tools`,
+  the shared offline implementation (strictly typed, unit-tested)
 - `function_app.py`: thin Functions layer; tool names, descriptions and schemas come from the signatures and docstrings
 - `host.json`: MCP server name, version and client instructions
+
+The domain package owns the implementation so feedback generation and offline replay
+use exactly the same functions, without depending on the Functions service. Existing
+imports from `diagnostics_mcp.tools` and MCP schemas remain unchanged.
 
 ## Run locally
 

@@ -5,7 +5,7 @@ All machines, incidents and records are fictional. Generate the committed seed w
 
 ## Dataset card
 
-The seed contains 52 machines and 50 incident scenarios:
+The seed contains 56 machines and 50 eval incident scenarios:
 
 | Category | Cases | Causal distinction |
 |---|---:|---|
@@ -35,6 +35,11 @@ Original and injection-cohort precursor clues remain before onset. Retrospective
 investigations are logged after their telemetry observations and event receipts,
 before incident reporting. Maintenance findings follow the completed window and
 the subsequent healthy checks.
+
+Four additional feedback-only machines (`M-0053`–`M-0056`) copy clean telemetry and
+service clues under new record IDs. Their events use `EC-9901`, a documented code
+without mapped causes. They add no eval scenarios and change no existing records
+or tool responses. `feedback_seed.py` appends these records during seed generation.
 
 The frozen `services/diagnostics-mcp/tests/fixtures/legacy_golden.json` records hashes taken
 from revision `fae76ff`, before extension: all original seed fields and 791 tool responses
@@ -83,18 +88,32 @@ The stable pattern IDs are `vacuum_telemetry_omission`,
 `feedback_models.py`, which L3 imports rather than redefining.
 
 Every ten records contain five misses and five matched correct controls, over
-seed-scenario machines and causal failure modes. Pattern variants overlay transcript
-data; they do not mutate the seed dataset. The post-update variant uses the same
-update date in machine context and its logbook entry, for misses and controls.
+seed machines and causal failure modes. Every captured result is returned by
+`diagnostics_domain.tools.DiagnosticsTools`, the same implementation re-exported
+by the MCP service. Update, injection and data-quality contexts use the existing
+`overlapping`, `injection` and `data_gap` seed cohorts. Missing-mapping contexts use
+the four additive feedback machines. There are no transcript-only data overlays
+or deliberately non-replayable episodes in new populations.
+Vacuum omissions select clean vacuum incidents, not injection/sensor contexts.
+Update contexts require an observed shared code and record that actual lookup.
 IDs, tool timings, timestamps and reviews
 depend only on the seed, index and committed seed data. More records preserve the
-existing prefix. The displayed telemetry windows are compact transcript excerpts.
-Correct missing-mapping controls also record `azure_ai_search` retrieval of a
-matching seeded historical case and cite its returned `HC-…` ref and resolution.
-The failed variant lacks that successful knowledge fallback.
-Only this missing-mapping cohort requires a matching seeded historical case when
-choosing scenarios, for both misses and controls. Other contexts retain their
-existing eligibility rules and can select new known causes without prior cases.
+existing prefix within this generator version. Telemetry windows use actual tool
+summaries and sample references, not synthetic excerpts.
+Correct missing-mapping controls cite real telemetry and service clues. The old
+generator's invented `azure_ai_search` responses are not retained: the five MCP
+tools cannot reproduce a live search response. The failed variant still returns
+unknown despite a supported signature. The L2 example fixture is regenerated;
+L3's published pilot outputs remain frozen and are not replay-compatible inputs.
+
+`diagnostics_domain.feedback_replay` exports `replay_episode`, `execute_tool_call`,
+`tool_fingerprint`, `ReplayResult` and `ReplayIssue` for offline promotion checks.
+`replay_episode(episode, *, tools=None)` defaults to today's committed seed. Its
+result carries `replayable`, ordered `fingerprints` and indexed rejection `issues`.
+Unsupported tools, incomplete/truncated captures, invalid JSON and changed
+results are rejected. Tool fingerprints hash normalized name, arguments and
+canonical JSON results, ignoring timing and the toolbox's `___` prefix.
+These checks do not establish reviewer consensus or promotion eligibility.
 
 Four fictional reviewers have different accuracy; `R-004` is deliberately too strict.
 Disagreements, incomplete notes, wrong actual-cause assertions and duplicates are
