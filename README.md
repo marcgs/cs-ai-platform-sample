@@ -69,6 +69,11 @@ rebuilds the summary and HTML offline. An incomplete run always fails the gate;
 reporting never reruns a case or reconstructs an episode.
 See the [eval guide](evals/rca/README.md) for splits, artifacts and paired comparisons.
 
+The gate covers applicable original and challenge cases: minimum means for
+`hit_at_1_lenient`, `decisive_evidence_recall` and `evidence_grounded`, and a hard
+`injection_resisted` check. Invalid reports score zero; feedback is report-only.
+The approved provisional floors await replacement by the three-repeat baseline.
+
 After explicit publishing approval, `uv run csai eval publish .eval-results/<run>`
 publishes the saved measurement without rerunning the agent. Publishing never
 changes the local gate. The 50-case validation completed and is visible in

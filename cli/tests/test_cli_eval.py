@@ -58,6 +58,11 @@ def answering(correct: bool, *, knowledge: bool = True) -> Any:
         async def run(case: EvalCase) -> RunOutput:
             mode = case.expected["failure_mode"] if correct else "FM-99"
             evidence = [Evidence(source="lookup_error_code", ref="EC-2101", excerpt="...")]
+            if case.truth:
+                evidence.extend(
+                    Evidence(source="test", ref=ref, excerpt="...")
+                    for ref in case.truth.decisive_refs
+                )
             if knowledge:
                 history = next(
                     (
@@ -74,7 +79,11 @@ def answering(correct: bool, *, knowledge: bool = True) -> Any:
                         )
                     )
             report = RcaReport(
-                machine_id=case.expected["machine_id"],
+                machine_id=(
+                    "unknown"
+                    if case.truth and case.truth.category == "missing_machine"
+                    else case.expected["machine_id"]
+                ),
                 summary="...",
                 hypotheses=[
                     Hypothesis(
@@ -82,12 +91,14 @@ def answering(correct: bool, *, knowledge: bool = True) -> Any:
                         failure_mode_id=mode,
                         title=mode,
                         root_cause="...",
-                        confidence=0.9,
+                        confidence=(
+                            0.5 if case.truth and case.truth.category == "missing_machine" else 0.9
+                        ),
                         evidence=evidence,
                         recommended_checks=[],
                     )
                 ],
-                missing_information=[],
+                missing_information=["Need the machine identifier to diagnose safely."],
             )
             calls: list[str] = list(TOOL_NAMES)
             if knowledge:
@@ -123,18 +134,18 @@ def test_gate_fails_with_exit_code_1(monkeypatch: pytest.MonkeyPatch, tmp_path: 
         cli.app, ["--no-azd", "eval", "rca", "--case", "SC-001", "--output", str(results)]
     )
     assert result.exit_code == 1
-    assert "hit_at_1: 0.00 < 0.80" in result.output
+    assert "hit_at_1_lenient: 0.00 < 0.70" in result.output
     assert '"case_id": "SC-001"' in results.read_text()
 
 
-def test_gate_rejects_correct_answers_without_historical_citations(
+def test_historical_citations_are_report_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(cli, "local_target", answering(correct=True, knowledge=False))
     result = runner.invoke(cli.app, ["--no-azd", "eval", "rca", "--case", "SC-001"])
-    assert result.exit_code == 1
-    assert "used_knowledge: 0.00 < 0.70" in result.output
-    assert "hit_at_1: 0.00" not in result.output
+    assert result.exit_code == 0, result.output
+    assert "used_knowledge" in result.output
+    assert "Gate passed." in result.output
 
 
 def test_hosted_target_needs_a_deployed_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:

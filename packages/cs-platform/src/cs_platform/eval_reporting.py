@@ -85,6 +85,11 @@ def write_artifacts(
         "case_count": len({case.case_id for case in result.cases}),
         "case_runs": len(result.cases),
         "quality_case_runs": len(result.quality_cases),
+        "invalid_report_case_runs": len(result.invalid_reports),
+        "invalid_reports": [
+            {"case_id": case.case_id, "repeat": case.repeat} for case in result.invalid_reports
+        ],
+        "plumbing_case_runs": len(result.cases) - len(result.quality_cases),
         "gate_case_ids": sorted({case.case_id for case in result.cases if case.gated}),
         "minimum_score_metrics": sorted(result.minimum_score_metrics),
         "metrics": result.metrics,

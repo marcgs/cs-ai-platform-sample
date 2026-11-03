@@ -83,12 +83,12 @@ See the [synthetic feedback generator](../diagnostics-domain/README.md).
 cases. They are excluded from serialization when absent, preserving existing
 manifests. `FeedbackProvenance` records synthetic cluster, episode, review and tool
 fingerprint origins, not additional causal truth. RCA loads these cases additively
-without changing its explicit original18 gate.
+without adding feedback to the outcome gate.
 
 New `CaseResult` rows carry `original`, `challenge` or `feedback` cohort labels.
 `SuiteResult.groups["cohort"]` reports separate means, and
 `group_intervals["cohort"]` reports hierarchical 95% intervals. Console and disk
-reports include both; only the unchanged explicit gate selects regression scores.
+reports include both; only the explicit gate selects regression scores.
 Older journal rows without labels recover them from frozen manifest cohorts
 (or frozen case/gate metadata when that map is absent). Rebuild rejects explicit
 label conflicts and never changes journal scores or reconstructs missing episodes.
@@ -119,15 +119,19 @@ or relaxed threshold makes a genuinely lower score pass.
 `run_suite(..., repeats=3)` runs independent case-runs; retries remain separate.
 Quality means exclude plumbing failures (rate limits, timeouts, transport failures and
 missing/truncated output), but those failures still fail the regression gate. Invalid
-structured output remains a scored quality failure. `RunOutput.failure` classifies errors;
+structured output remains scored at zero on applicable gated outcomes and is separately
+counted by `invalid_reports`, not independently hard-failed. `RunOutput.failure` classifies errors;
 `tool_trace` retains typed calls with arguments and results alongside legacy tool names.
 
 `EvalSuite.gate_case_ids` declares the fixed regression cohort. Its default (`None`) gates
-all cases for legacy suites. Extended suites must explicitly retain their original case
-IDs: new categories, including their errors, are informational only, never pooled into
-thresholds. Only metrics with declared minimums zero-fill missing scores.
+all cases for legacy suites. RCA includes original and challenge IDs, but not feedback.
+`original_case_ids` independently preserves the original/challenge reporting labels.
+`metric_applicability` freezes applicable gate metrics onto each result from case truth,
+not the answer. Only applicable minimum metrics zero-fill missing scores; legacy suites
+without an applicability policy retain their required-score zero filling.
 `run_suite` records those names in `SuiteResult.minimum_score_metrics`.
-Sparse informational means and intervals use only applicable case-runs.
+Sparse means and intervals use only applicable case-runs. `Thresholds.hard_checks`
+requires every applicable gated case-run to score exactly one, independent of averages.
 
 `SuiteResult.intervals` and `gate_intervals` use deterministic 95% percentile bootstrap
 intervals (2,000 draws, seed 42). Each draw samples cases, then repeats within those cases;
