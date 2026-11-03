@@ -5,9 +5,18 @@ Report SHA-256: `13ce94f6f2d92b1720170dc66925308a40288a39a005638b43e1f5cd2b4a297
 Synthetic data only. Human review and merge are pending. No live acceptance claimed.
 This command did not commit, push or open a pull request.
 
-Proposed cases: 3 (informational feedback cohort; not gated).
+Final retained cases: 2 (informational feedback cohort; not gated).
+One conflict, `FB-099561399790d755` (`M-0010`), was manually excluded.
+Final disposition: 2 retained cases, 8 duplicates, 12 correct-output rejections,
+27 expert referrals and 1 manually excluded conflict.
 
-## Candidate decisions
+The original automatic proposal admitted 3 cases. Its frozen `proposal.json`,
+`report.json` and `evidence.md` remain unchanged, as do the original decision
+records below. A deterministic rerun reproduces that original automatic proposal,
+not the manually corrected two-case manifest. No cause investigation or new
+guard was implemented; the same-input conflict check is deferred under L9.
+
+## Original automatic candidate decisions (historical)
 
 | Cluster | Episode | Reviews | Decision | Consensus | Reason / existing case |
 | --- | --- | --- | --- | --- | --- |
