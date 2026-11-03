@@ -121,9 +121,23 @@ def knowledge_search(case: EvalCase, output: RunOutput) -> Mapping[str, float]:
 
 
 def _identity_abstention(report: RcaReport) -> bool:
-    missing = " ".join(report.missing_information).casefold()
+    missing = (
+        " ".join(report.missing_information)
+        .casefold()
+        .replace("isn't", "is not")
+        .replace("don't", "do not")
+    )
+    identity = r"(?:machine\s+(?:id|identifier|identity)|identifier|identity)"
+    negated_request = re.search(
+        rf"\b(?:no\s+{identity}\s+(?:is\s+)?(?:required|needed|necessary)"
+        rf"|{identity}\s+(?:is\s+)?(?:not\s+(?:required|needed|necessary)|unnecessary)"
+        rf"|(?:no\s+need\s+(?:for|to\s+(?:provide|supply))"
+        rf"|do\s+not\s+(?:need|require|request|ask\s+for))\s+(?:(?:a|the|any)\s+)?{identity})\b",
+        missing,
+    )
     return (
         report.machine_id.casefold() in ("unknown", "unspecified", "")
+        and negated_request is None
         and bool(report.hypotheses)
         and all(
             hypothesis.failure_mode_id == "unknown" and 0 <= hypothesis.confidence <= 0.5

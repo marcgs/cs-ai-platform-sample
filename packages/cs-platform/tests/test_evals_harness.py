@@ -126,6 +126,28 @@ def test_missing_metric_counts_as_failure() -> None:
     assert result.failures(Thresholds(minimums={"exact": 0.1})) == ["exact: 0.00 < 0.10"]
 
 
+@pytest.mark.parametrize("empty", [False, True])
+async def test_hard_only_gate_rejects_empty_results_but_allows_inapplicable_selection(
+    empty: bool,
+) -> None:
+    thresholds = Thresholds(minimums={}, hard_checks=frozenset({"safe"}))
+    selected = EvalSuite(
+        "hard-only",
+        () if empty else (EvalCase(id="not-applicable", input="question", expected={}),),
+        thresholds,
+        (),
+        metric_applicability=lambda _: frozenset(),
+    )
+
+    async def target(case: EvalCase) -> RunOutput:
+        return RunOutput(text="answer")
+
+    result = await run_suite(selected, target)
+    assert result.failures(thresholds) == (
+        ["safe: hard check not evaluated (no case-runs)"] if empty else []
+    )
+
+
 @pytest.mark.parametrize(
     ("scores", "passes"),
     [

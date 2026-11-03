@@ -344,6 +344,27 @@ def test_plumbing_only_record_marks_metric_parity_blocked(saved_run, monkeypatch
     assert publication.metadata["metric_parity"] == "blocked:sparse_or_plumbing"
 
 
+def test_legacy_empty_unparseable_record_keeps_publication_identity(saved_run, monkeypatch):
+    record = read_run(saved_run)
+    record.manifest.error_policy = record.result.error_policy = "legacy-v1"
+    record.result.cases[0].output.text = ""
+    record.result.cases[0].output.failure = RunError(kind="unparseable", code="invalid_output")
+    monkeypatch.setattr(eval_publish, "read_run", lambda _: record)
+    before = {path: path.read_bytes() for path in saved_run.rglob("*") if path.is_file()}
+
+    def legacy_plumbing(output, **kwargs):
+        return output.failure.kind == "plumbing" if output.failure else output.error is not None
+
+    with monkeypatch.context() as legacy:
+        legacy.setattr(eval_publish, "is_plumbing", legacy_plumbing)
+        original = eval_publish.publication_from_record(saved_run)
+    current = eval_publish.publication_from_record(saved_run)
+    assert current.metadata["metric_parity"] == original.metadata["metric_parity"] == "unverified"
+    assert current.coordination == original.coordination == "shared-v1"
+    assert current.measurement_id == original.measurement_id
+    assert before == {path: path.read_bytes() for path in saved_run.rglob("*") if path.is_file()}
+
+
 def test_standalone_publish_handles_unexpected_adapter_failure(saved_run, monkeypatch):
     def fail(_):
         raise RuntimeError("unexpected adapter failure")

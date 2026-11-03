@@ -105,7 +105,10 @@ def publication_from_record(path: Path) -> Publication:
     publication.metadata["metric_parity"] = (
         "blocked:sparse_or_plumbing"
         if all_metrics - set(publication.metric_names)
-        or any(is_plumbing(result.output) for result in record.result.cases)
+        or any(
+            is_plumbing(result.output, error_policy=record.result.error_policy)
+            for result in record.result.cases
+        )
         else "unverified"
     )
     return publication

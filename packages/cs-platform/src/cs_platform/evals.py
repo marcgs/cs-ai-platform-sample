@@ -384,6 +384,11 @@ class SuiteResult(BaseModel):
             f"{name}: hard check failed: {', '.join(failed)}"
             for name, failed in self.hard_check_failures(thresholds).items()
         )
+        if not self.cases:
+            failures.extend(
+                f"{name}: hard check not evaluated (no case-runs)"
+                for name in sorted(thresholds.hard_checks)
+            )
         return failures
 
     def warnings(self, thresholds: Thresholds) -> list[str]:
