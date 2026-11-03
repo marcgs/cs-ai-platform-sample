@@ -42,6 +42,24 @@ def load_feedback_cases(path: Path, *, existing: Sequence[EvalCase] = ()) -> tup
     identities = {case_identity(case) for case in existing}
     for case in cases:
         provenance = case.provenance
+        cluster_metadata_valid = provenance is not None and (
+            (
+                provenance.cluster_key is None
+                and provenance.analysis_category is None
+                and provenance.condition is None
+            )
+            or (
+                provenance.cluster_key is not None
+                and provenance.analysis_category is not None
+                and provenance.condition is not None
+                and re.fullmatch(r"[a-z]+(?:_[a-z]+)*", provenance.analysis_category)
+                and re.fullmatch(r"[a-z]+(?:_[a-z]+)*", provenance.condition)
+                and provenance.cluster_key
+                == hashlib.sha256(
+                    f"{provenance.analysis_category}:{provenance.condition}".encode()
+                ).hexdigest()[:16]
+            )
+        )
         if (
             case.cohort != "feedback"
             or provenance is None
@@ -56,12 +74,7 @@ def load_feedback_cases(path: Path, *, existing: Sequence[EvalCase] = ()) -> tup
             or not set(provenance.supporting_review_ids) <= set(provenance.review_ids)
             or not provenance.episode_id.strip()
             or provenance.verdict == "correct"
-            or not re.fullmatch(r"[a-z]+(?:_[a-z]+)*", provenance.analysis_category)
-            or not re.fullmatch(r"[a-z]+(?:_[a-z]+)*", provenance.condition)
-            or provenance.cluster_key
-            != hashlib.sha256(
-                f"{provenance.analysis_category}:{provenance.condition}".encode()
-            ).hexdigest()[:16]
+            or not cluster_metadata_valid
             or not provenance.tool_fingerprints
             or any(
                 not re.fullmatch(r"[0-9a-f]{64}", fingerprint)

@@ -27,7 +27,8 @@ feedback scores and failures remain informational, never a replacement gate.
 
 `load_suite()` also reads `feedback_cases.jsonl` when present. This is a reviewed
 file, not generator output; manifest regeneration never rewrites it. Cases carry
-`cohort: feedback` and synthetic cluster/episode/review/fingerprint provenance.
+`cohort: feedback` and synthetic episode/review/fingerprint provenance, plus
+cluster provenance only when one exists.
 The loader rejects duplicate incident identities and conflicting machine splits.
 Feedback is informational and does not change the original18 gate or thresholds.
 
@@ -38,7 +39,11 @@ uv run csai --no-azd cases propose path/to/l8-v2-report.json
 ```
 
 No commit, push or PR opening is automatic. Reviewers establish the expected cause;
-incident category comes from source metadata. No decisive refs or other unsupported
+the replay-matched generated scenario supplies only the incident category.
+Clustering is not required. New reports retain every reviewed episode; for an
+older fresh report, supply both `--episodes <cohort.jsonl>` and
+`--reviews <reviews.jsonl>` to include episodes never classified.
+No decisive refs or other unsupported
 truth fields are invented. Those metrics, specific injection canaries and collection
 anomaly judges are not applicable without reviewed truth. See
 [L9 Part B](../../docs/iteration-4/l9b.md) for admission, duplicate and split rules.

@@ -32,7 +32,7 @@ class CaseDecision(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    cluster_key: str
+    cluster_key: str | None
     episode_id: str
     review_ids: list[str]
     status: Literal["admitted", "duplicate", "wait", "expert", "rejected"]
@@ -101,15 +101,10 @@ def _matches_summary(candidate: Candidate, consensus: ConsensusDecision) -> bool
     )
 
 
-def _incident_categories(
-    dataset: DiagnosticsDataset, existing: Sequence[EvalCase]
-) -> dict[str, set[Category]]:
+def _incident_categories(dataset: DiagnosticsDataset) -> dict[str, set[Category]]:
     categories: dict[str, set[Category]] = defaultdict(set)
     for scenario in (*dataset.scenarios, *feedback_scenarios(dataset)):
         categories[scenario.machine_id].add(scenario.category)
-    for case in existing:
-        if case.truth:
-            categories[case.expected["machine_id"]].add(case.truth.category)
     return categories
 
 
@@ -150,7 +145,7 @@ def _capture(candidate: Candidate) -> tuple[list[ToolCall], list[str], str | Non
 
 def _candidate_case(
     candidate: Candidate,
-    cluster: Cluster,
+    cluster: Cluster | None,
     consensus: ConsensusDecision,
     categories: dict[str, set[Category]],
     dataset: DiagnosticsDataset,
@@ -186,13 +181,13 @@ def _candidate_case(
             truth=EvalTruth(category=category),
             cohort="feedback",
             provenance=FeedbackProvenance(
-                cluster_key=cluster.id,
+                cluster_key=cluster.id if cluster else None,
                 episode_id=candidate.episode_id,
                 review_ids=tuple(sorted(candidate.source_review_ids)),
                 supporting_review_ids=tuple(consensus.supporting_review_ids),
                 source="synthetic",
-                analysis_category=cluster.category,
-                condition=cluster.condition,
+                analysis_category=cluster.category if cluster else None,
+                condition=cluster.condition if cluster else None,
                 verdict=consensus.verdict,
                 tool_fingerprints=tuple(fingerprints),
             ),
@@ -212,23 +207,41 @@ def propose_cases(report: Report, existing: Sequence[EvalCase]) -> CaseProposal:
         raise ValueError("Inconsistent report episode membership")
     weights = _weights(report)
     dataset = load_seed()
-    categories = _incident_categories(dataset, existing)
+    categories = _incident_categories(dataset)
     known = {case_identity(case): case for case in existing}
     proposed: dict[str, EvalCase] = {}
     decisions: list[CaseDecision] = []
-    episode_counts = Counter(
-        candidate.episode_id for cluster in report.clusters for candidate in cluster.eval_cases
-    )
+    candidates = report.review_candidates or [
+        candidate for cluster in report.clusters for candidate in cluster.eval_cases
+    ]
+    episode_counts = Counter(candidate.episode_id for candidate in candidates)
     cluster_counts = Counter(cluster.id for cluster in report.clusters)
-    review_records: dict[str, set[str]] = defaultdict(set)
+    memberships: dict[str, list[Cluster]] = defaultdict(list)
+    conflicting: set[str] = set()
+    by_episode = {candidate.episode_id: candidate for candidate in candidates}
     for cluster in report.clusters:
         for candidate in cluster.eval_cases:
-            for review in candidate.source_reviews:
-                review_records[review.id].add(review.model_dump_json())
-    for cluster in sorted(report.clusters, key=lambda value: value.id):
-        for candidate in sorted(cluster.eval_cases, key=lambda value: value.episode_id):
+            memberships[candidate.episode_id].append(cluster)
+            source = by_episode.get(candidate.episode_id)
+            if source is None or source.model_dump(exclude={"expected_category"}) != (
+                candidate.model_dump(exclude={"expected_category"})
+            ):
+                conflicting.add(candidate.episode_id)
+    review_records: dict[str, set[str]] = defaultdict(set)
+    for candidate in candidates:
+        for review in candidate.source_reviews:
+            review_records[review.id].add(review.model_dump_json())
+    groups = [
+        (
+            memberships[candidate.episode_id][0] if memberships[candidate.episode_id] else None,
+            [candidate],
+        )
+        for candidate in sorted(candidates, key=lambda value: value.episode_id)
+    ]
+    for cluster, members in groups:
+        for candidate in members:
             decision = CaseDecision(
-                cluster_key=cluster.id,
+                cluster_key=cluster.id if cluster else None,
                 episode_id=candidate.episode_id,
                 review_ids=sorted(candidate.source_review_ids),
                 status="rejected",
@@ -239,17 +252,29 @@ def propose_cases(report: Report, existing: Sequence[EvalCase]) -> CaseProposal:
             )
             label = report.labels.get(candidate.episode_id)
             if (
-                cluster.id != cluster_key(cluster.category, cluster.condition)
-                or cluster_counts[cluster.id] != 1
-                or candidate.expected_category != cluster.category
+                candidate.episode_id in conflicting
+                or len(memberships[candidate.episode_id]) > 1
                 or candidate.episode_id not in report.episode_ids
-                or candidate.episode_id not in cluster.episode_ids
-                or set(cluster.episode_ids) != {item.episode_id for item in cluster.eval_cases}
-                or len(set(cluster.episode_ids)) != cluster.frequency
                 or episode_counts[candidate.episode_id] != 1
-                or label is None
-                or (label.category, label.condition) != (cluster.category, cluster.condition)
                 or any(len(review_records[row.id]) != 1 for row in candidate.source_reviews)
+                or (
+                    cluster is not None
+                    and (
+                        cluster.id != cluster_key(cluster.category, cluster.condition)
+                        or cluster_counts[cluster.id] != 1
+                        or (
+                            candidate.expected_category is not None
+                            and candidate.expected_category != cluster.category
+                        )
+                        or candidate.episode_id not in cluster.episode_ids
+                        or set(cluster.episode_ids)
+                        != {item.episode_id for item in cluster.eval_cases}
+                        or len(set(cluster.episode_ids)) != cluster.frequency
+                        or label is None
+                        or (label.category, label.condition)
+                        != (cluster.category, cluster.condition)
+                    )
+                )
             ):
                 decisions.append(decision)
                 continue
@@ -345,10 +370,11 @@ def propose_cases(report: Report, existing: Sequence[EvalCase]) -> CaseProposal:
         cases=[assigned_by_id[case_id] for case_id in sorted(proposed)],
         decisions=decisions,
         limitations=[
-            "Feedback is an informational cohort, not part of the original18 gate.",
-            "Reviewers supply verdict and actual cause; incident category uses source metadata.",
+            "Feedback is an informational cohort, not part of the quality gate.",
+            "Reviews supply verdict and cause; the replayed machine scenario supplies category.",
             "No decisive refs, alternatives, ruled-out modes, checks or canaries are inferred.",
             "Evidence-dependent truth metrics are not applicable without reviewed truth fields.",
             "Report consistency is checked; reviewer assertions are not independently verified.",
+            "Cluster membership is optional provenance, never an admission requirement.",
         ],
     )

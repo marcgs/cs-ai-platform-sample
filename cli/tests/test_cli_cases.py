@@ -17,9 +17,11 @@ from csai.cases import FEEDBACK, MANIFEST
 from diagnostics_domain.dataset import load_seed
 from diagnostics_domain.feedback import generate_feedback
 from diagnostics_domain.feedback_replay import replay_episode
+from diagnostics_domain.feedback_seed import feedback_scenarios
 from episode_analysis.classifier import CachedClassifier, ClassifierConfig
 from episode_analysis.models import EnrichedEpisode, Label, Report, ReviewSummary
 from episode_analysis.pipeline import analyze, prepare
+from episode_analysis.vocabulary import cluster_key
 from rca_evals import load_suite
 from rca_evals.evaluators import (
     data_quality_disclosed,
@@ -108,6 +110,7 @@ def only_mapping(report: Report) -> Report:
     )
     return report.model_copy(
         update={
+            "review_candidates": [],
             "clusters": [
                 cluster.model_copy(
                     update={
@@ -116,7 +119,7 @@ def only_mapping(report: Report) -> Report:
                         "frequency": 1,
                     }
                 )
-            ]
+            ],
         },
         deep=True,
     )
@@ -191,6 +194,140 @@ def test_public_command_admits_only_planted_review_truth_and_is_idempotent(
         ["git", "-C", str(repo), "rev-parse", "--verify", "HEAD"], capture_output=True
     )
     assert head.returncode != 0  # No commit was created, even in the fixture repository.
+
+
+def test_unclustered_consensus_is_admitted_and_reruns_identically(
+    feedback_report, tmp_path: Path
+) -> None:
+    _, original = feedback_report
+    selected = only_mapping(original)
+    candidate = selected.clusters[0].eval_cases[0].model_copy(update={"expected_category": None})
+    report = selected.model_copy(
+        update={"clusters": [], "labels": {}, "review_candidates": [candidate]}
+    )
+    repo = repository(tmp_path / "repo")
+    first = invoke(report, repo)
+    assert first.exit_code == 0, first.output
+    result = proposal(repo)
+    assert len(result.cases) == 1
+    case = result.cases[0]
+    assert case.provenance is not None
+    assert case.provenance.cluster_key is None
+    assert "cluster_key" not in case.provenance.model_dump(mode="json")
+    assert case.provenance.analysis_category is None
+    assert case.truth is not None
+    scenario = next(
+        scenario
+        for scenario in (*load_seed().scenarios, *feedback_scenarios(load_seed()))
+        if scenario.machine_id == case.expected["machine_id"]
+    )
+    assert case.truth.category == scenario.category
+    assert case.expected["failure_mode"] == candidate.expected_failure_mode
+    before = {
+        path.relative_to(repo): path.read_bytes()
+        for path in repo.rglob("*")
+        if path.is_file() and ".git" not in path.relative_to(repo).parts
+    }
+    second = invoke(report, repo)
+    assert second.exit_code == 0, second.output
+    assert second.output == first.output
+    assert all((repo / path).read_bytes() == value for path, value in before.items())
+    assert load_feedback_cases(repo / FEEDBACK)
+
+
+@pytest.mark.parametrize("forgery", ["summary", "review_ids", "reviewer"])
+def test_unclustered_forged_review_evidence_is_rejected(feedback_report, forgery: str) -> None:
+    _, report = feedback_report
+    candidate = only_mapping(report).clusters[0].eval_cases[0].model_copy(deep=True)
+    if forgery == "summary":
+        candidate = candidate.model_copy(
+            update={
+                "review_summary": candidate.review_summary.model_copy(update={"agreement": 0.99})
+            }
+        )
+    elif forgery == "review_ids":
+        candidate.source_review_ids.append("FORGED")
+    else:
+        candidate.source_reviews[1] = candidate.source_reviews[1].model_copy(
+            update={"feedback": candidate.source_reviews[0].feedback}
+        )
+    result = propose_cases(
+        report.model_copy(update={"clusters": [], "labels": {}, "review_candidates": [candidate]}),
+        load_suite().cases,
+    )
+    assert not result.cases
+    assert result.decisions[0].status == "rejected"
+
+
+def test_split_pattern_does_not_block_individual_cases(feedback_report) -> None:
+    _, report = feedback_report
+    cluster = next(cluster for cluster in report.clusters if cluster.category == "knowledge_gap")
+    selected = report.model_copy(update={"clusters": [cluster], "review_candidates": []})
+    baseline = propose_cases(selected, load_suite().cases)
+    assert baseline.cases
+    split = []
+    labels = dict(report.labels)
+    for condition, members in (
+        ("pressure_telemetry", cluster.eval_cases[::2]),
+        ("temperature_history", cluster.eval_cases[1::2]),
+    ):
+        key = cluster_key(cluster.category, condition)
+        split.append(
+            cluster.model_copy(
+                update={
+                    "id": key,
+                    "condition": condition,
+                    "eval_cases": members,
+                    "episode_ids": [item.episode_id for item in members],
+                    "frequency": len(members),
+                }
+            )
+        )
+        for candidate in members:
+            labels[candidate.episode_id] = labels[candidate.episode_id].model_copy(
+                update={"condition": condition}
+            )
+    result = propose_cases(
+        selected.model_copy(update={"clusters": split, "labels": labels}), load_suite().cases
+    )
+    assert {case.id for case in result.cases} == {case.id for case in baseline.cases}
+
+
+def test_cli_attaches_all_fresh_cohort_reviews_without_classification(
+    feedback_report, tmp_path: Path
+) -> None:
+    population, _ = feedback_report
+    report = asyncio.run(analyze(prepare(population.episodes, population.reviews, load_seed())))
+    assert not report.clusters
+    assert len(report.review_candidates) == report.reviewed_count
+    assert len(report.review_candidates) > len(report.unclassified)
+    source = tmp_path / "retained-report.json"
+    source.write_text(report.model_copy(update={"review_candidates": []}).model_dump_json())
+    episodes = tmp_path / "episodes.jsonl"
+    episodes.write_text("".join(item.model_dump_json() + "\n" for item in population.episodes))
+    reviews = tmp_path / "reviews.jsonl"
+    reviews.write_text("".join(item.model_dump_json() + "\n" for item in population.reviews))
+    repo = repository(tmp_path / "repo")
+    response = runner.invoke(
+        app,
+        [
+            "--no-azd",
+            "cases",
+            "propose",
+            str(source),
+            "--repository",
+            str(repo),
+            "--episodes",
+            str(episodes),
+            "--reviews",
+            str(reviews),
+        ],
+    )
+    assert response.exit_code == 0, response.output
+    result = proposal(repo)
+    assert len(result.decisions) == report.reviewed_count
+    assert result.cases
+    assert all(decision.cluster_key is None for decision in result.decisions)
 
 
 @pytest.mark.parametrize(

@@ -82,7 +82,9 @@ See the [synthetic feedback generator](../diagnostics-domain/README.md).
 `EvalCase.cohort` and `EvalCase.provenance` optionally identify reviewed feedback
 cases. They are excluded from serialization when absent, preserving existing
 manifests. `FeedbackProvenance` records synthetic cluster, episode, review and tool
-fingerprint origins, not additional causal truth. RCA loads these cases additively
+fingerprint origins, not additional causal truth. Cluster key/category/condition are
+omitted together when no classification exists; partial or inconsistent cluster
+metadata is rejected by the feedback loader. RCA loads these cases additively
 without changing its explicit original18 gate.
 
 New `CaseResult` rows carry `original`, `challenge` or `feedback` cohort labels.

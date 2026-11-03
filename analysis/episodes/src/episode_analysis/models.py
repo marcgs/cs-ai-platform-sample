@@ -70,7 +70,7 @@ class EvalCase(Record):
 
     episode_id: str
     input: str
-    expected_category: Category
+    expected_category: Category | None = None
     expected_failure_mode: str | None
     expected_mode_basis: str
     tool_calls: list[dict[str, object]]
@@ -116,3 +116,4 @@ class Report(Record):
     unclassified: list[EnrichedEpisode]
     errors: dict[str, str]
     limitations: list[str]
+    review_candidates: list[EvalCase] = Field(default_factory=list[EvalCase])

@@ -1,6 +1,11 @@
 # Episode analysis
 
 Offline-first cleaning, enrichment, classification, clustering and owner handoffs.
+
+Reports also retain `review_candidates` for every episode with review evidence,
+including episodes never classified. Feedback-case admission uses consensus and
+replay, not clustering. Optional cluster provenance stays corroborated; no
+classifier label supplies a case's expected cause or incident category.
 No Azure, Fabric, deployment or learner changes occur by default.
 
 Iteration 4's offline L8 changes introduce a closed condition vocabulary, stable
