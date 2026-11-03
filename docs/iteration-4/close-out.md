@@ -37,11 +37,15 @@ failures. [Means, applicability and intervals](../../evals/rca/README.md)
 come from the unchanged journal, not new model calls.
 
 The first data proposal, [#32](https://github.com/marcgs/cs-ai-platform-sample/pull/32),
-considers all 50 fresh-cohort episodes: **3 admitted, 8 duplicates, 12 rejected
-as correct output, 27 expert referrals**. Four independent reviewers support
-each admitted verdict; cause support is 0.75 / 0.75 / 1.00.
-The PR retains every decision, source review and replay fingerprint.
-An identical proposal rerun produces byte-identical artifacts.
+considers all 50 fresh-cohort episodes: **2 retained cases, 8 duplicates,
+12 correct-output rejections, 27 expert referrals and 1 manually excluded
+conflict**. `FB-099561399790d755` (`M-0010`) was manually excluded.
+Four independent reviewers support each retained verdict; cause support is
+0.75 / 1.00. The original automatic proposal admitted 3 cases; its frozen
+decisions, source reviews and replay fingerprints remain historical evidence.
+A deterministic rerun reproduces the original automatic proposal, not the
+manually corrected two-case manifest. No cause investigation or new guard was
+implemented; L9 records the deferred same-input conflict check.
 The implementation and data proposal pass Ruff, strict Pyright and 670 offline tests.
 
 Human review/merge is still required: these are proposed cases, not an accepted

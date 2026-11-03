@@ -11,8 +11,13 @@ Implementation is complete in merged
 [#30](https://github.com/marcgs/cs-ai-platform-sample/pull/30).
 The first fresh-cohort data proposal,
 [#32](https://github.com/marcgs/cs-ai-platform-sample/pull/32), is open for human
-review/merge: 3 admitted, 8 duplicates, 12 correct-output rejections and 27 expert
-referrals from all 50 episodes. A public-command rerun produces identical files.
+review/merge: 2 retained cases, 8 duplicates, 12 correct-output rejections,
+27 expert referrals and 1 manually excluded conflict from all 50 episodes.
+`FB-099561399790d755` (`M-0010`) was manually excluded. The frozen original
+automatic proposal admitted 3 cases; a public-command rerun reproduces that
+historical proposal, not the manually corrected two-case manifest.
+No cause investigation or new guard was implemented; L9 defers the same-input
+conflict check.
 Ruff, strict Pyright and 670 offline tests pass with the proposed manifest.
 No new model calls, publication, Azure writes or deployments were performed.
 L8 closes as a finding (L12), not an admission blocker. The three-repeat baseline,
