@@ -19,6 +19,7 @@ from cs_platform.eval_reporting import RunMetadata, artifact_paths, validate_art
 from cs_platform.evals import (
     CaseResult,
     Cohort,
+    ErrorPolicy,
     EvalCase,
     EvalPersistenceError,
     EvalSuite,
@@ -49,6 +50,7 @@ class RunManifest(BaseModel):
     schema_version: Literal[1] = 1
     completion_protocol: Literal["certificate-v1"] | None = None
     publication_coordination: Literal["shared-v1"] | None = None
+    error_policy: ErrorPolicy = "legacy-v1"
     suite: str
     cases: tuple[EvalCase, ...]
     cohorts: dict[str, Cohort] = Field(default_factory=dict[str, Cohort])
@@ -321,6 +323,7 @@ class RunWriter:
         self.manifest = RunManifest(
             completion_protocol="certificate-v1",
             publication_coordination="shared-v1",
+            error_policy="outcome-v1",
             suite=suite.name,
             cases=assign_splits(suite.cases),
             cohorts={case.id: case_cohort(suite, case) for case in suite.cases},
@@ -568,6 +571,7 @@ def load_run(results_dir: Path) -> RunRecord:
         cases=[completed[key] for key in expected if key in completed],
         minimum_score_metrics=frozenset(manifest.thresholds.minimums),
         hard_check_metrics=manifest.thresholds.hard_checks,
+        error_policy=manifest.error_policy,
     )
     complete = (
         len(completed) == len(expected)
@@ -636,6 +640,7 @@ def _export_record(directory: Path, record: RunRecord, *, stage_reports: bool = 
         "gate_case_ids": sorted({case.case_id for case in result.cases if case.gated}),
         "minimum_score_metrics": sorted(result.minimum_score_metrics),
         "hard_check_metrics": sorted(result.hard_check_metrics),
+        "error_policy": result.error_policy,
         "metrics": result.metrics,
         "intervals": result.intervals,
         "gate_metrics": result.gate_metrics,

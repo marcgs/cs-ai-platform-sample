@@ -521,3 +521,21 @@ def test_evidence_free_identity_abstention_grounding_requires_valid_contract(val
         observed.value.hypotheses[0].confidence = 0.9
     assert evidence_grounded(case, observed) == {"evidence_grounded": float(valid)}
     assert score(load_suite(), case, observed)["evidence_grounded"] == float(valid)
+
+
+@pytest.mark.parametrize(
+    ("mode", "confidence"), [("FM-01", 0.5), ("FM-01", 0.99), ("unknown", 0.9)]
+)
+def test_identity_abstention_rejects_unsupported_secondary_hypotheses(
+    mode: str, confidence: float
+) -> None:
+    case = _challenge_case("missing_machine")
+    observed = _truthful_output(case)
+    assert isinstance(observed.value, RcaReport)
+    secondary = hypothesis(2, mode)
+    secondary.confidence = confidence
+    observed.value.hypotheses.append(secondary)
+    scores = score(load_suite(), case, observed)
+    assert scores["schema_valid"] == 0.0
+    assert scores["evidence_grounded"] == 0.0
+    assert scores["hit_at_1_lenient"] == 0.0

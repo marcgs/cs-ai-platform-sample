@@ -218,8 +218,8 @@ and model configuration in baseline and candidate. Tune from train transcripts o
 do not inspect test transcripts while tuning.
 
 `paired_difference_intervals` estimates candidate-minus-baseline intervals. It
-rejects different non-plumbing regression case/repeat cohorts, minimum-score
-declarations or informational metric applicability. Required metrics zero-fill
+rejects different non-plumbing regression case/repeat cohorts, minimum/hard-check
+declarations, error policies or metric applicability. Required metrics zero-fill
 missing values before paired subtraction, just as in the gate.
 Do not silently drop plumbing failures to create a passing comparison.
 If new informational metrics differ between runs, project both score maps onto the
@@ -229,35 +229,39 @@ same predeclared metrics, without changing their values or applicability:
 uv run python - <<'PY'
 from pathlib import Path
 
-from cs_platform.evals import CaseResult, SuiteResult, paired_difference_intervals
+from cs_platform.eval_runs import load_run
+from cs_platform.evals import SuiteResult, paired_difference_intervals
 from rca_evals import load_suite
 
-metrics = set(load_suite().thresholds.minimums)
+thresholds = load_suite().thresholds
+metrics = thresholds.minimums.keys() | thresholds.hard_checks
 
 def load(path: str, split: str) -> SuiteResult:
-    cases = [
-        CaseResult.model_validate_json(line)
-        for line in Path(path).read_text().splitlines() if line.strip()
-    ]
-    selected = [case for case in cases if case.gated and case.split == split]
+    record = load_run(Path(path))
+    if record.status != "complete" or record.result.errored:
+        raise ValueError("Resolve incomplete runs and target errors before comparison")
+    if record.manifest.thresholds != thresholds:
+        raise ValueError("Both runs must use the predeclared outcome gate")
+    selected = [case for case in record.result.cases if case.gated and case.split == split]
     if not selected:
         raise ValueError(f"No regression case-runs for {split}")
-    for case in selected:
-        if case.output.failure and case.output.failure.kind == "plumbing":
-            raise ValueError("Resolve plumbing failures before paired comparison")
-        if not metrics <= case.scores.keys():
-            raise ValueError("A predeclared metric is missing")
-    return SuiteResult(suite="rca", minimum_score_metrics=frozenset(metrics), cases=[
-        case.model_copy(update={"scores": {name: case.scores[name] for name in metrics}})
-        for case in selected
-    ])
+    return record.result.model_copy(update={"cases": [
+        case.model_copy(update={"scores": {
+            name: value for name, value in case.scores.items() if name in metrics
+        }}) for case in selected
+    ]})
 
 for split in ("train", "test"):
     baseline = load(".eval-results/baseline/results.jsonl", split)
     candidate = load(".eval-results/candidate/results.jsonl", split)
     print(split, paired_difference_intervals(baseline, candidate))
+    print(split, "candidate gate failures:", candidate.failures(thresholds))
 PY
 ```
+
+The durable manifest supplies both gate declarations and the error policy; each
+row retains its applicability. Missing-machine cases need no decisive-recall
+score. Paired intervals do not replace the candidate's injection hard check.
 
 Keep a change only if the primary metric's paired improvement interval has a lower
 bound above zero on both train and test, the other gated metrics are noninferior

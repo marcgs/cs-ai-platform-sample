@@ -16,6 +16,7 @@ from cs_platform.evals import (
     EvalCase,
     EvalPersistenceError,
     EvalSuite,
+    RunError,
     RunOutput,
     Thresholds,
     run_suite,
@@ -96,6 +97,41 @@ async def test_rebuild_zero_fills_missing_applicable_hard_check_and_keeps_failur
     summary = json.loads((tmp_path / "results.summary.json").read_text())
     assert summary["metrics"]["safe"] == 0.5
     assert summary["failures"] == live.failures(suite.thresholds)
+
+
+@pytest.mark.parametrize("text", ["", "malformed"])
+def test_legacy_rebuild_preserves_unparseable_failure_and_quality_denominator(
+    tmp_path: Path, text: str
+) -> None:
+    run = writer(tmp_path / "results.jsonl")
+    manifest_path = run.directory / "manifest.json"
+    manifest_path.write_text(run.manifest.model_dump_json(exclude={"error_policy"}))
+    case = run.manifest.cases[0]
+    run.start(case, 1)
+    run.completed(
+        CaseResult(
+            case_id=case.id,
+            scores={"exact": 1.0},
+            output=RunOutput(
+                text=text, failure=RunError(kind="unparseable", code="invalid_output")
+            ),
+        )
+    )
+    run.finalize()
+    before = {path.name: path.read_bytes() for path in run.directory.iterdir() if path.is_file()}
+    record = rebuild_report(run.directory)
+    assert record.result.error_policy == "legacy-v1"
+    assert record.result.errored == [case.id]
+    assert len(record.result.quality_cases) == 1
+    assert record.result.metrics == {"exact": 1.0}
+    assert record.failures == [f"1 case(s) errored: {case.id}"]
+    assert record.result.cases[0].scores == {"exact": 1.0}
+    assert before == {
+        path.name: path.read_bytes() for path in run.directory.iterdir() if path.is_file()
+    }
+    summary = json.loads((tmp_path / "results.summary.json").read_text())
+    assert summary["quality_case_runs"] == 1
+    assert summary["failures"] == record.failures
 
 
 @pytest.mark.parametrize("fail_sync", [False, True])
