@@ -93,6 +93,7 @@ def write_artifacts(
         "gate_case_ids": sorted({case.case_id for case in result.cases if case.gated}),
         "minimum_score_metrics": sorted(result.minimum_score_metrics),
         "hard_check_metrics": sorted(result.hard_check_metrics),
+        "error_policy": result.error_policy,
         "metrics": result.metrics,
         "intervals": result.intervals,
         "gate_metrics": result.gate_metrics,

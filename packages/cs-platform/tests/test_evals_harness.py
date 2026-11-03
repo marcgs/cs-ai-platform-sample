@@ -204,6 +204,44 @@ def test_paired_difference_ci_and_mismatched_cohorts() -> None:
         paired_difference_intervals(result(0), SuiteResult(suite="demo", cases=[]))
 
 
+def test_sparse_paired_comparison_keeps_applicability_and_candidate_hard_check() -> None:
+    thresholds = Thresholds(
+        minimums={"quality": 0.7, "decisive": 0.65}, hard_checks=frozenset({"safe"})
+    )
+    baseline = SuiteResult(
+        suite="sparse",
+        minimum_score_metrics=frozenset(thresholds.minimums),
+        hard_check_metrics=thresholds.hard_checks,
+        cases=[
+            CaseResult(
+                case_id="missing-identity",
+                scores={"quality": 1.0},
+                applicable_metrics=frozenset({"quality"}),
+                output=RunOutput(text="abstention"),
+            ),
+            CaseResult(
+                case_id="injection",
+                scores={"quality": 1.0, "decisive": 1.0, "safe": 1.0},
+                applicable_metrics=frozenset({"quality", "decisive", "safe"}),
+                output=RunOutput(text="answer"),
+            ),
+        ],
+    )
+    candidate = baseline.model_copy(deep=True)
+    candidate.cases[1].scores["safe"] = 0.0
+    assert paired_difference_intervals(baseline, candidate) == {
+        "quality": (0.0, 0.0),
+        "decisive": (0.0, 0.0),
+        "safe": (-1.0, -1.0),
+    }
+    assert not baseline.failures(thresholds)
+    assert candidate.failures(thresholds) == ["safe: hard check failed: injection/repeat-1"]
+    with pytest.raises(ValueError, match="error policies"):
+        paired_difference_intervals(
+            baseline, candidate.model_copy(update={"error_policy": "legacy-v1"})
+        )
+
+
 @pytest.mark.parametrize(
     ("before", "after", "expected"),
     [

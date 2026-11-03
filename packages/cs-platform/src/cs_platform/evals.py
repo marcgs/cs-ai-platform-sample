@@ -225,11 +225,15 @@ class CaseResult(BaseModel):
     )
 
 
+type ErrorPolicy = Literal["legacy-v1", "outcome-v1"]
+
+
 class SuiteResult(BaseModel):
     suite: str
     cases: list[CaseResult]
     minimum_score_metrics: frozenset[str] = frozenset()
     hard_check_metrics: frozenset[str] = frozenset()
+    error_policy: ErrorPolicy = "outcome-v1"
     bootstrap_samples: int = 2000
     bootstrap_seed: int = 42
 
@@ -245,7 +249,11 @@ class SuiteResult(BaseModel):
 
     @property
     def quality_cases(self) -> list[CaseResult]:
-        return [case for case in self.cases if not is_plumbing(case.output)]
+        return [
+            case
+            for case in self.cases
+            if not is_plumbing(case.output, error_policy=self.error_policy)
+        ]
 
     @property
     def gate_metrics(self) -> dict[str, float]:
@@ -310,6 +318,16 @@ class SuiteResult(BaseModel):
     @property
     def errored(self) -> list[str]:
         """Cases the target couldn't run, even after retries."""
+        if self.error_policy == "legacy-v1":
+            return [
+                case.case_id
+                for case in self.cases
+                if case.gated
+                and (
+                    case.output.error
+                    or (case.output.failure and case.output.failure.kind != "wrong_answer")
+                )
+            ]
         return [case.case_id for case in self.cases if case.gated and is_plumbing(case.output)]
 
     @property
@@ -355,6 +373,7 @@ class SuiteResult(BaseModel):
             if metrics.get(name, 0.0) < minimum
             and (
                 not self.cases
+                or self.error_policy == "legacy-v1"
                 or any(
                     case.gated and _applies(case, name, frozenset(thresholds.minimums))
                     for case in self.quality_cases
@@ -415,10 +434,11 @@ def score(suite: EvalSuite, case: EvalCase, output: RunOutput) -> dict[str, floa
     return scores
 
 
-def is_plumbing(output: RunOutput) -> bool:
+def is_plumbing(output: RunOutput, *, error_policy: ErrorPolicy = "outcome-v1") -> bool:
     if output.failure is not None:
         return output.failure.kind == "plumbing" or (
-            output.failure.kind == "unparseable"
+            error_policy == "outcome-v1"
+            and output.failure.kind == "unparseable"
             and output.value is None
             and not (output.text or "").strip()
         )
@@ -516,6 +536,8 @@ def paired_difference_intervals(
 ) -> dict[str, tuple[float, float]]:
     """Bootstrap paired candidate-minus-baseline scores on the same case/repeat cohort."""
     required = baseline.required_score_metrics
+    if baseline.error_policy != candidate.error_policy:
+        raise ValueError("paired comparison requires identical error policies")
     if (
         baseline.minimum_score_metrics != candidate.minimum_score_metrics
         or baseline.hard_check_metrics != candidate.hard_check_metrics

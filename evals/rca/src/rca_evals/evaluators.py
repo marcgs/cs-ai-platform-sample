@@ -121,13 +121,14 @@ def knowledge_search(case: EvalCase, output: RunOutput) -> Mapping[str, float]:
 
 
 def _identity_abstention(report: RcaReport) -> bool:
-    top = min(report.hypotheses, key=lambda hypothesis: hypothesis.rank, default=None)
     missing = " ".join(report.missing_information).casefold()
     return (
         report.machine_id.casefold() in ("unknown", "unspecified", "")
-        and top is not None
-        and top.failure_mode_id == "unknown"
-        and 0 <= top.confidence <= 0.5
+        and bool(report.hypotheses)
+        and all(
+            hypothesis.failure_mode_id == "unknown" and 0 <= hypothesis.confidence <= 0.5
+            for hypothesis in report.hypotheses
+        )
         and any(
             term in missing
             for term in (
