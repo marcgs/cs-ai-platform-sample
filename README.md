@@ -71,14 +71,27 @@ See the [eval guide](evals/rca/README.md) for splits, artifacts and paired compa
 
 After explicit publishing approval, `uv run csai eval publish .eval-results/<run>`
 publishes the saved measurement without rerunning the agent. Publishing never
-changes the local gate. The 50-case validation completed and is visible in
-Foundry. All 450 published code scores meet the approved absolute parity
-tolerance of `1e-12`. Future publications report `calibration_score = 1 - Brier`
-(higher is better), preserving the local loss and gate. This incompatible
-definition needs reviewed migration before publication; the existing run is
-unchanged. Sparse-score parity remains blocked, without inventing false zeroes.
-The feedback-case PR and three-repeat baseline are still outstanding.
+changes the local gate. New publications use a separate **judges-only**
+evaluation definition: task adherence, intent resolution, coherence and tool
+call accuracy. No local-score code evaluators (including `calibration_score`)
+are registered. Frozen observations, scores and failures stay in the local
+record. A digest of those observations preserves measurement identity without
+transporting scores or failures in Foundry's schema or inline rows. Judge inputs
+and version provenance are published.
+The existing 50-case evaluation and its runs stay unchanged: no migration,
+deletion or republication. The feedback-case PR, three-repeat baseline and
+its separately approved judges-only publication are still outstanding.
 See [Q9's validation and limitations](docs/iteration-4/q9.md).
+
+The local wait is 15 minutes, not a cloud deadline. If the run is still queued
+or in progress, `eval publish` prints its run ID and portal URL and exits **3**
+(still running, not failed). Repeat the same command to observe the same
+registered run, never to resubmit it. Exit 0 means completed; exit 2 means a
+publication error. If Foundry has not supplied a report URL, it is explicitly
+unavailable; no portal home link is presented as a run link. Use the printed run
+ID in the project.
+With `eval rca --publish`, a pending or failed publication never changes the
+local gate's exit code.
 
 After separate approval, this creates or resumes one infrastructure-only attempt:
 

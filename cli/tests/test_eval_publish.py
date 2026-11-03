@@ -115,9 +115,9 @@ def test_disk_mapping_preserves_pinned_versions_ground_truth_and_tool_results(sa
     assert publication.metadata["model"] == "saved-agent-model"
     assert publication.metadata["source"] == "synthetic"
     assert publication.metadata["status"] == "complete"
-    assert publication.metadata["metric_parity"] == "unverified"
     row = publication.rows[0]
-    assert row.scores == {"exact": 1.0}
+    assert {"scores", "failure"}.isdisjoint(row.model_dump())
+    assert read_run(saved_run).result.cases[0].scores == {"exact": 1.0}
     assert row.ground_truth["expected"] == {"machine_id": "M-0001", "failure_mode_id": "FM-01"}
     assert row.ground_truth["truth"] == EvalTruth(
         category="clean", decisive_refs=("EV-000001",)
@@ -128,6 +128,24 @@ def test_disk_mapping_preserves_pinned_versions_ground_truth_and_tool_results(sa
     assert row.cohort == "original"
     assert publication.coordination == "shared-v1"
     assert "coordination" not in publication.model_dump(mode="json")
+
+
+@pytest.mark.parametrize("change", ["scores", "failure"])
+def test_local_grading_evidence_changes_identity_without_being_transported(
+    saved_run, monkeypatch, change
+):
+    original = eval_publish.publication_from_record(saved_run)
+    before = {path: path.read_bytes() for path in saved_run.rglob("*") if path.is_file()}
+    record = read_run(saved_run)
+    if change == "scores":
+        record.result.cases[0].scores = {"exact": 0.0}
+    else:
+        record.result.cases[0].output.failure = RunError(kind="plumbing", code="timeout")
+    monkeypatch.setattr(eval_publish, "read_run", lambda _: record)
+    changed = eval_publish.publication_from_record(saved_run)
+    assert changed.items() == original.items()
+    assert changed.measurement_id != original.measurement_id
+    assert before == {path: path.read_bytes() for path in saved_run.rglob("*") if path.is_file()}
 
 
 @pytest.mark.parametrize("retry", [None, "failed-run"])
@@ -233,11 +251,6 @@ def test_certified_new_capture_can_initiate_shared_publication(
         )
     )
     project = SimpleNamespace(
-        beta=SimpleNamespace(
-            evaluators=SimpleNamespace(
-                create_version=lambda **kwargs: SimpleNamespace(version="1"),
-            )
-        ),
         get_openai_client=lambda **kwargs: nullcontext(client),
     )
     monkeypatch.setattr(foundry, "DefaultAzureCredential", lambda: nullcontext(object()))
@@ -313,6 +326,96 @@ def test_public_publish_reports_failure_without_changing_saved_gate(saved_run, m
     assert read_run(saved_run).failures == []
 
 
+@pytest.mark.parametrize("status", ["queued", "in_progress"])
+@pytest.mark.parametrize("report_url", [None, "https://example.test/report"])
+def test_public_cli_observes_pending_run_without_resubmitting(
+    saved_run, monkeypatch, status, report_url
+):
+    state = saved_run / "publication-state"
+    monkeypatch.setattr(foundry, "RECEIPT_DIRECTORY", state / "measurements")
+    monkeypatch.setattr(foundry, "LEGACY_RECEIPT_DIRECTORY", state / "legacy")
+    monkeypatch.setattr(foundry, "SUITE_DIRECTORY", state / "suites")
+    monkeypatch.setattr(foundry, "TIMEOUT_S", 0)
+    monkeypatch.setattr(
+        PlatformSettings,
+        "from_env",
+        lambda: SimpleNamespace(foundry_project_endpoint="unused", model_deployment="judge"),
+    )
+    evaluations = []
+    runs = []
+    retrieved = []
+
+    def create_evaluation(**kwargs):
+        assert len(kwargs["testing_criteria"]) == 4
+        evaluation = SimpleNamespace(id="eval-id", metadata=kwargs["metadata"])
+        evaluations.append(evaluation)
+        return evaluation
+
+    def create_run(**kwargs):
+        row = kwargs["data_source"]["source"]["content"][0]["item"]
+        assert {"scores", "failure"}.isdisjoint(row)
+        run = SimpleNamespace(
+            id="run-id",
+            name=kwargs["name"],
+            metadata=kwargs["metadata"],
+            status=status,
+            report_url=report_url,
+            result_counts=SimpleNamespace(errored=0),
+            error=None,
+        )
+        runs.append(run)
+        return run
+
+    def retrieve_run(run_id, **kwargs):
+        retrieved.append(run_id)
+        return runs[0]
+
+    client = SimpleNamespace(
+        evals=SimpleNamespace(
+            list=lambda: evaluations,
+            create=create_evaluation,
+            retrieve=lambda _: evaluations[0],
+            runs=SimpleNamespace(
+                list=lambda **_: [],
+                create=create_run,
+                retrieve=retrieve_run,
+            ),
+        )
+    )
+    project = SimpleNamespace(get_openai_client=lambda **_: nullcontext(client))
+    monkeypatch.setattr(foundry, "DefaultAzureCredential", lambda: nullcontext(object()))
+    monkeypatch.setattr(foundry, "AIProjectClient", lambda *args: nullcontext(project))
+    before = {p: p.read_bytes() for p in (saved_run / "results.run").iterdir() if p.is_file()}
+    args = ["--no-azd", "eval", "publish", str(saved_run)]
+    for _ in range(2):
+        result = CliRunner().invoke(app, args)
+        assert result.exit_code == 3, result.output
+        assert "still running" in result.output
+        assert "not a failure" in result.output
+        assert "Run ID: run-id" in result.output
+        expected_report = report_url or "unavailable (not supplied by Foundry)"
+        assert f"Foundry report: {expected_report}" in result.output
+        assert "https://ai.azure.com/" not in result.output
+        assert "error:" not in result.output
+    runs[0].status = "completed"
+    result = CliRunner().invoke(app, args)
+    assert result.exit_code == 0, result.output
+    if report_url is None:
+        assert (
+            "Foundry report: unavailable (not supplied by Foundry); run ID: run-id" in result.output
+        )
+    assert len(evaluations) == len(runs) == 1
+    assert (
+        runs[0].metadata["csai_measurement"]
+        == eval_publish.publication_from_record(saved_run).measurement_id
+    )
+    assert retrieved == ["run-id", "run-id"]
+    assert before == {
+        p: p.read_bytes() for p in (saved_run / "results.run").iterdir() if p.is_file()
+    }
+    assert read_run(saved_run).failures == []
+
+
 def test_missing_record_is_rejected_before_publication(tmp_path, monkeypatch):
     def unexpected(*args, **kwargs):
         pytest.fail("No publication is allowed without a readable run")
@@ -333,15 +436,6 @@ def test_captured_empty_tool_definitions_do_not_fall_back_to_run_definitions(
     assert publication.rows[0].tool_definitions == []
     with pytest.raises(foundry.FoundryEvalError, match="not captured"):
         foundry.publish(publication, endpoint="unused", model="judge")
-
-
-def test_plumbing_only_record_marks_metric_parity_blocked(saved_run, monkeypatch):
-    record = read_run(saved_run)
-    record.result.cases[0].scores = {}
-    record.result.cases[0].output.failure = RunError(kind="plumbing", code="timeout")
-    monkeypatch.setattr(eval_publish, "read_run", lambda _: record)
-    publication = eval_publish.publication_from_record(saved_run)
-    assert publication.metadata["metric_parity"] == "blocked:sparse_or_plumbing"
 
 
 def test_standalone_publish_handles_unexpected_adapter_failure(saved_run, monkeypatch):

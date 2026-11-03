@@ -89,7 +89,7 @@ def publish_record(
         return publisher(path)
     except ImportError as error:
         raise foundry.FoundryEvalError("the eval publishing adapter is unavailable") from error
-    except foundry.FoundryEvalError:
+    except foundry.FoundryEvalError, foundry.FoundryEvalPending:
         raise
     except Exception as error:
         raise foundry.FoundryEvalError(
@@ -128,6 +128,9 @@ def publish_command(
             url = publish_record(results_dir, legacy_receipts=legacy_receipts)
         else:
             url = publish_record(results_dir)
+    except foundry.FoundryEvalPending as pending:
+        typer.echo(str(pending))
+        raise typer.Exit(3) from pending
     except (foundry.FoundryEvalError, OSError, ValueError) as error:
         typer.echo(f"error: {error}", err=True)
         raise typer.Exit(2) from error

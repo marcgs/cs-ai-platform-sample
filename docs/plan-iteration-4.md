@@ -40,6 +40,17 @@ Remaining close-out, in order:
 4. The score trend page (Q17).
 5. Close-out: backlog targets, evidence and the iteration record.
 
+Q16's offline implementation uses a new judges-only definition; it does not
+migrate or delete existing evaluations, runs or receipts. After the local
+15-minute wait, `eval publish` reports a queued/in-progress run's ID and service
+portal URL (explicitly unavailable if absent) with exit 3 (still running, not
+failed). Repeating the same command retrieves
+that run, with no new submission. Submission/retry receipt safeguards remain.
+Mirror-only parity, calibration-grader migration and numeric-transport work are
+superseded, not remaining acceptance requirements. Implementation review/PR
+and the later separately approved judges-only publication remain open.
+Historical Q9 evidence below is retained.
+
 ### Acceptance execution update — 2 November 2026
 
 Q9 publication no longer blocks local acceptance. L8's fresh classification and

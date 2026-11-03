@@ -22,10 +22,13 @@ def private_receipts(tmp_path, monkeypatch):
     monkeypatch.setattr(foundry, "SUITE_DIRECTORY", tmp_path / "user-state" / "suites")
 
 
-def publication(*, scores=None, tool_calls=None, tool_definitions=None):
+def publication(
+    *, observations_digest="frozen-observations", tool_calls=None, tool_definitions=None
+):
     return foundry.Publication(
         coordination="shared-v1",
         suite="rca",
+        observations_digest=observations_digest,
         metadata={
             "started_at": "2026-10-30T12:00:00+00:00",
             "revision": "revision",
@@ -47,7 +50,6 @@ def publication(*, scores=None, tool_calls=None, tool_definitions=None):
                 tool_calls=tool_calls or [],
                 tool_trace_complete=True,
                 tool_definitions=tool_definitions or [],
-                scores={"hit_at_1": 1.0} if scores is None else scores,
                 gated=True,
             )
         ],
@@ -87,10 +89,6 @@ def fake_boundary(
     def next_error(error):
         return (error.pop(0) if error else None) if isinstance(error, list) else error
 
-    def create_evaluator(**kwargs):
-        calls.append(("evaluator", kwargs))
-        return SimpleNamespace(version="1")
-
     def create_evaluation(**kwargs):
         if create_hook:
             create_hook()
@@ -98,7 +96,10 @@ def fake_boundary(
         error = next_error(evaluation_error)
         if isinstance(error, APIStatusError):
             raise error
-        evaluation = SimpleNamespace(id="eval-id", metadata=kwargs["metadata"])
+        evaluation = SimpleNamespace(
+            id="eval-id" if not evaluations else f"eval-id-{len(evaluations) + 1}",
+            metadata=kwargs["metadata"],
+        )
         evaluations.append(evaluation)
         if error is not None:
             raise error
@@ -145,7 +146,6 @@ def fake_boundary(
         )
     )
     project = SimpleNamespace(
-        beta=SimpleNamespace(evaluators=SimpleNamespace(create_version=create_evaluator)),
         get_openai_client=lambda **options: (
             nullcontext(client)
             if options == {"max_retries": 0}
@@ -339,7 +339,7 @@ def test_queued_startup_retry_resumes_only_its_recorded_run(monkeypatch):
     recorded, runs, calls = startup_failure(monkeypatch, status=["failed", "queued"])
     monkeypatch.setattr(foundry, "TIMEOUT_S", 0)
     previous = runs[0].id
-    with pytest.raises(foundry.FoundryEvalError, match="queued"):
+    with pytest.raises(foundry.FoundryEvalPending, match="still running"):
         foundry.publish(recorded, endpoint="unused", model="judge", retry_infrastructure=previous)
     runs[1].status = "completed"
     assert foundry.publish(
@@ -456,7 +456,7 @@ def test_concurrent_copies_share_measurement_submission_lock(monkeypatch):
 def test_legacy_pending_migrates_and_blocks_copied_measurement_retry(monkeypatch, tmp_path):
     recorded = publication()
     key = hashlib.sha256(
-        json.dumps([recorded.measurement_id, "unused", "judge"]).encode()
+        json.dumps([recorded.measurement_id, "unused", "judge", recorded.definition_key]).encode()
     ).hexdigest()
     with eval_receipts.publication_receipt(foundry.LEGACY_RECEIPT_DIRECTORY, key) as legacy:
         legacy.write(eval_receipts.PublicationReceipt(key=key, evaluation_id="eval-id"))
@@ -480,7 +480,7 @@ def test_first_copied_legacy_invocation_cannot_ignore_unseen_pending(monkeypatch
     recorded = modern.model_copy(update={"coordination": None}, deep=True)
     assert recorded.measurement_id == modern.measurement_id
     key = hashlib.sha256(
-        json.dumps([recorded.measurement_id, "unused", "judge"]).encode()
+        json.dumps([recorded.measurement_id, "unused", "judge", recorded.definition_key]).encode()
     ).hexdigest()
     origin = tmp_path / "original-worktree" / "receipts"
     with eval_receipts.publication_receipt(origin, key) as receipt:
@@ -502,7 +502,7 @@ def test_first_copied_legacy_invocation_cannot_ignore_unseen_pending(monkeypatch
 def test_existing_legacy_origin_remains_locked_before_authentication(monkeypatch, explicit):
     recorded = publication()
     key = hashlib.sha256(
-        json.dumps([recorded.measurement_id, "unused", "judge"]).encode()
+        json.dumps([recorded.measurement_id, "unused", "judge", recorded.definition_key]).encode()
     ).hexdigest()
     origin = foundry.LEGACY_RECEIPT_DIRECTORY
     calls = fake_boundary(monkeypatch)
@@ -524,7 +524,7 @@ def test_explicit_original_pending_import_never_creates_on_empty_remote_listing(
 ):
     recorded = publication().model_copy(update={"coordination": None})
     key = hashlib.sha256(
-        json.dumps([recorded.measurement_id, "unused", "judge"]).encode()
+        json.dumps([recorded.measurement_id, "unused", "judge", recorded.definition_key]).encode()
     ).hexdigest()
     origin = tmp_path / "original-evidence"
     with eval_receipts.publication_receipt(origin, key) as receipt:
@@ -565,7 +565,7 @@ def test_positive_legacy_run_evidence_resumes_only_the_original_measurement(monk
     calls = fake_boundary(monkeypatch, run_list_hook=lambda _: [])
     foundry.publish(modern, endpoint="unused", model="judge")
     key = hashlib.sha256(
-        json.dumps([modern.measurement_id, "unused", "judge"]).encode()
+        json.dumps([modern.measurement_id, "unused", "judge", modern.definition_key]).encode()
     ).hexdigest()
     with eval_receipts.publication_receipt(foundry.RECEIPT_DIRECTORY, key) as shared:
         receipt = shared.read()
@@ -588,7 +588,7 @@ def test_positive_origin_input_cannot_substitute_another_measurement(monkeypatch
     recorded = publication().model_copy(update={"coordination": None}, deep=True)
     recorded.rows[0].case_id = "different-measurement"
     key = hashlib.sha256(
-        json.dumps([recorded.measurement_id, "unused", "judge"]).encode()
+        json.dumps([recorded.measurement_id, "unused", "judge", recorded.definition_key]).encode()
     ).hexdigest()
     origin = tmp_path / "original-evidence"
     with eval_receipts.publication_receipt(origin, key) as receipt:
@@ -747,8 +747,8 @@ def test_user_level_suite_state_is_private_and_contains_no_measurements(monkeypa
             }
 
 
-def test_published_rows_preserve_scores_truth_and_metadata(monkeypatch):
-    saved = publication(scores={"calibration": 0.04, "hit_at_1": 1.0, "valid_refs": 0.875})
+def test_published_rows_preserve_provenance_without_local_grading_fields(monkeypatch):
+    saved = publication()
     before = saved.model_dump_json()
     measurement_id = saved.measurement_id
     calls = fake_boundary(monkeypatch)
@@ -759,7 +759,11 @@ def test_published_rows_preserve_scores_truth_and_metadata(monkeypatch):
         "csai_measurement": saved.measurement_id,
     }
     row = payload["data_source"]["source"]["content"][0]["item"]
-    assert row["scores"] == saved.rows[0].scores
+    schema = next(value for name, value in calls if name == "evaluation")["data_source_config"][
+        "item_schema"
+    ]
+    assert {"scores", "failure", "observations_digest"}.isdisjoint(row)
+    assert {"scores", "failure", "observations_digest"}.isdisjoint(schema["properties"])
     assert row["ground_truth"] == {"failure_mode_id": "FM-01"}
     assert row["source"] == "synthetic"
     assert row["cohort"] == "regression"
@@ -767,57 +771,37 @@ def test_published_rows_preserve_scores_truth_and_metadata(monkeypatch):
     assert saved.measurement_id == measurement_id
     criteria = next(value for name, value in calls if name == "evaluation")["testing_criteria"]
     assert {criterion["name"] for criterion in criteria} == {
-        "code_calibration_score",
-        "code_hit_at_1",
-        "code_valid_refs",
-        *foundry.BUILTIN_EVALUATORS,
+        "task_adherence",
+        "intent_resolution",
+        "coherence",
+        "tool_call_accuracy",
     }
-    calibration = next(item for item in criteria if item["name"] == "code_calibration_score")
-    assert calibration["evaluator_name"] == "csai_calibration_score"
-    assert calibration["initialization_parameters"] == {
-        "deployment_name": "judge",
-        "pass_threshold": 0.5,
-    }
-    registered = next(
-        value
-        for name, value in calls
-        if name == "evaluator" and value["name"] == "csai_calibration_score"
-    )
-    assert registered["evaluator_version"] == foundry.evaluator_definition("calibration")
+    assert len(criteria) == 4
+    for criterion in criteria:
+        name = criterion["name"]
+        assert criterion == {
+            "type": "azure_ai_evaluator",
+            "name": name,
+            "evaluator_name": f"builtin.{name}",
+            "initialization_parameters": {"deployment_name": "judge"},
+            "data_mapping": {
+                "query": "{{item.query}}",
+                "response": "{{item.response}}",
+                **(
+                    {"tool_definitions": "{{item.tool_definitions}}"} if name != "coherence" else {}
+                ),
+                **({"tool_calls": "{{item.tool_calls}}"} if name == "tool_call_accuracy" else {}),
+            },
+        }
 
 
-def test_code_mirror_does_not_invent_an_inapplicable_score():
-    namespace = {}
-    exec(foundry.mirror_code("decisive_ref_recall"), namespace)
-    grade = namespace["grade"]
-    assert grade({}, {"scores": {"decisive_ref_recall": 0.625}}) == 0.625
-    with pytest.raises(KeyError):
-        grade({}, {"scores": {}})
-
-
-def test_sparse_metrics_remain_in_rows_without_false_zero_grades():
-    recorded = publication(
-        scores={"calibration": 0.25, "hit_at_1": 1.0, "decisive_ref_recall": 0.75}
-    )
-    recorded.rows.append(
-        recorded.rows[0].model_copy(update={"case_id": "case-2", "scores": {"hit_at_1": 0.0}})
-    )
-    assert recorded.metric_names == ("hit_at_1",)
-    assert recorded.items() == [{"item": row.model_dump(mode="json")} for row in recorded.rows]
-    assert recorded.rows[0].scores["decisive_ref_recall"] == 0.75
-    assert recorded.rows[0].scores["calibration"] == 0.25
-    assert "decisive_ref_recall" not in recorded.rows[1].scores
-
-
-def test_plumbing_rows_cannot_distort_the_mirrored_quality_denominator():
-    recorded = publication()
-    recorded.rows.append(
-        recorded.rows[0].model_copy(
-            update={"case_id": "failed", "failure": {"kind": "plumbing", "code": "timeout"}}
-        )
-    )
-    assert recorded.metric_names == ()
-    assert recorded.rows[0].scores == {"hit_at_1": 1.0}
+def test_different_frozen_observations_do_not_change_judges_definition(monkeypatch):
+    calls = fake_boundary(monkeypatch)
+    foundry.publish(publication(), endpoint="unused", model="judge")
+    other = publication(observations_digest="different-frozen-observations")
+    foundry.publish(other, endpoint="unused", model="judge")
+    assert sum(name == "evaluation" for name, _ in calls) == 1
+    assert sum(name == "run" for name, _ in calls) == 2
 
 
 @pytest.mark.parametrize("judge", ["task_adherence", "intent_resolution", "tool_call_accuracy"])
@@ -863,14 +847,16 @@ def test_reuses_suite_evaluation_and_keeps_independent_run_metadata(monkeypatch)
     assert calls[0][1]["eval_id"] == "existing-eval"
 
 
-@pytest.mark.parametrize("schema", [2, 3])
+@pytest.mark.parametrize("schema", [2, 3, 4])
 @pytest.mark.parametrize("cached", [False, True])
-def test_changed_schema_does_not_create_duplicate_suite_evaluation(monkeypatch, schema, cached):
-    recorded = publication(scores={"calibration": 0.04, "hit_at_1": 1.0})
+def test_judges_use_a_new_definition_without_migrating_old_evaluations(monkeypatch, schema, cached):
+    recorded = publication()
     previous_definition = {
         "metrics": {
-            name: "decrease" if name == "calibration" else "increase"
-            for name in recorded.metric_names
+            "calibration_score" if name == "calibration" and schema == 4 else name: (
+                "decrease" if name == "calibration" and schema < 4 else "increase"
+            )
+            for name in ("calibration", "hit_at_1")
         },
         "judges": foundry.BUILTIN_EVALUATORS,
         "schema": schema,
@@ -878,19 +864,20 @@ def test_changed_schema_does_not_create_duplicate_suite_evaluation(monkeypatch, 
     previous_key = hashlib.sha256(
         json.dumps(previous_definition, sort_keys=True).encode()
     ).hexdigest()
+    old_evaluation = SimpleNamespace(
+        id="existing-eval",
+        metadata={
+            "csai_suite": "rca",
+            "definition_key": previous_key,
+            "judge_model": "judge",
+        },
+    )
+    old_metadata = old_evaluation.metadata.copy()
     calls = fake_boundary(
         monkeypatch,
-        existing=[
-            SimpleNamespace(
-                id="existing-eval",
-                metadata={
-                    "csai_suite": "rca",
-                    "definition_key": previous_key,
-                    "judge_model": "judge",
-                },
-            )
-        ],
+        existing=[old_evaluation],
     )
+    old_paths = {}
     if cached:
         key = hashlib.sha256(json.dumps(["unused", recorded.suite]).encode()).hexdigest()
         with eval_receipts.suite_receipt(foundry.SUITE_DIRECTORY, key) as cache:
@@ -902,9 +889,25 @@ def test_changed_schema_does_not_create_duplicate_suite_evaluation(monkeypatch, 
                     evaluation_id="existing-eval",
                 )
             )
-    with pytest.raises(foundry.FoundryEvalError, match="schema differs"):
-        foundry.publish(recorded, endpoint="unused", model="judge")
-    assert not calls
+            old_paths[cache.path] = cache.path.read_bytes()
+        key = hashlib.sha256(
+            json.dumps([recorded.measurement_id, "unused", "judge"]).encode()
+        ).hexdigest()
+        with eval_receipts.publication_receipt(foundry.RECEIPT_DIRECTORY, key) as receipt:
+            receipt.write(
+                eval_receipts.PublicationReceipt(
+                    key=key, evaluation_id="existing-eval", run_id="old-run"
+                )
+            )
+            old_paths[receipt.path] = receipt.path.read_bytes()
+    foundry.publish(recorded, endpoint="unused", model="judge")
+    foundry.publish(recorded, endpoint="unused", model="judge")
+    assert sum(name == "evaluation" for name, _ in calls) == 1
+    assert sum(name == "run" for name, _ in calls) == 1
+    run = next(value for name, value in calls if name == "run")
+    assert run["eval_id"] != old_evaluation.id
+    assert old_evaluation.metadata == old_metadata
+    assert all(path.read_bytes() == before for path, before in old_paths.items())
 
 
 @pytest.mark.parametrize(("status", "errored"), [("failed", 0), ("completed", 1), ("cancelled", 0)])
@@ -912,12 +915,6 @@ def test_service_and_item_failures_are_not_reported_as_success(monkeypatch, stat
     fake_boundary(monkeypatch, status=status, errored=errored)
     with pytest.raises(foundry.FoundryEvalError, match="Foundry evaluation"):
         foundry.publish(publication(), endpoint="unused", model="judge")
-
-
-@pytest.mark.parametrize("value", [float("nan"), float("inf"), -0.01, 1.01])
-def test_invalid_scores_fail_before_authentication(value):
-    with pytest.raises(foundry.FoundryEvalError, match=r"\[0, 1\]"):
-        foundry.publish(publication(scores={"score": value}), endpoint="unused", model="judge")
 
 
 def test_missing_tool_definitions_are_not_reconstructed():
@@ -940,31 +937,21 @@ def test_incomplete_traces_fail_before_authentication(calls):
         foundry.publish(recorded, endpoint="unused", model="judge")
 
 
-def test_calibration_score_inverts_brier_without_replacing_the_recorded_loss():
-    evaluator = foundry.evaluator_definition("calibration")
-    assert evaluator["name"] == "csai_calibration_score"
-    assert "calibration_score" in evaluator["display_name"]
-    assert "1 - calibration (binary Brier loss)" in evaluator["description"]
-    assert evaluator["definition"]["metrics"]["result"]["desirable_direction"] == "increase"
-    namespace = {}
-    exec(evaluator["definition"]["code_text"], namespace)
-    grade = namespace["grade"]
-    for loss, expected in ((0.0, 1.0), (0.01, 0.99), (0.5, 0.5), (0.81, 0.19), (1.0, 0.0)):
-        scores = {"calibration": loss}
-        assert grade({}, {"scores": scores}) == pytest.approx(expected, rel=0, abs=1e-12)
-        assert scores == {"calibration": loss}
-    with pytest.raises(KeyError):
-        grade({}, {"scores": {"calibration_score": 0.99}})
-
-
-def test_timeout_retry_resumes_the_same_run_without_more_judge_calls(monkeypatch):
+@pytest.mark.parametrize("status", ["queued", "in_progress"])
+@pytest.mark.parametrize("visible", [False, True])
+def test_timeout_resumes_the_same_run_without_more_judge_calls(monkeypatch, status, visible):
     recorded = publication()
     original = recorded.model_dump_json()
     runs = []
-    calls = fake_boundary(monkeypatch, status="queued", run_state=runs)
+    calls = fake_boundary(
+        monkeypatch, status=status, run_state=runs, run_list_hook=None if visible else lambda _: []
+    )
     monkeypatch.setattr(foundry, "TIMEOUT_S", 0)
-    with pytest.raises(foundry.FoundryEvalError, match="queued"):
-        foundry.publish(recorded, endpoint="unused", model="judge")
+    for _ in range(2):
+        with pytest.raises(foundry.FoundryEvalPending, match="still running") as pending:
+            foundry.publish(recorded, endpoint="unused", model="judge")
+        assert pending.value.run_id == "run-id"
+        assert pending.value.report_url == "https://example.test/report"
     assert len(runs) == 1
     runs[0].status = "completed"
     assert foundry.publish(recorded, endpoint="unused", model="judge").endswith("/report")

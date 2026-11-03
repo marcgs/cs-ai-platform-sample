@@ -543,7 +543,9 @@ def test_default_agent_path_and_complete_report_use_frozen_gates(
 
 
 @pytest.mark.parametrize("quality", [0.0, 1.0])
-@pytest.mark.parametrize("error_type", [foundry.FoundryEvalError, RuntimeError])
+@pytest.mark.parametrize(
+    "error_type", [foundry.FoundryEvalError, RuntimeError, foundry.FoundryEvalPending]
+)
 def test_optional_publish_failure_never_changes_disk_gate(
     scripted: list[int],
     monkeypatch: pytest.MonkeyPatch,
@@ -566,14 +568,21 @@ def test_optional_publish_failure_never_changes_disk_gate(
 
     def publish(path: Path) -> str:
         assert load_run(path).status == "complete"
+        if error_type is foundry.FoundryEvalPending:
+            raise foundry.FoundryEvalPending("run-id", "https://example.test/report", "queued")
         raise error_type("offline publishing failure")
 
     monkeypatch.setattr(adapter, "publish_record", publish, raising=False)
     monkeypatch.setitem(sys.modules, adapter.__name__, adapter)
     result = invoke(tmp_path / "results.jsonl", "--publish")
     assert result.exit_code == (0 if quality == 1 else 1), result.output
-    assert "warning:" in result.output
-    assert "offline publishing failure" in result.output
+    if error_type is foundry.FoundryEvalPending:
+        assert "still running" in result.output
+        assert "Run ID: run-id" in result.output
+        assert "warning:" not in result.output.split("Publishing the durable run to Foundry...")[1]
+    else:
+        assert "warning:" in result.output
+        assert "offline publishing failure" in result.output
     assert load_run(tmp_path).status == "complete"
 
 

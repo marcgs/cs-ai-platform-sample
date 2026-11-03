@@ -1,9 +1,10 @@
 """Adapt immutable on-disk measurements to Foundry's reporting boundary."""
 
+import hashlib
+import json
 from typing import TYPE_CHECKING
 
 from cs_platform.eval_runs import read_run
-from cs_platform.evals import is_plumbing
 from cs_platform.settings import PlatformSettings
 from csai.foundry import Publication, PublishedRow, publish
 
@@ -65,13 +66,7 @@ def publication_from_record(path: Path) -> Publication:
                         if result.output.tool_definitions is not None
                         else metadata.tool_definitions
                     ),
-                    "scores": result.scores,
                     "gated": result.gated,
-                    "failure": (
-                        result.output.failure.model_dump(mode="json")
-                        if result.output.failure
-                        else None
-                    ),
                     "source": metadata.source,
                 }
             )
@@ -83,6 +78,13 @@ def publication_from_record(path: Path) -> Publication:
             else None
         ),
         suite=manifest.suite,
+        observations_digest=hashlib.sha256(
+            json.dumps(
+                [result.model_dump(mode="json") for result in record.result.cases],
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest(),
         metadata={
             "revision": metadata.agent_revision,
             "harness_revision": metadata.harness_revision,
@@ -100,13 +102,6 @@ def publication_from_record(path: Path) -> Publication:
             "status": record.status,
         },
         rows=rows,
-    )
-    all_metrics = {name for row in rows for name in row.scores}
-    publication.metadata["metric_parity"] = (
-        "blocked:sparse_or_plumbing"
-        if all_metrics - set(publication.metric_names)
-        or any(is_plumbing(result.output) for result in record.result.cases)
-        else "unverified"
     )
     return publication
 

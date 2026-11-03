@@ -2,7 +2,6 @@
 
 import hashlib
 import json
-import math
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -44,6 +43,20 @@ class FoundryEvalError(RuntimeError):
     """Publishing failed; the saved measurement and its gate are unchanged."""
 
 
+class FoundryEvalPending(RuntimeError):  # noqa: N818 - still running is not a publication error
+    """Local observation stopped while the registered cloud run is still running."""
+
+    def __init__(self, run_id: str, report_url: str | None, status: str) -> None:
+        self.run_id = run_id
+        self.report_url = report_url
+        super().__init__(
+            f"Foundry evaluation still running ({status}); local wait ended, not a failure.\n"
+            f"Run ID: {run_id}\n"
+            f"Foundry report: {report_url or 'unavailable (not supplied by Foundry)'}\n"
+            "Rerun the same publish command to observe this run; it will not resubmit."
+        )
+
+
 def _confirmed_rejection(error: APIStatusError) -> bool:
     return error.status_code in {400, 401, 403, 404, 422, 429}
 
@@ -73,7 +86,7 @@ def _migrate_receipt(
 
 
 class PublishedRow(BaseModel):
-    """The immutable observation sent to Foundry, including applicability."""
+    """Frozen judge inputs and case provenance, without local grading fields."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -88,9 +101,7 @@ class PublishedRow(BaseModel):
     tool_calls: list[dict[str, JsonValue]]
     tool_trace_complete: bool = False
     tool_definitions: list[dict[str, JsonValue]]
-    scores: dict[str, float]
     gated: bool
-    failure: JsonValue = None
     source: str = "synthetic"
 
 
@@ -101,27 +112,15 @@ class Publication(BaseModel):
 
     suite: str
     metadata: dict[str, str]
+    observations_digest: str
     rows: list[PublishedRow]
     coordination: Literal["shared-v1"] | None = Field(default=None, exclude=True)
 
     @property
-    def metric_names(self) -> tuple[str, ...]:
-        if not self.rows or any(
-            isinstance(row.failure, dict) and row.failure.get("kind") == "plumbing"
-            for row in self.rows
-        ):
-            return ()
-        common = set(self.rows[0].scores)
-        for row in self.rows[1:]:
-            common.intersection_update(row.scores)
-        return tuple(sorted(common))
-
-    @property
     def definition_key(self) -> str:
         specification = {
-            "metrics": {_metric_name(name): "increase" for name in self.metric_names},
             "judges": BUILTIN_EVALUATORS,
-            "schema": 4,
+            "schema": "judges-only-v1",
         }
         return hashlib.sha256(json.dumps(specification, sort_keys=True).encode()).hexdigest()
 
@@ -133,80 +132,13 @@ class Publication(BaseModel):
         ).hexdigest()
 
     def items(self) -> list[dict[str, JsonValue]]:
-        """Retain full provenance and scores; do not zero-fill inapplicable metrics."""
+        """Send only judge inputs and provenance; keep local scoring evidence on disk."""
         return [{"item": row.model_dump(mode="json")} for row in self.rows]
 
 
-def mirror_code(metric: str) -> str:
-    """Report an applicable score as higher-is-better without filling missing values."""
-    value = f"float(item['scores'][{metric!r}])"
-    if metric == "calibration":
-        value = f"1.0 - {value}"
-    return f"def grade(sample: dict, item: dict) -> float:\n    return {value}\n"
-
-
-def _metric_name(metric: str) -> str:
-    return "calibration_score" if metric == "calibration" else metric
-
-
-def evaluator_definition(metric: str) -> dict[str, Any]:
-    """Build the code evaluator's SDK payload; all SDK dictionaries stay at this boundary."""
-    return {
-        "name": f"csai_{_metric_name(metric)}",
-        "evaluator_type": "custom",
-        "categories": ["quality"],
-        "display_name": f"Recorded {_metric_name(metric)}",
-        "description": (
-            "calibration_score = 1 - calibration (binary Brier loss). Higher is better; "
-            "the recorded local loss and gates are unchanged. "
-            if metric == "calibration"
-            else "Precomputed csai score. "
-        )
-        + "Missing scores are inapplicable, not zero.",
-        "definition": {
-            "type": "code",
-            "code_text": mirror_code(metric),
-            "init_parameters": {
-                "type": "object",
-                "properties": {
-                    "deployment_name": {"type": "string"},
-                    "pass_threshold": {"type": "number"},
-                },
-                "required": ["deployment_name", "pass_threshold"],
-            },
-            "data_schema": {
-                "type": "object",
-                "properties": {"scores": {"type": "object"}},
-                "required": ["scores"],
-            },
-            "metrics": {
-                "result": {
-                    "type": "continuous",
-                    "desirable_direction": "increase",
-                    "min_value": 0.0,
-                    "max_value": 1.0,
-                }
-            },
-        },
-    }
-
-
-def testing_criteria(
-    metrics: tuple[str, ...], versions: dict[str, str], model: str
-) -> list[dict[str, Any]]:
-    """Combine recorded or derived scores with informational model judges."""
-    code = [
-        {
-            "type": "azure_ai_evaluator",
-            "name": f"code_{_metric_name(metric)}",
-            "evaluator_name": f"csai_{_metric_name(metric)}",
-            "evaluator_version": versions[metric],
-            "initialization_parameters": {"deployment_name": model, "pass_threshold": 0.5},
-            "data_mapping": {"scores": "{{item.scores}}"},
-        }
-        for metric in metrics
-    ]
-    judges = [
+def testing_criteria(model: str) -> list[dict[str, Any]]:
+    """Judge saved responses; local code scores are not Foundry evaluators."""
+    return [
         {
             "type": "azure_ai_evaluator",
             "name": name,
@@ -223,12 +155,10 @@ def testing_criteria(
         }
         for name in BUILTIN_EVALUATORS
     ]
-    return code + judges
 
 
 def _evaluation(
     publication: Publication,
-    project: AIProjectClient,
     client: OpenAI,
     model: str,
     cache: ReceiptStore[SuiteReceipt],
@@ -249,6 +179,7 @@ def _evaluation(
         evaluation
         for evaluation in client.evals.list()
         if (evaluation.metadata or {}).get("csai_suite") == publication.suite
+        and (evaluation.metadata or {}).get("definition_key") == publication.definition_key
     ]
     if len(matches) > 1:
         raise FoundryEvalError("Multiple suite evaluations exist; select the canonical one first")
@@ -268,12 +199,6 @@ def _evaluation(
                 "The prior suite creation outcome is unknown and no evaluation is visible. "
                 "No duplicate was created; retry lookup later."
             )
-        versions = {
-            metric: project.beta.evaluators.create_version(
-                name=f"csai_{_metric_name(metric)}", evaluator_version=evaluator_definition(metric)
-            ).version
-            for metric in publication.metric_names
-        }
         cache.write(
             SuiteReceipt(
                 key=cache_key, definition_key=publication.definition_key, judge_model=model
@@ -281,7 +206,7 @@ def _evaluation(
         )
         try:
             evaluation = client.evals.create(
-                name=f"{publication.suite} agent",
+                name=f"{publication.suite} agent judges",
                 metadata={
                     "csai_suite": publication.suite,
                     "definition_key": publication.definition_key,
@@ -292,7 +217,7 @@ def _evaluation(
                     "item_schema": PublishedRow.model_json_schema(),
                     "include_sample_schema": False,
                 },
-                testing_criteria=testing_criteria(publication.metric_names, versions, model),  # pyright: ignore[reportArgumentType]
+                testing_criteria=testing_criteria(model),  # pyright: ignore[reportArgumentType]
             )
         except APIStatusError as error:
             if _confirmed_rejection(error):
@@ -504,15 +429,9 @@ def publish(
     legacy_directory: Path | None = None,
     retry_infrastructure: str | None = None,
 ) -> str:
-    """Publish a saved run, returning its report URL; never mutate the local record."""
+    """Publish a saved run, returning its report location; never mutate the local record."""
     if not publication.rows:
         raise FoundryEvalError("The record has no completed case-runs to publish")
-    if any(
-        not math.isfinite(score) or not 0 <= score <= 1
-        for row in publication.rows
-        for score in row.scores.values()
-    ):
-        raise FoundryEvalError("A recorded score is outside the code evaluator's [0, 1] range")
     if any(not row.tool_definitions for row in publication.rows if row.tool_calls):
         raise FoundryEvalError(
             "Tool definitions were not captured for this run; tool-call judging cannot be "
@@ -526,9 +445,13 @@ def publish(
             "Tool evidence is incomplete or truncated; tool-call accuracy cannot judge this record."
         )
     receipt_key = hashlib.sha256(
-        json.dumps([publication.measurement_id, endpoint, model]).encode()
+        json.dumps(
+            [publication.measurement_id, endpoint, model, publication.definition_key]
+        ).encode()
     ).hexdigest()
-    suite_key = hashlib.sha256(json.dumps([endpoint, publication.suite]).encode()).hexdigest()
+    suite_key = hashlib.sha256(
+        json.dumps([endpoint, publication.suite, publication.definition_key]).encode()
+    ).hexdigest()
     if legacy_directory is not None and (
         not legacy_directory.is_dir() or not (legacy_directory / f"{receipt_key}.json").is_file()
     ):
@@ -571,7 +494,6 @@ def publish(
                 with suite_receipt(SUITE_DIRECTORY, suite_key) as cache:
                     evaluation_id = _evaluation(
                         publication,
-                        project,
                         client,
                         model,
                         cache,
@@ -597,14 +519,15 @@ def publish(
                 while run.status in {"queued", "in_progress"} and time.monotonic() < deadline:
                     time.sleep(POLL_INTERVAL_S)
                     run = client.evals.runs.retrieve(run.id, eval_id=evaluation_id)
+                if run.status in {"queued", "in_progress"}:
+                    raise FoundryEvalPending(run.id, run.report_url, run.status)
+                report = run.report_url or "unavailable (not supplied by Foundry)"
                 if run.status != "completed" or run.result_counts.errored:
-                    reason = (
-                        run.error.message if run.error else "timed out or item evaluator errors"
-                    )
+                    reason = run.error.message if run.error else "run or item evaluator errors"
                     raise FoundryEvalError(
-                        f"Foundry evaluation {run.status}: {reason}. "
-                        "Sparse metrics remain inapplicable; inspect per-item evaluator errors."
+                        f"Foundry evaluation {run.status}: {reason}. Run ID: {run.id}. "
+                        f"Foundry report: {report}"
                     )
-                return run.report_url or run.id
+                return run.report_url or f"{report}; run ID: {run.id}"
     except (AzureError, OpenAIError, OSError) as error:
         raise FoundryEvalError(f"Foundry publication failed: {error}") from error

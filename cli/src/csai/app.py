@@ -357,6 +357,8 @@ def eval_command(
         typer.echo("\nPublishing the durable run to Foundry...")
         try:
             url = publish_record(output)
+        except foundry.FoundryEvalPending as pending:
+            typer.echo(str(pending))
         except (foundry.FoundryEvalError, OSError, ValueError) as error:
             # Publishing is reporting, not gating: the code-based gate below still decides.
             typer.echo(f"warning: {error}", err=True)

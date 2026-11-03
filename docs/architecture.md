@@ -136,12 +136,18 @@ Its names, ID, endpoint and connection name are Bicep outputs named
 `EVALUATION_STORAGE_*`, retained in the azd environment rather than tracked
 configuration. Provision, hosted/API smoke checks and one 50-row evaluation
 completed. The user confirmed the rows, code/judge scores and version labels in
-the portal. The publisher now derives higher-is-better `calibration_score`
-from the raw Brier loss, without changing saved observations or local gates.
-Common-score parity passes at absolute tolerance `1e-12`; the new definition
-still needs reviewed migration and a later approved publication. Sparse parity
-remains blocked;
-see [Q9 acceptance evidence](iteration-4/q9.md).
+the portal; that historical evaluation and its runs stay intact.
+New publications use a separate judges-only definition, with no custom code
+graders or calibration transform ([ADR 0009](adr/0009-evaluation-system-design.md),
+Q16). Definition-scoped suite and measurement receipts prevent old evaluator
+state from being migrated or overwritten. Submission locks, uncertain-outcome
+reconciliation and explicit infrastructure-only retry lineage remain in place.
+After the 15-minute local wait, a queued/in-progress run is still running, not
+failed: `eval publish` prints its run ID and service-provided portal URL (or
+explicitly reports the URL unavailable), exits 3 and retrieves
+that same run on the next invocation. No new cloud run follows a local timeout.
+The judges-only path is tested offline; its later live publication needs separate
+approval. See [Q9 acceptance evidence](iteration-4/q9.md).
 
 `azd up` runs, in order:
 
