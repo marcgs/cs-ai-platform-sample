@@ -1,11 +1,13 @@
 # RCA evaluations
 
-The suite contains 50 cases: the original 18 (`SC-001` through `SC-018`) and 32
+The generated suite contains 50 cases: the original 18 (`SC-001` through `SC-018`) and 32
 challenge cases across eight categories. The outcome gate follows
 [ADR 0009](../../docs/adr/0009-evaluation-system-design.md).
 It remains the local reference and fallback while remote Foundry execution
 (agent target, built-in judges and custom evaluators) is researched. The
-three-repeat baseline is postponed; no approval request is being prepared.
+three-repeat baseline, its publication and Q17 are postponed until the
+[#31 spike](../../docs/spike-foundry-native-eval.md) decision;
+no baseline approval request is being prepared.
 Regenerate the manifest with `uv run python -m rca_evals.manifest` after regenerating
 the domain seed; do not hand-edit generated cases.
 
@@ -23,7 +25,7 @@ Original18 remains a reporting cohort, not the gate boundary. Explicit `--case`
 selection restricts execution and the resulting gate; a subset is not a full-suite pass.
 
 The approved provisional minimums are **0.70, 0.65 and 0.85**, respectively.
-They must be replaced after the approved three-repeat baseline. Offline re-scoring
+They must be replaced after a separately approved post-spike three-repeat baseline. Offline re-scoring
 of the retained 2026-11-02 single-repeat measurement passes:
 
 | Metric | Applicable case-runs | Mean | Hierarchical 95% interval |
@@ -39,6 +41,11 @@ no agent or judge was run. One repeat and four injection cases do not establish
 robust population acceptance levels.
 
 ## Reviewed feedback cohort
+
+The first proposal, [#32](https://github.com/marcgs/cs-ai-platform-sample/pull/32),
+adds three synthetic feedback cases and retains all 50 fresh-cohort decisions.
+It is open for human review/merge, not yet accepted. See the
+[close-out record](../../docs/iteration-4/close-out.md).
 
 Seed-only checks use `load_suite(feedback_cases=<explicit absent path>)`, not
 the default package path. A reviewed default feedback file must remain additive:
@@ -120,7 +127,8 @@ These commands use Azure models and the configured toolbox, not offline test dat
 Serialize model traffic; do not run baseline and candidate concurrently.
 
 For an original18-only run (54 diagnoses at three repeats), explicitly select its
-IDs. Without these options the extended suite runs all 50 cases:
+IDs. Without these options the extended suite runs all 50 seed cases plus any
+reviewed feedback cases:
 
 ```bash
 original18=()

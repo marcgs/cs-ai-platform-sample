@@ -3,6 +3,15 @@
 - **Status:** Accepted
 - **Date:** 2026-11-03
 
+**Close-out implementation note:** the local outcome gate shipped in
+[#28](https://github.com/marcgs/cs-ai-platform-sample/pull/28) with approved
+provisional floors. Judges-only publication
+[#29](https://github.com/marcgs/cs-ai-platform-sample/pull/29) is closed/unmerged,
+superseded by the [#31 spike](../spike-foundry-native-eval.md).
+The baseline, its publication and Q17 wait for that decision; main still has
+the existing publisher. The decision below records the accepted local design,
+not a claim that the mirrors have already been removed.
+
 ## Context
 
 `csai eval` scores every case with deterministic code checks against a closed

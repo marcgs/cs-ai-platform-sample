@@ -2,7 +2,7 @@
 
 ## Goal and scope
 
-Two outcomes:
+Original intended outcomes; the close-out decisions below narrow what ships:
 
 1. **Every eval run is kept and visible in Foundry.** A run's records survive an interruption, and each run is published to the project's evaluation view, so baselines can be compared per agent and skill version where the agent lives. `csai eval` stays the gate.
 2. **Feedback grows the eval suite.** Feedback with reviewer consensus becomes reviewed eval cases in a pull request, and the grown suite gets a new baseline, gated as in [ADR 0009](adr/0009-evaluation-system-design.md) and published to Foundry with judges only. Clustering was measured and recorded as a finding (see the close-out decisions below).
@@ -32,8 +32,6 @@ The user simplified the close-out. Where older text below conflicts, these decis
 2. **Feedback becomes eval cases without clustering.** A candidate needs reviewer consensus, a successful replay and no duplicate. The stable-cluster admission rule is removed: whether one case is correct doesn't depend on how its episode was grouped. A cluster key stays in a case's provenance when one exists, as information only.
 3. **L8 is a measured finding, not a blocker.** The fresh classification failed its confirmed criteria (three of five pattern recalls below 0.8, fragmentation 2.4 against 1.5), but precision is 1.0 for every pattern and no cluster came from the over-strict reviewer. The clusters are pure but too fine. No retuning or rerun on this batch, whose key is open. The fix moves to L12, with the learner (L4, L5), on a fresh batch. The top-five cluster review is no longer needed for close-out.
 
-Remaining close-out, in order:
-
 **Direction update — 3 November 2026:** finish Q4 as the local reference and
 fallback and L9 with labeled reviewer-cause/scenario-category provenance.
 Stop Q16 judges-only publication pending research into Foundry-run evaluation
@@ -42,11 +40,50 @@ unmerged. The three-repeat baseline is postponed; do not prepare its approval
 request. The first feedback-case data PR follows L9's implementation merge.
 No model runs, publication or Azure writes are authorized.
 
-1. Implement ADR 0009 and the changed admission rule (offline).
-2. The first feedback-case PR from the fresh cohort's consensus feedback, reviewed and merged by a person.
-3. The three-repeat baseline is postponed until the remote-evaluation direction is decided. No approval request is being prepared.
-4. The score trend page (Q17).
-5. Close-out: backlog targets, evidence and the iteration record.
+**Final close-out scope:** the spike plan merged in
+[#31](https://github.com/marcgs/cs-ai-platform-sample/pull/31).
+The three-repeat baseline, **its publication and Q17** move to the spike's
+follow-up, after its decision. No baseline approval request is being prepared.
+Q16 is closed as superseded; [#29](https://github.com/marcgs/cs-ai-platform-sample/pull/29)
+is closed and its branch remains unmerged. The existing publisher and evidence
+remain; the earlier judges-only direction is not implemented on main.
+
+### Final status — 3 November 2026
+
+| Item | Close-out status |
+|---|---|
+| Q8 | Delivered in [#20](https://github.com/marcgs/cs-ai-platform-sample/pull/20); durable capture and offline rebuild validated ([evidence](iteration-4/q8.md)) |
+| Q9 | Delivered in [#21](https://github.com/marcgs/cs-ai-platform-sample/pull/21) and [#26](https://github.com/marcgs/cs-ai-platform-sample/pull/26); one 50-row publication confirmed, numeric audit passed ([evidence](iteration-4/q9.md)) |
+| Q11 | Delivered in [#26](https://github.com/marcgs/cs-ai-platform-sample/pull/26); approved infrastructure-only recovery completed, original receipts retained ([ADR 0007](adr/0007-infrastructure-only-publication-retries.md)) |
+| Q4 | Done in merged [#28](https://github.com/marcgs/cs-ai-platform-sample/pull/28); local reference/fallback, provisional floors 0.70 / 0.65 / 0.85 and injection hard check |
+| L9 | Replay in [#23](https://github.com/marcgs/cs-ai-platform-sample/pull/23), proposals in [#22](https://github.com/marcgs/cs-ai-platform-sample/pull/22), consensus admission completed in merged [#30](https://github.com/marcgs/cs-ai-platform-sample/pull/30) |
+| First feedback cases | [#32](https://github.com/marcgs/cs-ai-platform-sample/pull/32) open for human review/merge: 3 admitted, 8 duplicates, 12 rejected, 27 expert referrals from all 50 fresh-cohort episodes |
+| L8 | Closed as a finding, continued under L12; fresh acceptance failed recall/fragmentation, no retuning or rerun ([evidence](iteration-4/l8.md#approved-fresh-classification-and-failed-acceptance--3-november-2026)) |
+| Q16 | Closed, superseded by the spike; #29 closed/unmerged |
+| Three-repeat baseline and publication | Deferred to the #31 spike decision and follow-up; provisional floors remain |
+| Q17 score trend | Deferred to the same spike follow-up; not implemented |
+
+After the final #28 text-matching fix, the retained 50-case measurement re-scores
+at **0.78 / 0.75 / 0.92**, unchanged, with all four injection checks passing.
+Four invalid reports count at zero, no plumbing failures are excluded.
+Means and intervals are in the [eval guide](../evals/rca/README.md).
+The read-only source journal remains unchanged; no threshold question remains.
+The combined implementation and feedback-case proposal each pass Ruff,
+strict Pyright and **670 offline tests**.
+
+Remaining steps, in order:
+
+1. A person reviews and merges the feedback-case PR (#32).
+2. A person reviews and merges the separate close-out documentation PR.
+3. Only then proceed to the spike's run 1, with its separate model/write approvals.
+
+No new model runs, publication, Azure writes or deployments were performed
+during this close-out. The baseline, its publication and Q17 are not prerequisites
+for it. See the [closing summary](iteration-4/close-out.md).
+
+**Historical plan and execution follow.** Dated estimates, pending checks and
+the original acceptance sequence below describe their time, not new authorization
+or the final close-out scope above.
 
 ### Acceptance execution update — 2 November 2026
 
@@ -205,6 +242,11 @@ Done in the pull request that adds this plan, in the backlog only:
 
 ## The new baseline
 
+**Deferred at close-out:** baseline measurement and publication wait for the
+[#31 spike](spike-foundry-native-eval.md) decision. The design and estimate below
+are historical planning, not an approval request or a commitment to the old
+publication path.
+
 After L9's first pull request merges:
 
 - Run the full suite (original 18, Q3 challenge cases, the feedback cohort) with `--repeats 3 --concurrency 1` on the local target, with Q8's capture. Retain the measurement and publish it after Q9 works.
@@ -331,22 +373,23 @@ the completed run is not changed. No Azure writes,
 further model runs or republication are approved. The fresh L8 pilot completed
 30 valid labels with zero errors, but failed three per-pattern recall checks
 and the fragmentation limit. All 20 blind judgments have person acceptance;
-L8 is recorded as a finding (close-out decision 3). The first case PR, the
-three-repeat baseline and **its Foundry publication remain open**.
+L8 is recorded as a finding (close-out decision 3). The first case PR is now
+[#32](https://github.com/marcgs/cs-ai-platform-sample/pull/32), awaiting human merge.
+The three-repeat baseline, its publication and Q17 moved to the spike follow-up.
 See [the sanitized Q9 evidence](iteration-4/q9.md).
 
 The reviewed implementation is committed in five stacked item pull requests.
 The original dirty checkout and the uncommitted integration snapshot were
 preserved. All domain data and measurements are synthetic and fictional.
 
-| Item | Implementation PR | Initial stacked offline tests | Still outstanding |
+| Item | Implementation PR | Initial stacked offline tests | Final disposition |
 |---|---|---|---|
-| Q8 | [#20](https://github.com/marcgs/cs-ai-platform-sample/pull/20) | 426 | Fresh post-review local eval passed; final feedback-suite baseline remains |
-| Q9 | [#21](https://github.com/marcgs/cs-ai-platform-sample/pull/21), recovery [#26](https://github.com/marcgs/cs-ai-platform-sample/pull/26) | 454 | Validation confirmed in portal; numeric parity passes. New calibration definition migration/live verification, sparse parity and baseline publication remain |
+| Q8 | [#20](https://github.com/marcgs/cs-ai-platform-sample/pull/20) | 426 | Complete; final feedback-suite baseline deferred |
+| Q9 | [#21](https://github.com/marcgs/cs-ai-platform-sample/pull/21), recovery [#26](https://github.com/marcgs/cs-ai-platform-sample/pull/26) | 454 | Complete with retained limitations; further publication work follows the spike decision |
 | Q11 | Recovery [#26](https://github.com/marcgs/cs-ai-platform-sample/pull/26) | 77 focused / 608 full before calibration fix | Approved live retry completed; recovery PR merged |
 | L9 Part A | [#23](https://github.com/marcgs/cs-ai-platform-sample/pull/23) | 456 | No additional live measurement for replay implementation |
 | L8 | [#24](https://github.com/marcgs/cs-ai-platform-sample/pull/24) | 478 | Fresh pilot failed recall/fragmentation criteria; recorded as a finding, continued as L12 |
-| L9 Part B | [#22](https://github.com/marcgs/cs-ai-platform-sample/pull/22) | 497 | First fresh-cohort case PR reviewed and merged by a person |
+| L9 Part B | [#22](https://github.com/marcgs/cs-ai-platform-sample/pull/22), admission [#30](https://github.com/marcgs/cs-ai-platform-sample/pull/30) | 497 | Implementation complete; case PR #32 awaits human review/merge |
 
 Each standalone stack passed Ruff lint and formatting, strict Pyright, its
 full offline test suite, staged safety checks and normal pre-commit hooks.

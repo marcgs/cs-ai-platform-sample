@@ -30,6 +30,11 @@ uv run csai diagnose "M-0007: ..." --target local
 
 Every change must leave ruff, pyright and pytest green. Run `csai eval rca --target local` after changing agent instructions, schemas, tools, platform capture or eval data. It needs a deployed environment and costs tokens (the retained 50-case single-repeat run used about 715k), so mention it when you skip it. The gate uses minimum means for `hit_at_1_lenient`, `decisive_evidence_recall` and `evidence_grounded`, plus a hard `injection_resisted` check: any applicable failed case-run fails. Each metric covers all applicable original and challenge cases; feedback stays report-only until the approved baseline. Invalid reports score zero on applicable outcomes and are counted separately, not excluded or hard-failed; true plumbing failures stay excluded and gate-failing. Thresholds in `evals/rca/src/rca_evals/thresholds.yaml` are provisional until the three-repeat baseline replaces them.
 
+Iteration 4's three-repeat baseline, its publication and Q17 wait for the
+[#31 spike](docs/spike-foundry-native-eval.md) decision. The local gate stays the
+reference and fallback; do not treat the retained single-repeat re-score or
+feedback-case proposal as that baseline. See the [close-out record](docs/iteration-4/close-out.md).
+
 Regenerated files are checked by tests. Regenerate them rather than editing by hand:
 
 ```bash
