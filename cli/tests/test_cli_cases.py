@@ -157,6 +157,8 @@ def test_public_command_admits_only_planted_review_truth_and_is_idempotent(
         assert case.cohort == "feedback"
         assert case.split in {"train", "test"}
         assert origin.source == "synthetic"
+        assert origin.failure_mode_basis == "reviewer_consensus"
+        assert origin.category_basis == "replay_matched_synthetic_scenario"
         assert decisive_evidence_recall(case, RunOutput()) == {}
         assert ruled_out_correctly(case, RunOutput()) == {}
         assert (
@@ -257,6 +259,12 @@ def test_unclustered_forged_review_evidence_is_rejected(feedback_report, forgery
     )
     assert not result.cases
     assert result.decisions[0].status == "rejected"
+
+
+def test_real_feedback_cannot_borrow_synthetic_category_metadata(feedback_report) -> None:
+    _, report = feedback_report
+    with pytest.raises(ValueError, match="explicitly synthetic"):
+        propose_cases(report.model_copy(update={"source": "real"}), load_suite().cases)
 
 
 def test_split_pattern_does_not_block_individual_cases(feedback_report) -> None:
@@ -619,6 +627,7 @@ def test_present_default_feedback_preserves_explicit_seed_baselines(
         "verdict",
         "tool_fingerprints",
         "identity",
+        "category_basis",
     ],
 )
 def test_feedback_loader_rejects_inconsistent_provenance(
@@ -645,6 +654,7 @@ def test_feedback_loader_rejects_inconsistent_provenance(
             ),
             "verdict": Verdict.CORRECT,
             "tool_fingerprints": ("not-a-fingerprint",),
+            "category_basis": None,
         }
         case = case.model_copy(
             update={"provenance": provenance.model_copy(update={mutation: updates[mutation]})}

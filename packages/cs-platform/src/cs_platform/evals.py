@@ -63,6 +63,12 @@ class FeedbackProvenance(BaseModel):
     review_ids: tuple[str, ...]
     supporting_review_ids: tuple[str, ...]
     source: Literal["synthetic"]
+    failure_mode_basis: Literal["reviewer_consensus"] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    category_basis: Literal["replay_matched_synthetic_scenario"] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     analysis_category: str | None = Field(default=None, exclude_if=lambda value: value is None)
     condition: str | None = Field(default=None, exclude_if=lambda value: value is None)
     verdict: Verdict

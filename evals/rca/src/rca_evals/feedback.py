@@ -63,6 +63,7 @@ def load_feedback_cases(path: Path, *, existing: Sequence[EvalCase] = ()) -> tup
         if (
             case.cohort != "feedback"
             or provenance is None
+            or (provenance.failure_mode_basis is None) != (provenance.category_basis is None)
             or case.truth is None
             or case.split is None
             or not case.id.startswith("FB-")

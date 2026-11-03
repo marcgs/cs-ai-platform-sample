@@ -105,6 +105,8 @@ commits, pushes or opens a PR. Human review remains required. See
 Admission requires consensus, replay and no duplicate, not cluster membership.
 Reviews establish the expected cause; the replay-matched synthetic scenario
 supplies only incident category. Cluster provenance is optional.
+Provenance labels these two bases separately. This path is synthetic-only; real
+feedback needs independently supported incident-category metadata.
 
 ### Clean up
 

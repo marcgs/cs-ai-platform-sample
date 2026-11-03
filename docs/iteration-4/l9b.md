@@ -8,7 +8,8 @@ The implementation now retains every reviewed cohort episode in
 never classified. Consensus still rejects or defers unsupported cases.
 Cluster metadata, when present, is corroborated as provenance, not required.
 This is offline implementation; the first fresh-cohort **data PR**, its human
-merge, and the three-repeat baseline remain outstanding.
+merge remain outstanding. The three-repeat baseline is postponed pending
+remote-evaluation research; no baseline approval request is being prepared.
 
 Offline implementation prepared for an explicitly authorized local-only commit
 after Q8, Q9, L9 Part A and L8. No push, pull request, deployment or model call is
@@ -103,12 +104,21 @@ existing input/expected/truth/split schema and add:
   supporting review IDs, synthetic source, verdict, L8 analysis category and
   replay fingerprints.
 
+New provenance explicitly labels `failure_mode_basis: reviewer_consensus` and
+`category_basis: replay_matched_synthetic_scenario`. Older cases without either
+label remain readable; a partially labeled source is rejected.
+
 L8's failure-analysis category is not Q3's incident category. As approved during
 close-out, reviewers establish the cause; seed scenario metadata establishes
 only the incident category. Part A's four feedback-only
 machines expose their copied incident metadata through `feedback_scenarios`;
 promotion reads category only, never their expected cause. Unknown or ambiguous
 incident metadata is deferred, not guessed from a condition or assumed clean.
+
+**Real-feedback limitation:** this path admits synthetic reports only. Real
+episodes cannot borrow category metadata from a seed scenario, even if a machine
+identifier matches. They need independently supported incident-category metadata
+and a reviewed admission path; reviewer cause consensus alone does not supply it.
 
 No answer key, seed expected cause, decisive refs, alternatives, ruled-out modes,
 checks or canaries supplies a new expected answer. Missing truth-dependent metrics

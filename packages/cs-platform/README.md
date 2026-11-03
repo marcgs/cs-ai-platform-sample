@@ -223,6 +223,9 @@ The replay changed no per-case score or threshold and made no additional model c
 Feedback admission no longer requires clustering. `FeedbackProvenance` omits
 cluster key/category/condition together when none exists; the feedback loader
 still rejects partial or inconsistent cluster metadata.
+New cases label their failure-mode and category bases separately. Both source
+labels may be absent on older cases, but a partial pair is rejected. Real-feedback
+admission needs independently supported category metadata; this path is synthetic-only.
 
 ## Tests
 
