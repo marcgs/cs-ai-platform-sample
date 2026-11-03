@@ -66,9 +66,9 @@ Rules:
    measured on the same cases.
 3. **Grow cases, not metrics.** A new metric needs a decision it would change.
 
-Parked, each kept as one line under the backlog's Later: Foundry-run agent
-evaluation with ported code evaluators, Agent Framework `evaluate_agent` as the
-runner, and continuous evaluation of live traffic. Safety evaluators and the
+Foundry-run agent evaluation with ported code evaluators is backlog Q20, an
+experiment that doesn't gate. Parked under the backlog's Later: Agent Framework
+`evaluate_agent` as the runner, and continuous evaluation of live traffic. Safety evaluators and the
 red-teaming agent stay with S2.
 
 ## Consequences
