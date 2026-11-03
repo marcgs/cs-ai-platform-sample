@@ -183,9 +183,78 @@ Done in the pull request that adds this plan, in the backlog only:
 After L9's first pull request merges:
 
 - Run the full suite (original 18, Q3 challenge cases, the feedback cohort) with `--repeats 3 --concurrency 1` on the local target, with Q8's capture. Retain the measurement and publish it after Q9 works.
-- Record it in `docs/iteration-4/baseline.md`: revision, model, date, per cohort and split, with confidence intervals. Iteration 5's proposals are judged against this run.
-- Cost: about 50 cases plus the feedback cohort × 3 repeats × 12k tokens, roughly 2M tokens, plus judge tokens. It needs approval.
+- Record it in `docs/iteration-4/baseline.md`: revision, model deployment and exact resolved model version, date, per cohort and split, with confidence intervals. Iteration 5's proposals are judged against this run.
+- Cost: the measured planning reference below is about 2.15M agent tokens plus 2.29M judge tokens for the existing 50 cases, before adding merged feedback cases. Measurement and publication each need approval.
 - No data release is expected, since feedback cases use seed machines. If L9 changes any tool result, stop: that breaks invariant 1.
+
+### Preparation and estimate — 3 November 2026
+
+Baseline planning only. No baseline or publication is authorized. The separate
+L8 classification approval has now been consumed by one retained run that
+failed the confirmed acceptance criteria; no further classification is approved.
+The first feedback-case PR still depends on accepted fresh clustering and must
+be reviewed and merged by a person before the final iteration-4 baseline.
+Do not treat a 50-case pre-feedback measurement as that final baseline.
+
+The current suite has **18 original and 32 challenge cases**, no merged
+feedback cases, and 36 train / 14 test cases. With three repeats this is
+**150 case-runs: 54 original, 96 challenge; 108 train, 42 test**.
+Let **F** be the number of cases admitted by the later, human-merged feedback
+PR. Only then add its feedback cohort: **3F case-runs**, with the existing
+machine-based split rule. Preserve the original gates; challenge and feedback
+scores remain reported rather than becoming new gates.
+
+The saved single-repeat validation used 715,382 agent tokens and took
+15m17.764s from recorded start to the last episode completion. Its separate
+50-row publication used 763,268 judge tokens across 200 invocations and took
+19m37.727s. These are measurements from the saved records, not new runs.
+
+| Work | Existing 50 cases, three repeats | Additional budget per merged feedback case |
+|---|---:|---:|
+| Local agent tokens | 2,146,146 (about 2.15M) | About 42,923 |
+| Four Foundry judges | 2,289,804 (about 2.29M); 600 invocations | About 45,796; 12 invocations |
+| Combined tokens | 4,435,950 (about 4.44M) | About 88,719 |
+| Local agent duration | About 46 minutes by linear scaling; allow 45–60 minutes | About 55 seconds before headroom |
+| Publication duration | About 59 minutes by linear scaling; allow 60–90 minutes | About 71 seconds before headroom |
+
+With no feedback increment, allow roughly **1h45–2h30 total**, with local
+measurement and publication serialized. Feedback complexity, changed model
+versions, retries, rate limiting, service startup and hidden evaluator work can
+change these estimates. They are not spending ceilings. Recalculate for the
+actual merged feedback count and obtain separate run and publication approvals.
+
+Keep the local baseline at **concurrency 1**, one token-heavy job at a time,
+within **50 requests/minute and 50,000 tokens/minute**. Token-only lower bounds
+for the base estimate are about 43 minutes for the agent and 46 minutes for
+judges; request-count limits and latency still apply. Honor service retry
+delays, retain errors and actual usage, and do not rerun cases to seek a pass.
+The existing publication API has no client judge-concurrency setting; Foundry
+schedules those judges. Do not promise that `--concurrency 1` controls them.
+That limitation must be explicit in the later publication approval.
+The current publisher's 15-minute observation timeout is shorter than this
+estimate: observe the same registered run read-only after timeout, never
+resubmit it merely because local polling ended.
+
+Before any later run, freeze the selected revision, cases, versions and
+configuration. Use Q8 durable capture, three repeats, concurrency one and no
+quality-seeking retries. Before publishing, review the schema-4 migration
+while preserving the existing populated evaluation and run evidence.
+
+`baseline.md` remains absent until a baseline is measured; this plan is not
+acceptance evidence. Its model provenance must include:
+
+- The agent deployment name **and exact served model name/version**, with
+  read-only deployment snapshots immediately before and after the run and
+  response-reported model identifiers where available. A deployment alias
+  alone is insufficient because its upgrade policy can advance the version.
+- The judge deployment and its independently observed exact model version at
+  publication, including the service's reported usage model identifiers. The
+  earlier judge reported **gpt-5.4-mini-2026-03-17**; that does not establish
+  the future agent or judge version.
+- Timestamped version changes or mixed versions rather than one assumed
+  version for the whole measurement. If the exact version cannot be verified,
+  leave that provenance gate outstanding. Record all revisions, date, agent,
+  skill and dataset versions, per-cohort/split scores and confidence intervals.
 
 ## Measurement and the shared environment
 
@@ -195,7 +264,7 @@ After L9's first pull request merges:
   - Publishing to the Foundry project (it writes evaluations and evaluator versions there).
   - L8's classification run on the fresh cohort.
   - The baseline run.
-- **Serialize token-heavy work.** Concurrency 1, one suite or classification at a time, within the 50k TPM model limit.
+- **Serialize token-heavy work.** Concurrency 1, one suite or classification at a time, within both the 50 requests/minute and 50k tokens/minute model limits. Foundry judge scheduling is service-managed, not controlled by the local concurrency flag.
 
 ## Gates, PRs and completion
 
@@ -224,14 +293,17 @@ and the approved network-only exception enabled one completed, portal-confirmed
 publication. The earlier rejected requests, startup failure and original
 receipts remain retained. No Owner grant was needed.
 
-The recovery implementation is committed on `it4/finish-acceptance`.
+The recovery implementation merged in [#26](https://github.com/marcgs/cs-ai-platform-sample/pull/26).
 With the calibration and retry-review corrections it passes **616 tests, 32 existing warnings**, Ruff
 (149 formatted files), strict Pyright and Bicep build. Calibration reporting
 is fixed offline and the numeric audit passes 450/450 at absolute tolerance
 1e-12 in [#26](https://github.com/marcgs/cs-ai-platform-sample/pull/26).
 Incompatible schema-3 definitions stop publication pending reviewed migration;
 the completed run is not changed. No Azure writes,
-model runs or republication are approved. L8 acceptance, the first case PR,
+further model runs or republication are approved. The fresh L8 pilot completed
+30 valid labels with zero errors, but failed three per-pattern recall checks
+and the fragmentation limit. All 20 blind judgments have person acceptance;
+top-five cluster review is outstanding. L8 acceptance, the first case PR,
 the three-repeat baseline and **its Foundry publication remain open**.
 See [the sanitized Q9 evidence](iteration-4/q9.md).
 
@@ -243,9 +315,9 @@ preserved. All domain data and measurements are synthetic and fictional.
 |---|---|---|---|
 | Q8 | [#20](https://github.com/marcgs/cs-ai-platform-sample/pull/20) | 426 | Fresh post-review local eval passed; final feedback-suite baseline remains |
 | Q9 | [#21](https://github.com/marcgs/cs-ai-platform-sample/pull/21), recovery [#26](https://github.com/marcgs/cs-ai-platform-sample/pull/26) | 454 | Validation confirmed in portal; numeric parity passes. New calibration definition migration/live verification, sparse parity and baseline publication remain |
-| Q11 | Recovery [#26](https://github.com/marcgs/cs-ai-platform-sample/pull/26) | 77 focused / 608 full before calibration fix | Completed approved live retry; acceptance PR merge remains |
+| Q11 | Recovery [#26](https://github.com/marcgs/cs-ai-platform-sample/pull/26) | 77 focused / 608 full before calibration fix | Approved live retry completed; recovery PR merged |
 | L9 Part A | [#23](https://github.com/marcgs/cs-ai-platform-sample/pull/23) | 456 | No additional live measurement for replay implementation |
-| L8 | [#24](https://github.com/marcgs/cs-ai-platform-sample/pull/24) | 478 | Fresh approved measurement and person acceptance |
+| L8 | [#24](https://github.com/marcgs/cs-ai-platform-sample/pull/24) | 478 | Fresh pilot failed recall/fragmentation criteria; top-five person review and acceptance remain |
 | L9 Part B | [#22](https://github.com/marcgs/cs-ai-platform-sample/pull/22) | 497 | First fresh-cohort case PR reviewed and merged by a person |
 
 Each standalone stack passed Ruff lint and formatting, strict Pyright, its
