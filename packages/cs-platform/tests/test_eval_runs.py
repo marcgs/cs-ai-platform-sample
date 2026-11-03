@@ -18,6 +18,7 @@ from cs_platform.evals import (
     EvalSuite,
     RunOutput,
     Thresholds,
+    run_suite,
 )
 
 if TYPE_CHECKING:
@@ -48,6 +49,53 @@ def complete(run: RunWriter, *, finish: bool = True) -> None:
     run.completed(CaseResult(case_id=case.id, scores={"exact": 1}, output=output))
     if finish:
         run.finish()
+
+
+async def test_rebuild_zero_fills_missing_applicable_hard_check_and_keeps_failure(
+    tmp_path: Path,
+) -> None:
+    suite = EvalSuite(
+        "hard-check",
+        tuple(EvalCase(id=name, input="question", expected={}) for name in ("present", "missing")),
+        Thresholds(minimums={"quality": 1}, hard_checks=frozenset({"safe"})),
+        (lambda case, _: {"quality": 1, **({"safe": 1} if case.id == "present" else {})},),
+        metric_applicability=lambda _: frozenset({"quality", "safe"}),
+    )
+    run = RunWriter(
+        suite,
+        tmp_path / "results.jsonl",
+        RunMetadata(agent_revision="a", harness_revision="h", model="scripted", target="local"),
+        concurrency=1,
+    )
+
+    async def target(case: EvalCase) -> RunOutput:
+        return RunOutput(text="answer")
+
+    live = await run_suite(
+        suite,
+        target,
+        on_start=run.start,
+        on_attempt_start=run.start_attempt,
+        on_attempt=run.attempt,
+        on_result=run.completed,
+    )
+    run.finalize()
+    frozen = rebuild_report(run.directory)
+    assert frozen.status == "complete"
+    assert frozen.result.gate_metrics == live.gate_metrics == {"quality": 1.0, "safe": 0.5}
+    assert (
+        frozen.result.gate_intervals
+        == live.gate_intervals
+        == {
+            "quality": (1.0, 1.0),
+            "safe": (0.0, 1.0),
+        }
+    )
+    assert frozen.result.hard_check_failures(suite.thresholds) == {"safe": ["missing/repeat-1"]}
+    assert frozen.result.failures(suite.thresholds) == live.failures(suite.thresholds)
+    summary = json.loads((tmp_path / "results.summary.json").read_text())
+    assert summary["metrics"]["safe"] == 0.5
+    assert summary["failures"] == live.failures(suite.thresholds)
 
 
 @pytest.mark.parametrize("fail_sync", [False, True])

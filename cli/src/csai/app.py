@@ -98,6 +98,7 @@ def report(suite: EvalSuite, result: SuiteResult) -> list[str]:
     )
     metrics = result.gate_metrics
     intervals = result.gate_intervals
+    hard_failures = result.hard_check_failures(suite.thresholds)
     for name, value in metrics.items():
         minimum = suite.thresholds.minimums.get(name)
         gate = f"  (min {minimum:.2f})" if minimum is not None else ""
@@ -105,7 +106,7 @@ def report(suite: EvalSuite, result: SuiteResult) -> list[str]:
         if hard:
             gate = "  (hard check: every applicable case-run)"
         mark = (
-            "FAIL" if (minimum is not None and value < minimum) or (hard and value < 1) else "ok  "
+            "FAIL" if (minimum is not None and value < minimum) or name in hard_failures else "ok  "
         )
         low, high = intervals[name]
         typer.echo(f"  {mark} {name:<20} {value:.2f}  95% CI [{low:.2f}, {high:.2f}]{gate}")

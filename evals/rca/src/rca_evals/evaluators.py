@@ -95,7 +95,14 @@ def evidence_grounded(case: EvalCase, output: RunOutput) -> Mapping[str, float]:
     report = _report(output)
     refs = [e.ref for h in report.hypotheses for e in h.evidence] if report else []
     if not refs:
-        return {"evidence_grounded": 0.0}
+        return {
+            "evidence_grounded": float(
+                report is not None
+                and case.truth is not None
+                and case.truth.category == "missing_machine"
+                and _schema_valid(case, report)
+            )
+        }
     machine_id = case.expected["machine_id"]
     grounded = sum(ref_exists(ref, machine_id, _dataset()) for ref in refs)
     return {"evidence_grounded": grounded / len(refs)}

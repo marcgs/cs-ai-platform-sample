@@ -92,6 +92,7 @@ def write_artifacts(
         "plumbing_case_runs": len(result.cases) - len(result.quality_cases),
         "gate_case_ids": sorted({case.case_id for case in result.cases if case.gated}),
         "minimum_score_metrics": sorted(result.minimum_score_metrics),
+        "hard_check_metrics": sorted(result.hard_check_metrics),
         "metrics": result.metrics,
         "intervals": result.intervals,
         "gate_metrics": result.gate_metrics,

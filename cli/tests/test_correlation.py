@@ -161,7 +161,9 @@ async def test_hosted_target_carries_real_protocol_identity(
         assert episode.status == ("failed" if failed else "succeeded")
         if not failed:
             assert output.failure is not None
-            assert output.failure.kind == "unparseable"
+            assert (output.failure.kind, output.failure.code) == (
+                ("unparseable", "invalid_output") if answer else ("plumbing", "missing_output")
+            )
 
 
 @pytest.mark.parametrize("failed", [False, True])

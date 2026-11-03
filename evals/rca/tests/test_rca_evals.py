@@ -509,3 +509,15 @@ async def test_metric_applicability_and_feedback_scope(tmp_path: Path) -> None:
         "decisive_evidence_recall" in item or "errored" in item
         for item in result.failures(suite.thresholds)
     )
+
+
+@pytest.mark.parametrize("valid", [False, True])
+def test_evidence_free_identity_abstention_grounding_requires_valid_contract(valid: bool) -> None:
+    case = _challenge_case("missing_machine")
+    observed = _truthful_output(case)
+    assert isinstance(observed.value, RcaReport)
+    assert not observed.value.hypotheses[0].evidence
+    if not valid:
+        observed.value.hypotheses[0].confidence = 0.9
+    assert evidence_grounded(case, observed) == {"evidence_grounded": float(valid)}
+    assert score(load_suite(), case, observed)["evidence_grounded"] == float(valid)
