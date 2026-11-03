@@ -367,6 +367,28 @@ def test_report_only_admission_checks_retained_unclassified_evidence(
     assert result.decisions[0].status == "rejected"
 
 
+@pytest.mark.parametrize("inconsistency", ["missing_copy", "invalid_key", "invalid_frequency"])
+def test_declared_cluster_member_cannot_be_treated_as_unclustered(
+    feedback_report, inconsistency: str
+) -> None:
+    _, report = feedback_report
+    selected = only_mapping(report)
+    cluster = selected.clusters[0]
+    candidate = cluster.eval_cases[0].model_copy(update={"expected_category": None})
+    selected = selected.model_copy(update={"review_candidates": [candidate]})
+    assert propose_cases(selected, load_suite().cases).cases
+    missing = cluster.model_copy(
+        update={
+            "eval_cases": [],
+            "id": "invalid-key" if inconsistency == "invalid_key" else cluster.id,
+            "frequency": 2 if inconsistency == "invalid_frequency" else cluster.frequency,
+        }
+    )
+    result = propose_cases(selected.model_copy(update={"clusters": [missing]}), load_suite().cases)
+    assert not result.cases
+    assert result.decisions[0].status == "rejected"
+
+
 def test_split_pattern_does_not_block_individual_cases(feedback_report) -> None:
     _, report = feedback_report
     cluster = next(cluster for cluster in report.clusters if cluster.category == "knowledge_gap")

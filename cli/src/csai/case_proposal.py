@@ -239,6 +239,9 @@ def propose_cases(report: Report, existing: Sequence[EvalCase]) -> CaseProposal:
         ):
             conflicting.add(candidate.episode_id)
     for cluster in report.clusters:
+        conflicting.update(
+            set(cluster.episode_ids) - {candidate.episode_id for candidate in cluster.eval_cases}
+        )
         for candidate in cluster.eval_cases:
             memberships[candidate.episode_id].append(cluster)
             source = by_episode.get(candidate.episode_id)
