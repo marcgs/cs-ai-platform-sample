@@ -5,7 +5,7 @@
 Two outcomes:
 
 1. **Every eval run is kept and visible in Foundry.** A run's records survive an interruption, and each run is published to the project's evaluation view, so baselines can be compared per agent and skill version where the agent lives. `csai eval` stays the gate.
-2. **Feedback grows the eval suite.** Clusters from episode analysis are stable enough to act on, clusters with reviewer consensus become reviewed eval cases in a pull request, and the grown suite gets a new baseline, published to Foundry.
+2. **Feedback grows the eval suite.** Feedback with reviewer consensus becomes reviewed eval cases in a pull request, and the grown suite gets a new baseline, gated as in [ADR 0009](adr/0009-evaluation-system-design.md) and published to Foundry with judges only. Clustering was measured and recorded as a finding (see the close-out decisions below).
 
 This is the first half of a turn of the learning loop (see the backlog's [L section](backlog.md#l-governed-learning-loop)): a better measure first. The second half, a learner proposing a change and the platform replaying it (L4, L5, L10, L11), is iteration 5, measured against this iteration's baseline. Q1 (tool selection) and Q7 (knowledge citation) are its candidate first targets, so they aren't fixed by hand here.
 
@@ -23,6 +23,22 @@ retries, size S) as additional recovery scope and approved its offline
 implementation. [ADR 0007](adr/0007-infrastructure-only-publication-retries.md)
 records the exception to one cloud run per immutable measurement. This adds no
 automatic retry or model-usage authorization.
+
+### Close-out decisions — 3 November 2026
+
+The user simplified the close-out. Where older text below conflicts, these decisions win.
+
+1. **The gate is four outcome metrics** ([ADR 0009](adr/0009-evaluation-system-design.md)): `hit_at_1_lenient`, `decisive_evidence_recall` and `evidence_grounded` on minimum means from the new baseline, and `injection_resisted` as a hard check. `schema_valid` becomes a plumbing failure. Foundry publication carries the four judges only; the mirrors of local scores go (Q16). Q4 moves into this iteration.
+2. **Feedback becomes eval cases without clustering.** A candidate needs reviewer consensus, a successful replay and no duplicate. The stable-cluster admission rule is removed: whether one case is correct doesn't depend on how its episode was grouped. A cluster key stays in a case's provenance when one exists, as information only.
+3. **L8 is a measured finding, not a blocker.** The fresh classification failed its confirmed criteria (three of five pattern recalls below 0.8, fragmentation 2.4 against 1.5), but precision is 1.0 for every pattern and no cluster came from the over-strict reviewer. The clusters are pure but too fine. No retuning or rerun on this batch, whose key is open. The fix moves to L12, with the learner (L4, L5), on a fresh batch. The top-five cluster review is no longer needed for close-out.
+
+Remaining close-out, in order:
+
+1. Implement ADR 0009 and the changed admission rule (offline).
+2. The first feedback-case PR from the fresh cohort's consensus feedback, reviewed and merged by a person.
+3. The three-repeat baseline with the new gate, then its judges-only publication. Each needs approval.
+4. The score trend page (Q17).
+5. Close-out: backlog targets, evidence and the iteration record.
 
 ### Acceptance execution update — 2 November 2026
 
@@ -73,7 +89,7 @@ The key remains closed. Blind person judgments,
 classification token approval, the measurement and human acceptance remain
 outstanding; no classification has run.
 
-Out of scope: tool selection (Q1), knowledge citation (Q7), changes to which metrics gate (Q4), cost and latency (Q5), asking for missing information (Q6), proposals, the learner, release and the post-release check (L4, L5, L10, L11), scheduling (L6), knowledge from diagnoses (L7), replayable data beyond the check in L9 (K4), Fabric, and any change to the agent's behavior or `RcaReport`. Findings go to the backlog.
+Out of scope: tool selection (Q1), knowledge citation (Q7), cost and latency (Q5), asking for missing information (Q6), proposals, the learner, release and the post-release check (L4, L5, L10, L11), scheduling (L6), knowledge from diagnoses (L7), replayable data beyond the check in L9 (K4), Fabric, and any change to the agent's behavior or `RcaReport`. Findings go to the backlog.
 
 This is the plan, not authorization to implement. Like iterations 2 and 3: one worktree and **one pull request per item**, developed in parallel, with live evals, model traffic and deployments serialized. This plan approves no deployment, infrastructure change, role assignment or model traffic.
 
@@ -153,6 +169,8 @@ Done in the pull request that adds this plan, in the backlog only:
 
 **Acceptance:** offline tests for canonicalization, stable keys and grouping. The fresh measurement is model traffic: estimate tokens first (about 30–50 classification requests, as in L3's pilot) and run only with approval.
 
+**Outcome (3 November 2026):** measured and failed; recorded as a finding and continued as L12. See the close-out decisions above and [the L8 record](iteration-4/l8.md).
+
 ## L9: feedback becomes eval cases, as a pull request
 
 **Outcome:** a command turns a cluster report into a branch with reviewed eval cases, ready for a person to open as a pull request.
@@ -166,10 +184,9 @@ Done in the pull request that adds this plan, in the backlog only:
 
 **Part B: promotion.**
 
-- **Input:** L8's cluster report, whose clusters already carry candidate eval cases (L3 marks them "require expert review before promotion"), with their review evidence.
+- **Input:** the fresh cohort's report, whose candidate eval cases (L3 marks them "require expert review before promotion") carry their review evidence. Clusters are not an admission criterion (close-out decision 2).
 - **Admission rules,** each with its reason in the output:
   - **Consensus:** at least two independent reviewers agree on the verdict and the actual root cause, read from the candidate's `ReviewSummary` (L3's reliability-weighted consensus). Disagreement goes to an expert list; a single review waits.
-  - **Stable cluster:** the cluster has a stable key from L8.
   - **Replayable:** replaying the episode's captured tool calls against today's tools gives the same results, compared by the tool fingerprints from iteration 3. A mismatch rejects the case and is listed under K4.
   - **Not a duplicate** of an existing case (same machine, failure mode and category); it links to the existing case instead.
 - **Case format:** the episode's input; `expected` from the consensus verdict; Q3's `truth` with `category` and only the fields the reviews support (reviews don't give decisive refs, so those metrics don't apply and the report says so); `cohort: feedback`; `split` from Q2's machine rule; provenance with the cluster key, episode and review IDs from the report and `source: synthetic`.
@@ -192,8 +209,9 @@ After L9's first pull request merges:
 Baseline planning only. No baseline or publication is authorized. The separate
 L8 classification approval has now been consumed by one retained run that
 failed the confirmed acceptance criteria; no further classification is approved.
-The first feedback-case PR still depends on accepted fresh clustering and must
-be reviewed and merged by a person before the final iteration-4 baseline.
+The first feedback-case PR comes from consensus feedback, not accepted
+clustering (close-out decision 2), and must be reviewed and merged by a person
+before the final iteration-4 baseline.
 Do not treat a 50-case pre-feedback measurement as that final baseline.
 
 The current suite has **18 original and 32 challenge cases**, no merged
@@ -201,8 +219,8 @@ feedback cases, and 36 train / 14 test cases. With three repeats this is
 **150 case-runs: 54 original, 96 challenge; 108 train, 42 test**.
 Let **F** be the number of cases admitted by the later, human-merged feedback
 PR. Only then add its feedback cohort: **3F case-runs**, with the existing
-machine-based split rule. Preserve the original gates; challenge and feedback
-scores remain reported rather than becoming new gates.
+machine-based split rule. The gate is ADR 0009's: each gated metric over every
+case it applies to, with injection as a hard check.
 
 The saved single-repeat validation used 715,382 agent tokens and took
 15m17.764s from recorded start to the last episode completion. Its separate
@@ -237,8 +255,10 @@ resubmit it merely because local polling ended.
 
 Before any later run, freeze the selected revision, cases, versions and
 configuration. Use Q8 durable capture, three repeats, concurrency one and no
-quality-seeking retries. Before publishing, review the schema-4 migration
-while preserving the existing populated evaluation and run evidence.
+quality-seeking retries. Publication is judges only (Q16), a new evaluation
+definition; the existing populated evaluation and run stay as evidence.
+Publishing one repeat instead of three cuts judge tokens to about a third; the
+approval request should offer both.
 
 `baseline.md` remains absent until a baseline is measured; this plan is not
 acceptance evidence. Its model provenance must include:
@@ -303,8 +323,8 @@ the completed run is not changed. No Azure writes,
 further model runs or republication are approved. The fresh L8 pilot completed
 30 valid labels with zero errors, but failed three per-pattern recall checks
 and the fragmentation limit. All 20 blind judgments have person acceptance;
-top-five cluster review is outstanding. L8 acceptance, the first case PR,
-the three-repeat baseline and **its Foundry publication remain open**.
+L8 is recorded as a finding (close-out decision 3). The first case PR, the
+three-repeat baseline and **its Foundry publication remain open**.
 See [the sanitized Q9 evidence](iteration-4/q9.md).
 
 The reviewed implementation is committed in five stacked item pull requests.
@@ -317,7 +337,7 @@ preserved. All domain data and measurements are synthetic and fictional.
 | Q9 | [#21](https://github.com/marcgs/cs-ai-platform-sample/pull/21), recovery [#26](https://github.com/marcgs/cs-ai-platform-sample/pull/26) | 454 | Validation confirmed in portal; numeric parity passes. New calibration definition migration/live verification, sparse parity and baseline publication remain |
 | Q11 | Recovery [#26](https://github.com/marcgs/cs-ai-platform-sample/pull/26) | 77 focused / 608 full before calibration fix | Approved live retry completed; recovery PR merged |
 | L9 Part A | [#23](https://github.com/marcgs/cs-ai-platform-sample/pull/23) | 456 | No additional live measurement for replay implementation |
-| L8 | [#24](https://github.com/marcgs/cs-ai-platform-sample/pull/24) | 478 | Fresh pilot failed recall/fragmentation criteria; top-five person review and acceptance remain |
+| L8 | [#24](https://github.com/marcgs/cs-ai-platform-sample/pull/24) | 478 | Fresh pilot failed recall/fragmentation criteria; recorded as a finding, continued as L12 |
 | L9 Part B | [#22](https://github.com/marcgs/cs-ai-platform-sample/pull/22) | 497 | First fresh-cohort case PR reviewed and merged by a person |
 
 Each standalone stack passed Ruff lint and formatting, strict Pyright, its
@@ -379,9 +399,8 @@ payloads for all 44 resources. They predate Q9, but are not automatically safe
 to apply. Both previews have five unsupported resources; their payloads
 differ. No infrastructure was applied or accepted for provisioning.
 
-Q10 keeps sparse-score parity explicitly blocked: one Foundry run per
-measurement, sparse scores retained in rows, no invented missing scores and
-no gate changes. Publication remains unperformed.
+Q10, Q14 and Q15 close by removing the mirrors (ADR 0009, Q16); their evidence
+stays in the Q9 record.
 
 The user confirmed L8's proposed criteria before any fresh population
 generation or key inspection: best-cluster recall at least 0.8 per planted
@@ -390,9 +409,9 @@ over-strict reviewer, and category agreement and route accuracy reported
 against the frozen pilot. This does not approve classification traffic.
 
 Implementation PR review and merge do not complete the remaining live or
-human acceptance. The first reviewed feedback-case batch and the approved
-three-repeat baseline still follow fresh L8 measurement and publication
-setup. This single-repeat validation is not the new iteration baseline.
+human acceptance. The remaining close-out follows the decisions of 3 November
+(top of this plan). This single-repeat validation is not the new iteration
+baseline.
 
 ### GitHub review fixes
 

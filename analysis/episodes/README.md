@@ -7,7 +7,8 @@ Iteration 4's offline L8 changes introduce a closed condition vocabulary, stable
 cluster keys and candidate review evidence. See [the L8 contract and pending
 acceptance](../../docs/iteration-4/l8.md). One approved fresh L8 classification
 has now produced 30 valid labels but failed the confirmed recall and
-fragmentation criteria; person top-five review remains outstanding. The
+fragmentation criteria. It is recorded as a finding (backlog L12) and no
+longer gates case promotion. The
 iteration 3 pilot and all its outputs below remain frozen.
 
 ## Offline preparation
