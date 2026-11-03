@@ -75,6 +75,11 @@ def feedback_report():
     return population, report
 
 
+@pytest.fixture
+def seed_cases():
+    return tuple(case for case in load_suite().cases if case.cohort != "feedback")
+
+
 def repository(path: Path) -> Path:
     path.mkdir()
     subprocess.run(["git", "init", "--quiet", "-b", "main", str(path)], check=True)
@@ -273,7 +278,9 @@ def test_real_feedback_cannot_borrow_synthetic_category_metadata(feedback_report
         propose_cases(report.model_copy(update={"source": "real"}), load_suite().cases)
 
 
-def test_report_wide_candidates_do_not_hide_forged_cluster_category(feedback_report) -> None:
+def test_report_wide_candidates_do_not_hide_forged_cluster_category(
+    feedback_report, seed_cases
+) -> None:
     _, report = feedback_report
     selected = only_mapping(report)
     cluster = selected.clusters[0]
@@ -281,20 +288,22 @@ def test_report_wide_candidates_do_not_hide_forged_cluster_category(feedback_rep
     selected = selected.model_copy(
         update={"review_candidates": [candidate.model_copy(update={"expected_category": None})]}
     )
-    assert propose_cases(selected, load_suite().cases).cases
+    assert propose_cases(selected, seed_cases).cases
     cluster.eval_cases[0] = candidate.model_copy(update={"expected_category": "wrong_ranking"})
-    result = propose_cases(selected, load_suite().cases)
+    result = propose_cases(selected, seed_cases)
     assert not result.cases
     assert result.decisions[0].status == "rejected"
 
 
-def test_cluster_review_id_conflict_rejects_other_report_wide_episode(feedback_report) -> None:
+def test_cluster_review_id_conflict_rejects_other_report_wide_episode(
+    feedback_report, seed_cases
+) -> None:
     _, report = feedback_report
     selected = only_mapping(report)
     candidate = selected.clusters[0].eval_cases[0]
     admitted = {
         case.provenance.episode_id
-        for case in propose_cases(report, load_suite().cases).cases
+        for case in propose_cases(report, seed_cases).cases
         if case.provenance is not None
     }
     other = next(
@@ -310,18 +319,18 @@ def test_cluster_review_id_conflict_rejects_other_report_wide_episode(feedback_r
             ]
         }
     )
-    assert len(propose_cases(selected, load_suite().cases).cases) == 2
+    assert len(propose_cases(selected, seed_cases).cases) == 2
     candidate.source_reviews[0] = candidate.source_reviews[0].model_copy(
         update={"id": other.source_reviews[0].id}
     )
-    result = propose_cases(selected, load_suite().cases)
+    result = propose_cases(selected, seed_cases)
     assert not result.cases
     assert {decision.status for decision in result.decisions} == {"rejected"}
 
 
 @pytest.mark.parametrize("mutation", ["cause", "capture"])
 def test_report_only_admission_checks_retained_unclassified_evidence(
-    feedback_report, mutation: str
+    feedback_report, seed_cases, mutation: str
 ) -> None:
     population, classified = feedback_report
     report = asyncio.run(analyze(prepare(population.episodes, population.reviews, load_seed())))
@@ -335,7 +344,7 @@ def test_report_only_admission_checks_retained_unclassified_evidence(
     selected = report.model_copy(
         update={"review_candidates": [candidate], "unclassified": [retained]}
     )
-    assert propose_cases(selected, load_suite().cases).cases
+    assert propose_cases(selected, seed_cases).cases
     if mutation == "cause":
         mode = "FM-01" if candidate.expected_failure_mode != "FM-01" else "FM-02"
         candidate = candidate.model_copy(
@@ -361,22 +370,22 @@ def test_report_only_admission_checks_retained_unclassified_evidence(
             update={"input": candidate.input + " Changed retained capture."}
         )
     selected = selected.model_copy(update={"review_candidates": [candidate]})
-    assert propose_cases(selected.model_copy(update={"unclassified": []}), load_suite().cases).cases
-    result = propose_cases(selected, load_suite().cases)
+    assert propose_cases(selected.model_copy(update={"unclassified": []}), seed_cases).cases
+    result = propose_cases(selected, seed_cases)
     assert not result.cases
     assert result.decisions[0].status == "rejected"
 
 
 @pytest.mark.parametrize("inconsistency", ["missing_copy", "invalid_key", "invalid_frequency"])
 def test_declared_cluster_member_cannot_be_treated_as_unclustered(
-    feedback_report, inconsistency: str
+    feedback_report, seed_cases, inconsistency: str
 ) -> None:
     _, report = feedback_report
     selected = only_mapping(report)
     cluster = selected.clusters[0]
     candidate = cluster.eval_cases[0].model_copy(update={"expected_category": None})
     selected = selected.model_copy(update={"review_candidates": [candidate]})
-    assert propose_cases(selected, load_suite().cases).cases
+    assert propose_cases(selected, seed_cases).cases
     missing = cluster.model_copy(
         update={
             "eval_cases": [],
@@ -384,7 +393,7 @@ def test_declared_cluster_member_cannot_be_treated_as_unclustered(
             "frequency": 2 if inconsistency == "invalid_frequency" else cluster.frequency,
         }
     )
-    result = propose_cases(selected.model_copy(update={"clusters": [missing]}), load_suite().cases)
+    result = propose_cases(selected.model_copy(update={"clusters": [missing]}), seed_cases)
     assert not result.cases
     assert result.decisions[0].status == "rejected"
 
