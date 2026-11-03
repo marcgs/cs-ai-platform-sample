@@ -15,10 +15,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--reference", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--case", action="append", help="Explicit suite case; default is the five-case probe"
+    )
     args = parser.parse_args()
     reference = publication_from_record(args.reference)
     definitions = {row.case_id: row.tool_definitions for row in reference.rows}
-    cases = [case for case in load_suite().cases if case.id in SMOKE_CASES]
+    ids = set(args.case or SMOKE_CASES)
+    cases = [case for case in load_suite().cases if case.id in ids]
+    if {case.id for case in cases} != ids:
+        raise ValueError("Unknown requested suite case")
     rows = [
         {
             "case_id": case.id,
