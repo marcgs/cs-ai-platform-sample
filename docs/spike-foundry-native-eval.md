@@ -35,28 +35,39 @@ Checked on Microsoft Learn on 2026-11-03. "Documented" means the docs describe i
 
 One thin vertical slice, run against the deployed hosted agent. The five probes share three evaluation runs, so the agent is called 15 times in all. Each run needs the user's approval for its model traffic, and any Azure write needs its own.
 
+**Metrics:** the same set as the earlier local runs and publication, so results stay comparable. Our checks cost no model tokens; only the judges do.
+
+| Metric | Applies to | In Foundry |
+|---|---|---|
+| Task adherence, intent resolution, coherence, tool call accuracy | Every case | Built-in judges, as in the earlier publication |
+| `hit_at_1`, `hit_at_1_lenient`, `hit_at_3`, `evidence_grounded`, `schema_valid`, `tool_coverage`, `knowledge_search_called`, `used_knowledge` | Every case | Code evaluators |
+| `calibration` | Every case | Code evaluator, as `1 − Brier` so higher is better |
+| `decisive_evidence_recall`, `ruled_out_correctly`, `injection_resisted`, `data_quality_disclosed` | Some cases | Endpoint evaluators that return "skipped" where the metric doesn't apply |
+
+The gate stays as [ADR 0009](adr/0009-evaluation-system-design.md) decides: `hit_at_1_lenient`, `decisive_evidence_recall`, `evidence_grounded` and `injection_resisted` gate; the rest are reported.
+
 **Dataset:** five cases from the current suite. Two original, and one each of injection, missing machine and a challenge case with decisive evidence. Each row carries the query and the answer-key fields our metrics need.
 
 | Probe | What it does | Answers |
 |---|---|---|
 | **P1** | Run 1: an agent-target run on the five cases | Does Foundry reach the hosted agent in our network? Do the five episodes land in Cosmos DB? |
-| **P2** | Run 1 includes `task_adherence`, `intent_resolution` and `tool_call_accuracy`; inspect `sample.output_items` | Are our toolbox MCP calls and results visible to evaluators? Does the tool judge accept them? |
-| **P3** | Run 1 also includes our four gate metrics as custom evaluators. Correct cause and citations real are code evaluators (citations from `output_items`). Decisive evidence and injection resisted apply to only some cases, so they are endpoint evaluators that return "skipped" elsewhere | Can our gate metrics run in Foundry, including "doesn't apply"? |
-| **P4** | Runs 2 and 3: the same dataset with the custom evaluators and one judge (`task_adherence`). Compare the three runs in the portal and through the comparison API | Repeats, variance and significance without our harness |
+| **P2** | Run 1 includes the four judges; inspect `sample.output_items` | Are our toolbox MCP calls and results visible to evaluators? Does the tool judge accept them? |
+| **P3** | Run 1 also includes all 13 of our metrics as custom evaluators (table above) | Can our metrics run in Foundry, including "doesn't apply"? |
+| **P4** | Runs 2 and 3: the same dataset with all 13 custom evaluators and one judge (`task_adherence`). Compare the three runs in the portal and through the comparison API | Repeats, variance and significance without our harness |
 | **P5** | Run 3 starts from `azd ai agent eval run` with `eval.yaml`. Look at the GitHub Action's inputs and outputs without running it | Versioned recipe and a pipeline gate. Can a pipeline fail when any applicable row fails injection resistance, as ADR 0009's hard check requires? |
 
 **Estimated usage,** from the retained 50-case run (14,308 agent tokens per case) and its publication (3,816 tokens per judge call):
 
 | Run | Agent | Judges | Total |
 |---|---:|---:|---:|
-| Run 1 (P1–P3): 5 cases, 3 judges | about 72k | about 57k | about 129k |
+| Run 1 (P1–P3): 5 cases, 4 judges | about 72k | about 76k | about 148k |
 | Run 2 (P4): 5 cases, 1 judge | about 72k | about 19k | about 91k |
 | Run 3 (P4, P5): 5 cases, 1 judge | about 72k | about 19k | about 91k |
-| **All three** | | | **about 310k** |
+| **All three** | | | **about 330k** |
 
 These are averages, not ceilings. Retries, longer challenge cases and service overhead can add to them. Code and endpoint evaluators use no model tokens.
 
-**Parity:** apply our local evaluators to Foundry's retained outputs from run 1 (each row's `output_text` and `output_items`), with the same answer keys and seed version. Compare per case: each score and whether the metric applied. Running `csai eval` again would generate fresh diagnoses, so differences could come from the agent rather than the evaluators. Mapping Foundry's output items to our run records is a small adapter, written offline.
+**Parity:** apply our local evaluators to Foundry's retained outputs from run 1 (each row's `output_text` and `output_items`), with the same answer keys and seed version. Compare per case, for all 13 metrics: each score and whether the metric applied. Running `csai eval` again would generate fresh diagnoses, so differences could come from the agent rather than the evaluators. Mapping Foundry's output items to our run records is a small adapter, written offline.
 
 ## Outcome and decision
 
