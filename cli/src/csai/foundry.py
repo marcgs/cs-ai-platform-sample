@@ -121,7 +121,7 @@ class Publication(BaseModel):
         specification = {
             "metrics": {name: metric_direction(name) for name in self.metric_names},
             "judges": BUILTIN_EVALUATORS,
-            "schema": 2,
+            "schema": 3,
         }
         return hashlib.sha256(json.dumps(specification, sort_keys=True).encode()).hexdigest()
 
@@ -211,13 +211,9 @@ def testing_criteria(
                 "query": "{{item.query}}",
                 "response": "{{item.response}}",
                 **(
-                    {
-                        "tool_calls": "{{item.tool_calls}}",
-                        "tool_definitions": "{{item.tool_definitions}}",
-                    }
-                    if name == "tool_call_accuracy"
-                    else {}
+                    {"tool_definitions": "{{item.tool_definitions}}"} if name != "coherence" else {}
                 ),
+                **({"tool_calls": "{{item.tool_calls}}"} if name == "tool_call_accuracy" else {}),
             },
         }
         for name in BUILTIN_EVALUATORS
@@ -318,6 +314,57 @@ def _evaluation(
     return evaluation.id
 
 
+def _publication_name(publication: Publication, retry_of: str | None = None) -> str:
+    name = f"{publication.suite}-{publication.metadata['started_at']}"
+    return f"{name}-retry-of-{retry_of}" if retry_of is not None else name
+
+
+def _retry_key(receipt_key: str, retry_of: str) -> str:
+    return hashlib.sha256(
+        json.dumps([receipt_key, "infrastructure-retry", retry_of]).encode()
+    ).hexdigest()
+
+
+def _recorded_run(
+    publication: Publication,
+    client: OpenAI,
+    evaluation_id: str,
+    original: PublicationReceipt,
+    receipt_key: str,
+    run_id: str,
+) -> RunRetrieveResponse:
+    """Require positive receipt lineage back to the unchanged original submission."""
+    requested = client.evals.runs.retrieve(run_id, eval_id=evaluation_id)
+    run = requested
+    expected_id = run_id
+    visited: set[str] = set()
+    prefix = f"{_publication_name(publication)}-retry-of-"
+    metadata = {**publication.metadata, "csai_measurement": publication.measurement_id}
+    while True:
+        if run.id != expected_id or run.id in visited:
+            raise FoundryEvalError("Publication retry lineage conflicts or contains a cycle.")
+        visited.add(run.id)
+        if any((run.metadata or {}).get(key) != value for key, value in metadata.items()):
+            raise FoundryEvalError("Retained run evidence conflicts with the frozen measurement.")
+        if run.id == original.run_id:
+            return requested
+        name = getattr(run, "name", None)
+        if not isinstance(name, str) or not name.startswith(prefix) or name == prefix:
+            raise FoundryEvalError("Publication retry lineage is not recorded.")
+        parent_id = name[len(prefix) :]
+        key = _retry_key(receipt_key, parent_id)
+        receipt = ReceiptStore(RECEIPT_DIRECTORY / f"{key}.json", PublicationReceipt).read()
+        if (
+            receipt is None
+            or receipt.key != key
+            or receipt.evaluation_id != evaluation_id
+            or receipt.run_id != run.id
+        ):
+            raise FoundryEvalError("Publication retry lineage lacks matching receipt evidence.")
+        expected_id = parent_id
+        run = client.evals.runs.retrieve(parent_id, eval_id=evaluation_id)
+
+
 def _publication_run(
     publication: Publication,
     client: OpenAI,
@@ -325,6 +372,8 @@ def _publication_run(
     receipts: ReceiptStore[PublicationReceipt],
     receipt_key: str,
     legacy: ReceiptStore[PublicationReceipt] | None,
+    *,
+    run_name: str | None = None,
 ) -> RunCreateResponse | RunRetrieveResponse:
     measurement_id = publication.measurement_id
     receipt = receipts.read()
@@ -336,7 +385,18 @@ def _publication_run(
         run
         for run in client.evals.runs.list(eval_id=evaluation_id)
         if (run.metadata or {}).get("csai_measurement") == measurement_id
+        and (run_name is None or getattr(run, "name", None) == run_name)
     ]
+    if run_name is None:
+        prefix = f"{_publication_name(publication)}-retry-of-"
+        for candidate in matches.copy():
+            name = getattr(candidate, "name", None)
+            if not isinstance(name, str) or not name.startswith(prefix):
+                continue
+            if receipt is None or receipt.run_id is None:
+                raise FoundryEvalError("Original receipt is required to reconcile retry attempts.")
+            _recorded_run(publication, client, evaluation_id, receipt, receipt_key, candidate.id)
+            matches.remove(candidate)
     if len(matches) > 1:
         raise FoundryEvalError("Duplicate measurement runs exist; no new run was submitted.")
     run_id = receipt.run_id if receipt else None
@@ -351,6 +411,8 @@ def _publication_run(
         run = client.evals.runs.retrieve(run_id, eval_id=evaluation_id)
         if (run.metadata or {}).get("csai_measurement") != measurement_id:
             raise FoundryEvalError("Original run evidence conflicts with the frozen measurement.")
+        if run_name is not None and getattr(run, "name", None) != run_name:
+            raise FoundryEvalError("Publication retry receipt conflicts with its remote run name.")
         return run
     if receipt is not None:
         raise FoundryEvalError(
@@ -361,7 +423,7 @@ def _publication_run(
     try:
         run = client.evals.runs.create(
             eval_id=evaluation_id,
-            name=f"{publication.suite}-{publication.metadata['started_at']}",
+            name=run_name or _publication_name(publication),
             metadata={**publication.metadata, "csai_measurement": measurement_id},
             data_source={
                 "type": "jsonl",
@@ -379,12 +441,58 @@ def _publication_run(
     return run
 
 
+def _retry_publication_run(
+    publication: Publication,
+    client: OpenAI,
+    evaluation_id: str,
+    original: PublicationReceipt,
+    receipt_key: str,
+    retry_of: str,
+) -> RunCreateResponse | RunRetrieveResponse:
+    previous = _recorded_run(publication, client, evaluation_id, original, receipt_key, retry_of)
+    error = previous.error
+    code = str(error.code) if error else ""
+    message = error.message if error else ""
+    startup_error = code == "EvaluationSessionNotBound" or (
+        code == "UserError"
+        and "(EvaluationSessionNotBound)" in message
+        and "Code: EvaluationSessionNotBound" in message.splitlines()
+        and "ErrorCode:EvaluationSessionNotBound" in message.splitlines()
+    )
+    counts = previous.result_counts
+    if (
+        previous.status != "failed"
+        or not startup_error
+        or counts.total != 0
+        or counts.passed != 0
+        or counts.failed != 0
+        or counts.errored not in {None, 0}
+    ):
+        raise FoundryEvalError(
+            "Infrastructure retry requires a recorded zero-row EvaluationSessionNotBound failure."
+        )
+    if list(client.evals.runs.output_items.list(retry_of, eval_id=evaluation_id)):
+        raise FoundryEvalError("Infrastructure retry cannot repeat a run with output items.")
+    name = _publication_name(publication, retry_of)
+    for candidate in client.evals.runs.list(eval_id=evaluation_id):
+        if (candidate.metadata or {}).get(
+            "csai_measurement"
+        ) == publication.measurement_id and getattr(candidate, "name", None) != name:
+            _recorded_run(publication, client, evaluation_id, original, receipt_key, candidate.id)
+    key = _retry_key(receipt_key, retry_of)
+    with publication_receipt(RECEIPT_DIRECTORY, key) as attempt:
+        return _publication_run(
+            publication, client, evaluation_id, attempt, key, None, run_name=name
+        )
+
+
 def publish(
     publication: Publication,
     *,
     endpoint: str,
     model: str,
     legacy_directory: Path | None = None,
+    retry_infrastructure: str | None = None,
 ) -> str:
     """Publish a saved run, returning its report URL; never mutate the local record."""
     if not publication.rows:
@@ -429,6 +537,15 @@ def publish(
         ):
             _migrate_receipt(receipts, legacy, receipt_key)
             prior = receipts.read()
+            if retry_infrastructure is not None and (
+                not retry_infrastructure.strip()
+                or prior is None
+                or prior.key != receipt_key
+                or prior.run_id is None
+            ):
+                raise FoundryEvalError(
+                    "Infrastructure retry requires the retained original submitted-run receipt."
+                )
             if publication.coordination is None and prior is None:
                 raise FoundryEvalError(
                     "Legacy publication origin is unknown; no submission was made. "
@@ -451,9 +568,21 @@ def publish(
                         suite_key,
                         prior.evaluation_id if prior else None,
                     )
-                run = _publication_run(
-                    publication, client, evaluation_id, receipts, receipt_key, legacy
-                )
+                if retry_infrastructure is not None:
+                    if prior is None or prior.evaluation_id != evaluation_id:
+                        raise FoundryEvalError("Original receipt conflicts with the evaluation.")
+                    run = _retry_publication_run(
+                        publication,
+                        client,
+                        evaluation_id,
+                        prior,
+                        receipt_key,
+                        retry_infrastructure,
+                    )
+                else:
+                    run = _publication_run(
+                        publication, client, evaluation_id, receipts, receipt_key, legacy
+                    )
                 deadline = time.monotonic() + TIMEOUT_S
                 while run.status in {"queued", "in_progress"} and time.monotonic() < deadline:
                     time.sleep(POLL_INTERVAL_S)

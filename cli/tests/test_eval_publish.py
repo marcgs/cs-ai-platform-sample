@@ -130,7 +130,10 @@ def test_disk_mapping_preserves_pinned_versions_ground_truth_and_tool_results(sa
     assert "coordination" not in publication.model_dump(mode="json")
 
 
-def test_public_publish_command_reads_disk_and_does_not_change_records(saved_run, monkeypatch):
+@pytest.mark.parametrize("retry", [None, "failed-run"])
+def test_public_publish_command_reads_disk_and_does_not_change_records(
+    saved_run, monkeypatch, retry
+):
     before = {path: path.read_bytes() for path in saved_run.rglob("*") if path.is_file()}
     submissions = []
 
@@ -146,14 +149,20 @@ def test_public_publish_command_reads_disk_and_does_not_change_records(saved_run
             foundry_project_endpoint="configured-endpoint", model_deployment="configured-judge"
         ),
     )
-    result = CliRunner().invoke(app, ["--no-azd", "eval", "publish", str(saved_run)])
+    args = ["--no-azd", "eval", "publish", str(saved_run)]
+    if retry is not None:
+        args.extend(["--retry-infrastructure", retry])
+    result = CliRunner().invoke(app, args)
     assert result.exit_code == 0, result.output
     assert "https://example.test/report" in result.output
     assert submissions[0][0].metadata["model"] == "saved-agent-model"
-    assert submissions[0][1] == {
+    expected: dict[str, str | None] = {
         "endpoint": "configured-endpoint",
         "model": "configured-judge",
     }
+    if retry is not None:
+        expected.update(legacy_directory=None, retry_infrastructure=retry)
+    assert submissions[0][1] == expected
     assert before == {path: path.read_bytes() for path in saved_run.rglob("*") if path.is_file()}
 
 

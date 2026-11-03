@@ -111,10 +111,23 @@ def publication_from_record(path: Path) -> Publication:
     return publication
 
 
-def publish_record(path: Path, *, legacy_receipts: Path | None = None) -> str:
+def publish_record(
+    path: Path,
+    *,
+    legacy_receipts: Path | None = None,
+    retry_infrastructure: str | None = None,
+) -> str:
     """Publish exactly one saved measurement; configuration supplies only endpoint and judge."""
     publication = publication_from_record(path)
     settings = PlatformSettings.from_env()
+    if retry_infrastructure is not None:
+        return publish(
+            publication,
+            endpoint=settings.foundry_project_endpoint,
+            model=settings.model_deployment,
+            legacy_directory=legacy_receipts,
+            retry_infrastructure=retry_infrastructure,
+        )
     if legacy_receipts is not None:
         return publish(
             publication,

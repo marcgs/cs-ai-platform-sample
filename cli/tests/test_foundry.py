@@ -78,6 +78,7 @@ def fake_boundary(
     evaluation_error=None,
     run_hook=None,
     run_list_hook=None,
+    output_items=None,
 ):
     calls = []
     evaluations = list(existing or [])
@@ -111,9 +112,10 @@ def fake_boundary(
         if run_hook is not None:
             run_hook()
         run = SimpleNamespace(
-            id="run-id",
+            id="run-id" if not runs else f"run-id-{len(runs) + 1}",
+            name=kwargs["name"],
             metadata=kwargs["metadata"],
-            status=status,
+            status=next_error(status),
             result_counts=SimpleNamespace(errored=errored),
             error=None,
             report_url="https://example.test/report",
@@ -138,6 +140,7 @@ def fake_boundary(
                 create=create_run,
                 list=lambda **_: run_list_hook(runs) if run_list_hook else runs,
                 retrieve=retrieve,
+                output_items=SimpleNamespace(list=lambda *args, **kwargs: output_items or []),
             ),
         )
     )
@@ -152,6 +155,206 @@ def fake_boundary(
     monkeypatch.setattr(foundry, "DefaultAzureCredential", lambda: nullcontext(object()))
     monkeypatch.setattr(foundry, "AIProjectClient", lambda *args: nullcontext(project))
     return calls
+
+
+def startup_failure(monkeypatch, **options):
+    runs = []
+    options.setdefault("status", ["failed", "completed"])
+    calls = fake_boundary(monkeypatch, run_state=runs, **options)
+    recorded = publication()
+    with pytest.raises(foundry.FoundryEvalError, match="evaluation failed"):
+        foundry.publish(recorded, endpoint="unused", model="judge")
+    runs[0].result_counts = SimpleNamespace(total=0, passed=0, failed=0, errored=None)
+    runs[0].error = SimpleNamespace(
+        code="UserError",
+        message="Azure Storage resource already exists: (EvaluationSessionNotBound) "
+        "The evaluation session is starting. Retry the relay request.\n"
+        "Code: EvaluationSessionNotBound\nErrorCode:EvaluationSessionNotBound",
+    )
+    return recorded, runs, calls
+
+
+def test_explicit_startup_retry_retains_failure_and_resumes_across_copies(monkeypatch, tmp_path):
+    recorded, runs, calls = startup_failure(monkeypatch)
+    before = recorded.model_dump_json()
+    original_path = next(foundry.RECEIPT_DIRECTORY.glob("*.json"))
+    original = original_path.read_bytes()
+    previous = runs[0].id
+    assert foundry.publish(
+        recorded, endpoint="unused", model="judge", retry_infrastructure=previous
+    ).endswith("/report")
+    copy = tmp_path / "another-worktree"
+    copy.mkdir()
+    monkeypatch.chdir(copy)
+    assert foundry.publish(
+        recorded.model_copy(deep=True),
+        endpoint="unused",
+        model="judge",
+        retry_infrastructure=previous,
+    ).endswith("/report")
+    assert len(runs) == 2
+    assert runs[0].status == "failed"
+    assert runs[1].name.endswith(f"-retry-of-{previous}")
+    assert runs[1].metadata == runs[0].metadata
+    assert original_path.read_bytes() == original
+    assert recorded.model_dump_json() == before
+    assert sum(name == "run" for name, _ in calls) == 2
+    with pytest.raises(foundry.FoundryEvalError, match="evaluation failed"):
+        foundry.publish(recorded, endpoint="unused", model="judge")
+    assert sum(name == "run" for name, _ in calls) == 2
+
+
+@pytest.mark.parametrize(
+    "invalid", ["completed", "other_error", "rows", "errored", "metadata", "items"]
+)
+def test_startup_retry_rejects_quality_partial_or_conflicting_evidence(monkeypatch, invalid):
+    items = [SimpleNamespace(id="partial")] if invalid == "items" else []
+    recorded, runs, calls = startup_failure(monkeypatch, output_items=items)
+    previous = runs[0]
+    if invalid == "completed":
+        previous.status = "completed"
+    elif invalid == "other_error":
+        previous.error.code = "EvaluatorError"
+    elif invalid == "rows":
+        previous.result_counts.total = 1
+    elif invalid == "errored":
+        previous.result_counts.errored = 1
+    elif invalid == "metadata":
+        previous.metadata["revision"] = "different-revision"
+    with pytest.raises(foundry.FoundryEvalError):
+        foundry.publish(
+            recorded, endpoint="unused", model="judge", retry_infrastructure=previous.id
+        )
+    assert sum(name == "run" for name, _ in calls) == 1
+
+
+@pytest.mark.parametrize("pending", [False, True])
+def test_startup_retry_requires_positive_original_receipt_before_authentication(
+    monkeypatch, pending
+):
+    recorded, _, calls = startup_failure(monkeypatch)
+    path = next(foundry.RECEIPT_DIRECTORY.glob("*.json"))
+    store = eval_receipts.ReceiptStore(path, eval_receipts.PublicationReceipt)
+    original = store.read()
+    assert original is not None
+    if pending:
+        store.write(original.model_copy(update={"run_id": None}))
+    else:
+        store.clear()
+    monkeypatch.setattr(
+        foundry,
+        "DefaultAzureCredential",
+        lambda: pytest.fail("Missing submission evidence must stop before authentication."),
+    )
+    with pytest.raises(foundry.FoundryEvalError, match="original submitted-run receipt"):
+        foundry.publish(recorded, endpoint="unused", model="judge", retry_infrastructure="run-id")
+    assert sum(name == "run" for name, _ in calls) == 1
+
+
+@pytest.mark.parametrize("visible", [False, True])
+def test_uncertain_startup_retry_never_submits_another_attempt(monkeypatch, visible):
+    error = (
+        RuntimeError("response lost")
+        if visible
+        else APIStatusError(
+            "ambiguous server failure",
+            response=Response(500, request=Request("POST", "/evals")),
+            body=None,
+        )
+    )
+    recorded, runs, calls = startup_failure(monkeypatch, create_error=[None, error])
+    original = next(foundry.RECEIPT_DIRECTORY.glob("*.json")).read_bytes()
+    previous = runs[0].id
+    with pytest.raises((foundry.FoundryEvalError, RuntimeError)):
+        foundry.publish(recorded, endpoint="unused", model="judge", retry_infrastructure=previous)
+    if visible:
+        assert foundry.publish(
+            recorded, endpoint="unused", model="judge", retry_infrastructure=previous
+        ).endswith("/report")
+    else:
+        with pytest.raises(foundry.FoundryEvalError, match="outcome is unknown"):
+            foundry.publish(
+                recorded, endpoint="unused", model="judge", retry_infrastructure=previous
+            )
+    assert sum(name == "run" for name, _ in calls) == 2
+    assert original in [p.read_bytes() for p in foundry.RECEIPT_DIRECTORY.glob("*.json")]
+
+
+def test_queued_startup_retry_resumes_only_its_recorded_run(monkeypatch):
+    recorded, runs, calls = startup_failure(monkeypatch, status=["failed", "queued"])
+    monkeypatch.setattr(foundry, "TIMEOUT_S", 0)
+    previous = runs[0].id
+    with pytest.raises(foundry.FoundryEvalError, match="queued"):
+        foundry.publish(recorded, endpoint="unused", model="judge", retry_infrastructure=previous)
+    runs[1].status = "completed"
+    assert foundry.publish(
+        recorded, endpoint="unused", model="judge", retry_infrastructure=previous
+    ).endswith("/report")
+    assert sum(name == "run" for name, _ in calls) == 2
+
+
+def test_concurrent_retry_copies_share_original_measurement_lock(monkeypatch):
+    creating = threading.Event()
+    release = threading.Event()
+    root_created = False
+
+    def hold_retry():
+        nonlocal root_created
+        if not root_created:
+            root_created = True
+            return
+        creating.set()
+        assert release.wait(5)
+
+    recorded, runs, calls = startup_failure(monkeypatch, run_hook=hold_retry)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(
+            foundry.publish,
+            recorded,
+            endpoint="unused",
+            model="judge",
+            retry_infrastructure=runs[0].id,
+        )
+        try:
+            assert creating.wait(5)
+            with pytest.raises(foundry.FoundryEvalError, match="publication failed"):
+                foundry.publish(
+                    recorded.model_copy(deep=True),
+                    endpoint="unused",
+                    model="judge",
+                    retry_infrastructure=runs[0].id,
+                )
+        finally:
+            release.set()
+        assert first.result(timeout=5).endswith("/report")
+    assert sum(name == "run" for name, _ in calls) == 2
+
+
+def test_recorded_startup_retry_chain_retains_each_failed_attempt(monkeypatch):
+    recorded, runs, calls = startup_failure(monkeypatch, status=["failed", "failed", "completed"])
+    with pytest.raises(foundry.FoundryEvalError, match="evaluation failed"):
+        foundry.publish(recorded, endpoint="unused", model="judge", retry_infrastructure=runs[0].id)
+    runs[1].error = runs[0].error
+    runs[1].result_counts = SimpleNamespace(total=0, passed=0, failed=0, errored=0)
+    assert foundry.publish(
+        recorded, endpoint="unused", model="judge", retry_infrastructure=runs[1].id
+    ).endswith("/report")
+    assert [run.status for run in runs] == ["failed", "failed", "completed"]
+    assert sum(name == "run" for name, _ in calls) == 3
+
+
+def test_unregistered_retry_run_cannot_hide_a_duplicate_measurement(monkeypatch):
+    recorded, runs, calls = startup_failure(monkeypatch)
+    runs.append(
+        SimpleNamespace(
+            id="unregistered",
+            name=foundry._publication_name(recorded, runs[0].id),
+            metadata=runs[0].metadata,
+        )
+    )
+    with pytest.raises(foundry.FoundryEvalError, match="matching receipt evidence"):
+        foundry.publish(recorded, endpoint="unused", model="judge")
+    assert sum(name == "run" for name, _ in calls) == 1
 
 
 def test_copied_measurement_reuses_receipt_across_working_directories(monkeypatch, tmp_path):
@@ -544,7 +747,8 @@ def test_plumbing_rows_cannot_distort_the_mirrored_quality_denominator():
     assert recorded.rows[0].scores == {"hit_at_1": 1.0}
 
 
-def test_tool_accuracy_maps_real_calls_and_pinned_definitions(monkeypatch):
+@pytest.mark.parametrize("judge", ["task_adherence", "intent_resolution", "tool_call_accuracy"])
+def test_agent_judges_map_real_calls_and_pinned_definitions(monkeypatch, judge):
     calls = [
         {"type": "tool_call", "name": "get_machine_context", "arguments": {"machine_id": "M-0001"}}
     ]
@@ -557,8 +761,13 @@ def test_tool_accuracy_maps_real_calls_and_pinned_definitions(monkeypatch):
     assert row["tool_calls"] == calls
     assert row["tool_definitions"] == definitions
     criteria = next(value for name, value in sdk_calls if name == "evaluation")["testing_criteria"]
-    accuracy = next(item for item in criteria if item["name"] == "tool_call_accuracy")
-    assert accuracy["data_mapping"]["tool_definitions"] == "{{item.tool_definitions}}"
+    criterion = next(item for item in criteria if item["name"] == judge)
+    assert criterion["data_mapping"] == {
+        "query": "{{item.query}}",
+        "response": "{{item.response}}",
+        "tool_definitions": "{{item.tool_definitions}}",
+        **({"tool_calls": "{{item.tool_calls}}"} if judge == "tool_call_accuracy" else {}),
+    }
 
 
 def test_reuses_suite_evaluation_and_keeps_independent_run_metadata(monkeypatch):
@@ -582,12 +791,30 @@ def test_reuses_suite_evaluation_and_keeps_independent_run_metadata(monkeypatch)
 
 
 def test_changed_schema_does_not_create_duplicate_suite_evaluation(monkeypatch):
+    recorded = publication()
+    previous_definition = {
+        "metrics": {name: foundry.metric_direction(name) for name in recorded.metric_names},
+        "judges": foundry.BUILTIN_EVALUATORS,
+        "schema": 2,
+    }
+    previous_key = hashlib.sha256(
+        json.dumps(previous_definition, sort_keys=True).encode()
+    ).hexdigest()
     calls = fake_boundary(
         monkeypatch,
-        existing=[SimpleNamespace(id="existing-eval", metadata={"csai_suite": "rca"})],
+        existing=[
+            SimpleNamespace(
+                id="existing-eval",
+                metadata={
+                    "csai_suite": "rca",
+                    "definition_key": previous_key,
+                    "judge_model": "judge",
+                },
+            )
+        ],
     )
     with pytest.raises(foundry.FoundryEvalError, match="schema differs"):
-        foundry.publish(publication(), endpoint="unused", model="judge")
+        foundry.publish(recorded, endpoint="unused", model="judge")
     assert not calls
 
 
