@@ -136,7 +136,11 @@ Its names, ID, endpoint and connection name are Bicep outputs named
 `EVALUATION_STORAGE_*`, retained in the azd environment rather than tracked
 configuration. Provision, hosted/API smoke checks and one 50-row evaluation
 completed. The user confirmed the rows, code/judge scores and version labels in
-the portal. Calibration reporting and sparse-score parity remain separate;
+the portal. The publisher now derives higher-is-better `calibration_score`
+from the raw Brier loss, without changing saved observations or local gates.
+Common-score parity passes at absolute tolerance `1e-12`; the new definition
+still needs reviewed migration and a later approved publication. Sparse parity
+remains blocked;
 see [Q9 acceptance evidence](iteration-4/q9.md).
 
 `azd up` runs, in order:

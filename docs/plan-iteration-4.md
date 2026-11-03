@@ -54,7 +54,10 @@ Of 450 common scores, 410 match exactly and 40 calibration values differ by
 less than 10^-15. All service-retained inline inputs match exactly; the internal
 stage producing the returned differences is unknown. The user approved an
 offline per-row audit at absolute tolerance 1e-12 and a separately named
-`calibration_score = 1 - Brier`. Local gates and the existing run stay unchanged.
+`calibration_score = 1 - Brier`. The audit passes **450/450** comparisons and
+the new grader is implemented offline in [#26](https://github.com/marcgs/cs-ai-platform-sample/pull/26).
+Local gates and the existing run stay unchanged. Schema-4 migration and live
+verification belong to the later baseline publication, which still needs approval.
 The current 50-failed display includes inverted calibration pass flags and is
 not a replacement for the local gate. No republication is approved.
 See [Q9 evidence](iteration-4/q9.md#completed-validation-and-acceptance-findings--2-november-2026)
@@ -129,12 +132,12 @@ Done in the pull request that adds this plan, in the backlog only:
 
 - **Publish from the record:** `csai eval publish <results-dir>`, and `--publish` on a run, which calls the same code after the run. Publishing can't change the gate's outcome.
 - **Rows** carry the case ID, split, category, cohort, query, response, tool calls, ground truth, and our per-case scores.
-- **Our metrics in Foundry.** Show the code-based scores as Foundry metrics with a code-based custom evaluator (preview) whose `grade()` returns the precomputed score from the row. Porting the evaluators themselves into `grade()` is a later choice; the sandbox has no network access and limits on code size.
+- **Our metrics in Foundry.** Show the code-based scores as Foundry metrics with a code-based custom evaluator (preview) whose `grade()` returns the precomputed score from the row. Calibration is published separately as `calibration_score = 1 - Brier` to match higher-is-better semantics, without changing the local loss or gate. Porting the evaluators themselves into `grade()` is a later choice; the sandbox has no network access and limits on code size.
 - **Foundry's judges** run next to them: the existing three (task adherence, intent resolution, coherence) plus tool call accuracy, since rows carry tool calls. They are reported only (Q4 decides any gating).
 - **Naming and metadata.** One evaluation per suite, one run per measurement, labeled with revision, agent version, skill version and dataset version, so the portal's run comparison compares baselines.
 - **Docs.** Update AGENTS.md, ADR 0004's consequence and the platform tour once a run completes. Don't edit the iteration 1 plan; it's history.
 
-**Acceptance:** offline tests for the row mapping and run metadata, with the Foundry client faked at the boundary. Then one published run whose mirrored metrics equal `csai eval`'s exactly, and a short comparison of judge scores against our metrics (informational). If the retained iteration 3 results are still on disk and Q8 can read them, publish those, so this costs judge tokens only. Otherwise publish a small run (the original 18, one repeat).
+**Acceptance:** offline tests for the row mapping and run metadata, with the Foundry client faked at the boundary. Then one published run whose per-row code scores agree with `csai eval` at absolute difference <= 1e-12 (no relative tolerance), and a short comparison of judge scores against our metrics (informational). The user explicitly approved this numeric tolerance after inspecting the 40 sub-1e-15 calibration differences; exact equality was not achieved. For future `calibration_score`, compare against 1 - local Brier. If the retained iteration 3 results are still on disk and Q8 can read them, publish those, so this costs judge tokens only. Otherwise publish a small run (the original 18, one repeat).
 
 ## L8: stable evidence-pattern clustering
 
@@ -222,9 +225,12 @@ publication. The earlier rejected requests, startup failure and original
 receipts remain retained. No Owner grant was needed.
 
 The recovery implementation is committed on `it4/finish-acceptance`.
-Its acceptance snapshot passes **608 tests, 32 existing warnings**, Ruff
+With the calibration correction it passes **611 tests, 32 existing warnings**, Ruff
 (149 formatted files), strict Pyright and Bicep build. Calibration reporting
-and the numeric audit are approved code-only follow-ups. No Azure writes,
+is fixed offline and the numeric audit passes 450/450 at absolute tolerance
+1e-12 in [#26](https://github.com/marcgs/cs-ai-platform-sample/pull/26).
+Incompatible schema-3 definitions stop publication pending reviewed migration;
+the completed run is not changed. No Azure writes,
 model runs or republication are approved. L8 acceptance, the first case PR,
 the three-repeat baseline and **its Foundry publication remain open**.
 See [the sanitized Q9 evidence](iteration-4/q9.md).
@@ -236,8 +242,8 @@ preserved. All domain data and measurements are synthetic and fictional.
 | Item | Implementation PR | Initial stacked offline tests | Still outstanding |
 |---|---|---|---|
 | Q8 | [#20](https://github.com/marcgs/cs-ai-platform-sample/pull/20) | 426 | Fresh post-review local eval passed; final feedback-suite baseline remains |
-| Q9 | [#21](https://github.com/marcgs/cs-ai-platform-sample/pull/21) | 454 | Validation completed and confirmed in portal; calibration reporting, numeric audit, sparse parity and baseline publication remain |
-| Q11 | Recovery on `it4/finish-acceptance` | 77 focused / 608 full | Completed approved live retry; acceptance PR merge remains |
+| Q9 | [#21](https://github.com/marcgs/cs-ai-platform-sample/pull/21), recovery [#26](https://github.com/marcgs/cs-ai-platform-sample/pull/26) | 454 | Validation confirmed in portal; numeric parity passes. New calibration definition migration/live verification, sparse parity and baseline publication remain |
+| Q11 | Recovery [#26](https://github.com/marcgs/cs-ai-platform-sample/pull/26) | 77 focused / 608 full before calibration fix | Completed approved live retry; acceptance PR merge remains |
 | L9 Part A | [#23](https://github.com/marcgs/cs-ai-platform-sample/pull/23) | 456 | No additional live measurement for replay implementation |
 | L8 | [#24](https://github.com/marcgs/cs-ai-platform-sample/pull/24) | 478 | Fresh approved measurement and person acceptance |
 | L9 Part B | [#22](https://github.com/marcgs/cs-ai-platform-sample/pull/22) | 497 | First fresh-cohort case PR reviewed and merged by a person |

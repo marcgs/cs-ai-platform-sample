@@ -119,9 +119,9 @@ class Publication(BaseModel):
     @property
     def definition_key(self) -> str:
         specification = {
-            "metrics": {name: metric_direction(name) for name in self.metric_names},
+            "metrics": {_metric_name(name): "increase" for name in self.metric_names},
             "judges": BUILTIN_EVALUATORS,
-            "schema": 3,
+            "schema": 4,
         }
         return hashlib.sha256(json.dumps(specification, sort_keys=True).encode()).hexdigest()
 
@@ -138,26 +138,31 @@ class Publication(BaseModel):
 
 
 def mirror_code(metric: str) -> str:
-    """Mirror an applicable recorded score without inventing a missing score."""
-    return (
-        "def grade(sample: dict, item: dict) -> float:\n"
-        f"    return float(item['scores'][{metric!r}])\n"
-    )
+    """Report an applicable score as higher-is-better without filling missing values."""
+    value = f"float(item['scores'][{metric!r}])"
+    if metric == "calibration":
+        value = f"1.0 - {value}"
+    return f"def grade(sample: dict, item: dict) -> float:\n    return {value}\n"
 
 
-def metric_direction(metric: str) -> str:
-    """Describe the recorded score's meaning without transforming it."""
-    return "decrease" if metric == "calibration" else "increase"
+def _metric_name(metric: str) -> str:
+    return "calibration_score" if metric == "calibration" else metric
 
 
 def evaluator_definition(metric: str) -> dict[str, Any]:
     """Build the code evaluator's SDK payload; all SDK dictionaries stay at this boundary."""
     return {
-        "name": f"csai_{metric}",
+        "name": f"csai_{_metric_name(metric)}",
         "evaluator_type": "custom",
         "categories": ["quality"],
-        "display_name": f"Recorded {metric}",
-        "description": "Precomputed csai score. Missing scores are inapplicable, not zero.",
+        "display_name": f"Recorded {_metric_name(metric)}",
+        "description": (
+            "calibration_score = 1 - calibration (binary Brier loss). Higher is better; "
+            "the recorded local loss and gates are unchanged. "
+            if metric == "calibration"
+            else "Precomputed csai score. "
+        )
+        + "Missing scores are inapplicable, not zero.",
         "definition": {
             "type": "code",
             "code_text": mirror_code(metric),
@@ -177,7 +182,7 @@ def evaluator_definition(metric: str) -> dict[str, Any]:
             "metrics": {
                 "result": {
                     "type": "continuous",
-                    "desirable_direction": metric_direction(metric),
+                    "desirable_direction": "increase",
                     "min_value": 0.0,
                     "max_value": 1.0,
                 }
@@ -189,12 +194,12 @@ def evaluator_definition(metric: str) -> dict[str, Any]:
 def testing_criteria(
     metrics: tuple[str, ...], versions: dict[str, str], model: str
 ) -> list[dict[str, Any]]:
-    """Combine exact recorded scores with informational model judges."""
+    """Combine recorded or derived scores with informational model judges."""
     code = [
         {
             "type": "azure_ai_evaluator",
-            "name": f"code_{metric}",
-            "evaluator_name": f"csai_{metric}",
+            "name": f"code_{_metric_name(metric)}",
+            "evaluator_name": f"csai_{_metric_name(metric)}",
             "evaluator_version": versions[metric],
             "initialization_parameters": {"deployment_name": model, "pass_threshold": 0.5},
             "data_mapping": {"scores": "{{item.scores}}"},
@@ -265,7 +270,7 @@ def _evaluation(
             )
         versions = {
             metric: project.beta.evaluators.create_version(
-                name=f"csai_{metric}", evaluator_version=evaluator_definition(metric)
+                name=f"csai_{_metric_name(metric)}", evaluator_version=evaluator_definition(metric)
             ).version
             for metric in publication.metric_names
         }
