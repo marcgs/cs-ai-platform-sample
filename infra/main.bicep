@@ -26,6 +26,15 @@ param principalType string = 'User'
 @description('Address space of the virtual network (a /16 or larger RFC 1918 range).')
 param vnetAddressPrefix string = '10.40.0.0/16'
 
+@description('Existing NSG on the private-endpoint subnet. Set before reprovisioning an environment with an attached NSG.')
+param privateEndpointSubnetNetworkSecurityGroupId string = ''
+
+@description('Existing NSG on the Functions subnet. Set before reprovisioning an environment with an attached NSG.')
+param functionsSubnetNetworkSecurityGroupId string = ''
+
+@description('Existing NSG on the agent subnet. Set before reprovisioning an environment with an attached NSG.')
+param agentsSubnetNetworkSecurityGroupId string = ''
+
 @description('Chat model for the agents. Must be available as DataZoneStandard in the region.')
 param chatModel object = {
   name: 'gpt-5.4-mini'
@@ -77,6 +86,9 @@ module network 'modules/network.bicep' = {
     tags: tags
     vnetName: '${abbrs.networkVirtualNetworks}${token}'
     addressPrefix: vnetAddressPrefix
+    privateEndpointSubnetNetworkSecurityGroupId: privateEndpointSubnetNetworkSecurityGroupId
+    functionsSubnetNetworkSecurityGroupId: functionsSubnetNetworkSecurityGroupId
+    agentsSubnetNetworkSecurityGroupId: agentsSubnetNetworkSecurityGroupId
   }
 }
 
@@ -137,6 +149,33 @@ module search 'modules/search.bicep' = {
   }
 }
 
+module evaluationStorage 'modules/evaluation-storage.bicep' = {
+  name: 'evaluation-storage'
+  scope: rg
+  params: {
+    location: location
+    tags: tags
+    name: '${abbrs.storageStorageAccounts}eval${token}'
+    projectPrincipalId: foundry.outputs.projectPrincipalId
+    foundryAccountId: foundry.outputs.accountId
+    logAnalyticsId: monitoring.outputs.logAnalyticsId
+  }
+}
+
+module evaluationEndpoint 'modules/private-endpoint.bicep' = {
+  name: 'pe-evaluation-storage-blob'
+  scope: rg
+  params: {
+    location: location
+    tags: tags
+    name: '${abbrs.networkPrivateEndpoints}eval-blob-${token}'
+    subnetId: network.outputs.privateEndpointSubnetId
+    serviceId: evaluationStorage.outputs.id
+    groupId: 'blob'
+    dnsZoneId: network.outputs.dnsZoneIds.blob
+  }
+}
+
 module connections 'modules/foundry-connections.bicep' = {
   name: 'foundry-connections'
   scope: rg
@@ -149,7 +188,9 @@ module connections 'modules/foundry-connections.bicep' = {
     appInsightsConnectionString: monitoring.outputs.connectionString
     searchId: search.outputs.id
     searchEndpoint: search.outputs.endpoint
+    evaluationStorageAccountName: evaluationStorage.outputs.name
   }
+  dependsOn: [evaluationEndpoint]
 }
 
 // Private storage shared by the function apps (host state and deployment packages).
@@ -262,6 +303,10 @@ output AZURE_SEARCH_NAME string = search.outputs.name
 output AZURE_SEARCH_CONNECTION_NAME string = connections.outputs.searchConnectionName
 output AZURE_SEARCH_CONNECTION_ID string = connections.outputs.searchConnectionId
 output AZURE_SEARCH_INDEX_NAME string = searchIndexName
+output EVALUATION_STORAGE_ACCOUNT_NAME string = evaluationStorage.outputs.name
+output EVALUATION_STORAGE_RESOURCE_ID string = evaluationStorage.outputs.id
+output EVALUATION_STORAGE_ENDPOINT string = evaluationStorage.outputs.blobEndpoint
+output EVALUATION_STORAGE_CONNECTION_NAME string = connections.outputs.evaluationStorageConnectionName
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.connectionString
 output DIAGNOSTICS_MCP_FUNCTION_NAME string = mcpApp.outputs.name
 output DIAGNOSTICS_MCP_ENDPOINT string = 'https://${mcpApp.outputs.hostName}/runtime/webhooks/mcp'
