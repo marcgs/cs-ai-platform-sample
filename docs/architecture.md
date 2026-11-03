@@ -97,6 +97,48 @@ See ADR 0003. Storage and Cosmos DB have public access disabled (also enforced b
 
 ## Deployment
 
+### Preserve existing subnet security groups
+
+Before reprovisioning an existing environment, inspect the subnet NSG
+associations. If security groups were attached outside this template (for
+example by subscription policy), retain their IDs in the local azd environment:
+
+```bash
+azd env set PRIVATE_ENDPOINT_SUBNET_NSG_ID <existing-private-endpoint-subnet-nsg-id>
+azd env set FUNCTIONS_SUBNET_NSG_ID <existing-functions-subnet-nsg-id>
+azd env set AGENTS_SUBNET_NSG_ID <existing-agents-subnet-nsg-id>
+```
+
+`infra/main.parameters.json` passes these values into Bicep. An empty value
+declares no NSG; it does not preserve an existing association. Do not leave it
+empty for a subnet that already has an NSG. IDs never belong in tracked files.
+Review the full what-if before applying; removing an NSG association is a real
+network change, not harmless property-order drift.
+
+The template also declares the existing Cosmos DB automatic-failover setting,
+project-only connection visibility, account project routing and model
+RAI/upgrade policies explicitly, so reprovisioning does not reset them.
+
+### Provision and deploy
+
+Evaluation storage uses a separate Standard LRS account,
+not the Functions account. It disables public networking, shared keys and
+anonymous blobs. One blob private endpoint reuses the existing subnet and DNS
+zone. A separately approved `AzureServices` trusted-service exception admits
+eligible authenticated traffic over the public service endpoint despite public
+access Disabled; this is not a private-link-only design. The narrower account
+resource-instance rule is retained. See [ADR 0008](adr/0008-evaluation-storage-network-exception.md).
+The Foundry project identity receives Blob Data Contributor only on this
+dedicated account, and an `AzureStorageAccount` connection uses Entra (`AAD`).
+No developer or account-wide storage role is added.
+
+Its names, ID, endpoint and connection name are Bicep outputs named
+`EVALUATION_STORAGE_*`, retained in the azd environment rather than tracked
+configuration. Provision, hosted/API smoke checks and one 50-row evaluation
+completed. The user confirmed the rows, code/judge scores and version labels in
+the portal. Calibration reporting and sparse-score parity remain separate;
+see [Q9 acceptance evidence](iteration-4/q9.md).
+
 `azd up` runs, in order:
 
 1. Bicep (`infra/main.bicep`): network, monitoring, Foundry, registry, Cosmos DB, AI Search, connections, function apps, roles.

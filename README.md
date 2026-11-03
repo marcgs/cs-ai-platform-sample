@@ -71,9 +71,22 @@ See the [eval guide](evals/rca/README.md) for splits, artifacts and paired compa
 
 After explicit publishing approval, `uv run csai eval publish .eval-results/<run>`
 publishes the saved measurement without rerunning the agent. Publishing never
-changes the local gate. Foundry deployment and live metric parity are still
-outstanding; sparse scores remain in rows rather than becoming false zeroes.
+changes the local gate. The 50-case validation completed and is visible in
+Foundry. Calibration reporting and numeric-parity acceptance are being corrected
+offline; sparse-score parity remains blocked, without inventing false zeroes.
+The feedback-case PR and three-repeat baseline are still outstanding.
 See [Q9's validation and limitations](docs/iteration-4/q9.md).
+
+After separate approval, this creates or resumes one infrastructure-only attempt:
+
+```bash
+uv run csai eval publish .eval-results/<run> --retry-infrastructure <failed-run-id>
+```
+
+It requires retained receipt lineage and a zero-row
+`EvaluationSessionNotBound` failure with no output items. The original failed run,
+receipt and frozen measurement remain unchanged. Other errors, partial grades
+and quality failures cannot use this option; see [ADR 0007](docs/adr/0007-infrastructure-only-publication-retries.md).
 
 To turn a synthetic L8 v2 cluster report into an offline case proposal:
 

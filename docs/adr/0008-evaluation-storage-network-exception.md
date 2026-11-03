@@ -105,14 +105,16 @@ observing the accepted run; completion remains outstanding.
 
 The same observed run subsequently completed in 19m37.727s with 50 output rows
 and zero errored, without conditional Owner or resubmission. This verifies a
-completed publication after the network-only exception. Portal acceptance,
-exact numeric fidelity and calibration pass-direction reporting remain
-separate findings; no further network or role change is indicated by them.
+completed publication after the network-only exception. The user confirmed
+the rows, code/judge scores and version labels in the portal. Numeric fidelity
+and calibration pass-direction reporting remain separate findings; no further
+network or role change is indicated by them.
 
 ## Consequences
 
-This is an authenticated exception for a specific resource, not general public
-access or anonymous blob access. It nevertheless permits qualifying traffic
+This dedicated storage account permits eligible trusted-service traffic, not
+only one Foundry resource. It is not general public or anonymous blob access.
+It nevertheless permits qualifying traffic
 through Storage's public service endpoint: do not describe it as
 private-link-only. [Storage limitations](https://learn.microsoft.com/azure/storage/common/storage-network-security-limitations)
 say trusted-service and resource-instance exceptions take precedence and can
