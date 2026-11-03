@@ -135,6 +135,12 @@ def test_public_command_admits_only_planted_review_truth_and_is_idempotent(
     assert first.exit_code == 0, first.output
     result = proposal(repo)
     assert result.cases
+    evidence = next((repo / "docs/iteration-4/proposals").glob("*/evidence.md")).read_text()
+    clusters, separator, episodes = evidence.partition("\n## Episode evidence\n")
+    assert separator
+    assert "### Episode " not in clusters
+    assert "## Cluster " not in episodes
+    assert episodes.count("### Episode ") == len(report.review_candidates)
     truths = {row.episode_id: row for row in population.answer_key.episodes}
     candidate_reviews = {
         row.id: row
@@ -311,6 +317,54 @@ def test_cluster_review_id_conflict_rejects_other_report_wide_episode(feedback_r
     result = propose_cases(selected, load_suite().cases)
     assert not result.cases
     assert {decision.status for decision in result.decisions} == {"rejected"}
+
+
+@pytest.mark.parametrize("mutation", ["cause", "capture"])
+def test_report_only_admission_checks_retained_unclassified_evidence(
+    feedback_report, mutation: str
+) -> None:
+    population, classified = feedback_report
+    report = asyncio.run(analyze(prepare(population.episodes, population.reviews, load_seed())))
+    episode_id = only_mapping(classified).clusters[0].eval_cases[0].episode_id
+    candidate = next(
+        item.model_copy(deep=True)
+        for item in report.review_candidates
+        if item.episode_id == episode_id
+    )
+    retained = next(item for item in report.unclassified if item.episode.id == episode_id)
+    selected = report.model_copy(
+        update={"review_candidates": [candidate], "unclassified": [retained]}
+    )
+    assert propose_cases(selected, load_suite().cases).cases
+    if mutation == "cause":
+        mode = "FM-01" if candidate.expected_failure_mode != "FM-01" else "FM-02"
+        candidate = candidate.model_copy(
+            update={
+                "expected_failure_mode": mode,
+                "review_summary": candidate.review_summary.model_copy(
+                    update={"expected_mode": mode}
+                ),
+                "source_reviews": [
+                    row.model_copy(
+                        update={
+                            "feedback": row.feedback.model_copy(update={"actual_root_cause": mode})
+                        }
+                    )
+                    if row.feedback.actual_root_cause
+                    else row
+                    for row in candidate.source_reviews
+                ],
+            }
+        )
+    else:
+        candidate = candidate.model_copy(
+            update={"input": candidate.input + " Changed retained capture."}
+        )
+    selected = selected.model_copy(update={"review_candidates": [candidate]})
+    assert propose_cases(selected.model_copy(update={"unclassified": []}), load_suite().cases).cases
+    result = propose_cases(selected, load_suite().cases)
+    assert not result.cases
+    assert result.decisions[0].status == "rejected"
 
 
 def test_split_pattern_does_not_block_individual_cases(feedback_report) -> None:

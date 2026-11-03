@@ -222,6 +222,22 @@ def propose_cases(report: Report, existing: Sequence[EvalCase]) -> CaseProposal:
     memberships: dict[str, list[Cluster]] = defaultdict(list)
     conflicting: set[str] = set()
     by_episode = {candidate.episode_id: candidate for candidate in candidates}
+    for item in report.unclassified:
+        candidate = by_episode.get(item.episode.id)
+        if candidate is not None and (
+            candidate.input != item.episode.input
+            or candidate.tool_calls
+            != [call.model_dump(mode="json") for call in item.episode.tool_calls]
+            or candidate.capture_truncated != item.episode.truncated
+            or candidate.capture_status != item.episode.status
+            or candidate.capture_created_at != item.episode.created_at
+            or candidate.capture_completed_at != item.episode.completed_at
+            or candidate.review_summary != item.review
+            or candidate.review_notes != item.review.notes
+            or candidate.expected_failure_mode != item.expected_failure_mode
+            or candidate.expected_mode_basis != item.expected_mode_basis
+        ):
+            conflicting.add(candidate.episode_id)
     for cluster in report.clusters:
         for candidate in cluster.eval_cases:
             memberships[candidate.episode_id].append(cluster)
