@@ -21,7 +21,13 @@ if TYPE_CHECKING:
     from cs_platform.eval_runs import RunWriter
 
     class Publisher(Protocol):
-        def __call__(self, path: Path, *, legacy_receipts: Path | None = None) -> str: ...
+        def __call__(
+            self,
+            path: Path,
+            *,
+            legacy_receipts: Path | None = None,
+            retry_infrastructure: str | None = None,
+        ) -> str: ...
 
 
 @dataclass(frozen=True)
@@ -62,11 +68,22 @@ def configure_eval(ctx: typer.Context) -> None:
         load_environment(use_azd=options.use_azd if isinstance(options, EvalEnvironment) else True)
 
 
-def publish_record(path: Path, *, legacy_receipts: Path | None = None) -> str:
+def publish_record(
+    path: Path,
+    *,
+    legacy_receipts: Path | None = None,
+    retry_infrastructure: str | None = None,
+) -> str:
     """Load Q9's publishing adapter only when explicitly requested."""
     try:
         module = import_module("csai.eval_publish")
         publisher: Publisher = module.publish_record
+        if retry_infrastructure is not None:
+            return publisher(
+                path,
+                legacy_receipts=legacy_receipts,
+                retry_infrastructure=retry_infrastructure,
+            )
         if legacy_receipts is not None:
             return publisher(path, legacy_receipts=legacy_receipts)
         return publisher(path)
@@ -91,14 +108,26 @@ def publish_command(
             help="Original legacy receipt directory; requires positive submission evidence."
         ),
     ] = None,
+    retry_infrastructure: Annotated[
+        str | None,
+        typer.Option(
+            help="Explicitly retry a recorded zero-row EvaluationSessionNotBound run; "
+            "requires separate publishing approval and retains the failed run."
+        ),
+    ] = None,
 ) -> None:
     """Explicitly publish a previously captured run; this never changes its gate."""
     try:
-        url = (
-            publish_record(results_dir, legacy_receipts=legacy_receipts)
-            if legacy_receipts is not None
-            else publish_record(results_dir)
-        )
+        if retry_infrastructure is not None:
+            url = publish_record(
+                results_dir,
+                legacy_receipts=legacy_receipts,
+                retry_infrastructure=retry_infrastructure,
+            )
+        elif legacy_receipts is not None:
+            url = publish_record(results_dir, legacy_receipts=legacy_receipts)
+        else:
+            url = publish_record(results_dir)
     except (foundry.FoundryEvalError, OSError, ValueError) as error:
         typer.echo(f"error: {error}", err=True)
         raise typer.Exit(2) from error
