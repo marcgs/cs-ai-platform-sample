@@ -7,7 +7,7 @@ from pathlib import Path
 
 from azure.ai.projects import AIProjectClient
 from azure.identity import AzureCliCredential
-from pydantic import BaseModel, Field, JsonValue
+from pydantic import BaseModel, JsonValue
 
 from cs_platform.settings import PlatformSettings
 from csai.environment import load_environment
@@ -21,7 +21,7 @@ class Criterion(BaseModel):
     name: str
     score: float | None = None
     status: str | None = None
-    sample: dict[str, JsonValue] = Field(default_factory=dict)
+    sample: dict[str, JsonValue] | None = None
 
 
 class OutputItem(BaseModel):
@@ -31,12 +31,12 @@ class OutputItem(BaseModel):
     results: list[Criterion]
 
 
-def judge_errors(rows: list[OutputItem]) -> list[str]:
+def judge_errors(rows: list[OutputItem], expected: tuple[str, ...] = JUDGES) -> list[str]:
     """Require a numeric result from every requested judge on every row."""
     errors: list[str] = []
     for row in rows:
         results = {result.name: result for result in row.results}
-        for name in JUDGES:
+        for name in expected:
             result = results.get(name)
             if result is None:
                 errors.append(f"{row.id}/{name}: missing result")
@@ -52,6 +52,9 @@ def main() -> None:
     parser.add_argument("--run", required=True)
     parser.add_argument("--output", type=Path, required=True, help="Private, gitignored directory")
     parser.add_argument("--wait", action="store_true")
+    parser.add_argument(
+        "--metric", action="append", help="Expected metric; defaults to four judges"
+    )
     args = parser.parse_args()
     load_environment()
     settings = PlatformSettings.from_env()
@@ -77,7 +80,9 @@ def main() -> None:
             for row in client.evals.runs.output_items.list(args.run, eval_id=args.evaluation)
         ]
     (args.output / "outputs.json").write_text(json.dumps(rows, indent=2))
-    errors = judge_errors([OutputItem.model_validate(row) for row in rows])
+    errors = judge_errors(
+        [OutputItem.model_validate(row) for row in rows], tuple(args.metric or JUDGES)
+    )
     usage = sum(entry.total_tokens for entry in run.per_model_usage)
     summary = {
         "status": run.status,

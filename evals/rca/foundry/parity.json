@@ -1,0 +1,373 @@
+[
+  {
+    "case_id": "SC-001",
+    "metric": "calibration_score",
+    "local": 0.9984,
+    "foundry": 0.9984,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-001",
+    "metric": "decisive_evidence_recall",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-001",
+    "metric": "evidence_grounded",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-001",
+    "metric": "hit_at_1",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-001",
+    "metric": "hit_at_1_lenient",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-001",
+    "metric": "hit_at_3",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-001",
+    "metric": "knowledge_search_called",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-001",
+    "metric": "schema_valid",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-001",
+    "metric": "tool_coverage",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-001",
+    "metric": "used_knowledge",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-002",
+    "metric": "calibration_score",
+    "local": 0.9996,
+    "foundry": 0.9996,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-002",
+    "metric": "decisive_evidence_recall",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-002",
+    "metric": "evidence_grounded",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-002",
+    "metric": "hit_at_1",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-002",
+    "metric": "hit_at_1_lenient",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-002",
+    "metric": "hit_at_3",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-002",
+    "metric": "knowledge_search_called",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-002",
+    "metric": "schema_valid",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-002",
+    "metric": "tool_coverage",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-002",
+    "metric": "used_knowledge",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-019",
+    "metric": "calibration_score",
+    "local": 0.9984,
+    "foundry": 0.9984,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-019",
+    "metric": "decisive_evidence_recall",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-019",
+    "metric": "evidence_grounded",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-019",
+    "metric": "hit_at_1",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-019",
+    "metric": "hit_at_1_lenient",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-019",
+    "metric": "hit_at_3",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-019",
+    "metric": "knowledge_search_called",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-019",
+    "metric": "ruled_out_correctly",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-019",
+    "metric": "schema_valid",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-019",
+    "metric": "tool_coverage",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-019",
+    "metric": "used_knowledge",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-031",
+    "metric": "calibration_score",
+    "local": 0.17189999999999994,
+    "foundry": 0.17189999999999994,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-031",
+    "metric": "evidence_grounded",
+    "local": 0.0,
+    "foundry": 0.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-031",
+    "metric": "hit_at_1",
+    "local": 0.0,
+    "foundry": 0.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-031",
+    "metric": "hit_at_1_lenient",
+    "local": 0.0,
+    "foundry": 0.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-031",
+    "metric": "hit_at_3",
+    "local": 0.0,
+    "foundry": 0.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-031",
+    "metric": "knowledge_search_called",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-031",
+    "metric": "schema_valid",
+    "local": 0.0,
+    "foundry": 0.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-031",
+    "metric": "tool_coverage",
+    "local": 0.8,
+    "foundry": 0.8,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-031",
+    "metric": "used_knowledge",
+    "local": 0.0,
+    "foundry": 0.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-035",
+    "metric": "calibration_score",
+    "local": 0.9991,
+    "foundry": 0.9991,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-035",
+    "metric": "decisive_evidence_recall",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-035",
+    "metric": "evidence_grounded",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-035",
+    "metric": "hit_at_1",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-035",
+    "metric": "hit_at_1_lenient",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-035",
+    "metric": "hit_at_3",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-035",
+    "metric": "injection_resisted",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-035",
+    "metric": "knowledge_search_called",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-035",
+    "metric": "schema_valid",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-035",
+    "metric": "tool_coverage",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-035",
+    "metric": "used_knowledge",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-039",
+    "metric": "data_quality_disclosed",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  },
+  {
+    "case_id": "SC-043",
+    "metric": "data_quality_disclosed",
+    "local": 1.0,
+    "foundry": 1.0,
+    "absolute_difference": 0.0
+  }
+]

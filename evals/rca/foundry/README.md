@@ -1,7 +1,8 @@
 # Foundry agent-target evaluation
 
-This is separate from the local harness. The first run reached the hosted agent,
-but two built-in judges failed on tool argument serialization. See
+This is separate from the local harness. Foundry reaches the hosted agent.
+The approved two-pass workflow scores all four built-in judges on retained,
+losslessly normalized tool calls. The original single-pass failures stay evidence. See
 [results](../../../docs/spike-foundry-native-eval-results.md).
 Do not resubmit it to repair scores.
 
@@ -64,3 +65,77 @@ running without `--wait`. Neither means resubmit. Numeric low scores are results
 not execution errors. Token totals conservatively include every service usage
 entry, even apparent aliases; cumulative allowance must be checked before another run.
 Private receipts and portal URLs stay out of git.
+
+## Approved two-pass judging
+
+Prepare saved outputs offline; this does not repeat the agent:
+
+```bash
+uv run python -m evals.rca.foundry.normalize \
+  --source .eval-results/foundry-native/step1/outputs.json \
+  --output .eval-results/foundry-native/normalized.jsonl
+```
+
+Only argument representation changes. Repeated complete objects must be identical;
+conflicting, non-object or malformed arguments stop preparation.
+Render `eval-replay.yaml` with the same environment substitution as above, also
+setting `FOUNDRY_NATIVE_NORMALIZED_DATA` to the normalized JSONL's absolute path.
+Create/start that recipe once with `azd ai eval`. It has no agent target: only
+the four judges consume tokens. Inspect its retained ID with `results.py`.
+
+## Native code metrics and identical-output parity
+
+The bundle uses the actual local evaluator/model source, not precomputed scores.
+Dataset answer keys supply truth, valid reference IDs and causal logbook text.
+The source bundle's seed-access adaptations are checked against local scoring.
+
+Prepare the normalized dataset without model calls:
+
+```bash
+uv run python -m evals.rca.foundry.graders \
+  --source .eval-results/foundry-native/normalized.jsonl \
+  --output .eval-results/foundry-native/scoring.jsonl
+```
+
+After project data-plane write approval, register code evaluator versions and
+submit dense or applicable-only sparse evaluations. These static code runs do
+not invoke the agent or model judges:
+
+```bash
+uv run python -m evals.rca.foundry.submit_metrics \
+  --dataset .eval-results/foundry-native/scoring.jsonl \
+  --receipts .eval-results/foundry-native/metrics --scope dense
+uv run python -m evals.rca.foundry.submit_metrics \
+  --dataset .eval-results/foundry-native/scoring.jsonl \
+  --receipts .eval-results/foundry-native/metrics --scope sparse
+```
+
+Dense metrics: strict/lenient top-one and top-three correctness, grounded
+evidence, schema validity, tool coverage, knowledge search/use and
+`calibration_score = 1 - Brier`. Sparse metrics: decisive evidence recall,
+injection resistance, data-quality disclosure and ruled-out correctness.
+Each sparse definition receives only applicable rows; empty subsets are not
+submitted. Invalid-report handling matches local scoring.
+Foundry's row pass threshold is not the local aggregate outcome gate.
+
+Receipts are written before submission. An existing receipt is never resubmitted,
+including an ambiguous pending receipt. Inspect/reconcile it rather than
+discarding it. Use `results.py --metric <name>` for every expected metric
+(`--metric` can repeat), then verify the actual service scores:
+
+```bash
+uv run python -m evals.rca.foundry.parity \
+  --results <private-metric-outputs.json> \
+  --dataset .eval-results/foundry-native/scoring.jsonl \
+  --output <private-parity.json>
+```
+
+Every per-case difference must be at most `1e-12`; missing/error scores fail.
+Both CLI and SDK source-item shapes are supported.
+
+For genuinely new applicable cases, `prepare.py --case <suite-case-id>` can
+repeat. Use the existing CLI target recipe with that new dataset, then normalize,
+augment and grade the retained outputs as above. **New target runs consume
+model tokens** and need the same approval/budget check as any agent run.
+`submit_metrics --scope sparse --metric <name>` selects just one static metric.
+Never regenerate retained outputs to improve scores.

@@ -27,6 +27,9 @@ def test_missing_judge_is_not_a_success() -> None:
 
 def test_low_judge_scores_are_results_not_execution_failures() -> None:
     row = OutputItem(
-        id="1", results=[Criterion(name=name, score=0.0, status="completed") for name in JUDGES]
+        id="1",
+        results=[
+            Criterion(name=name, score=0.0, status="completed", sample=None) for name in JUDGES
+        ],
     )
     assert judge_errors([row]) == []
