@@ -46,6 +46,7 @@ def _evidence(report: Report) -> str:
         lines.extend(
             [f"## Cluster {cluster.id}", "", f"{cluster.category}: {cluster.condition}", ""]
         )
+    lines.extend(["## Episode evidence", ""])
     candidates = report.review_candidates or [
         candidate for cluster in report.clusters for candidate in cluster.eval_cases
     ]
