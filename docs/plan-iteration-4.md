@@ -34,9 +34,17 @@ The user simplified the close-out. Where older text below conflicts, these decis
 
 Remaining close-out, in order:
 
+**Direction update — 3 November 2026:** finish Q4 as the local reference and
+fallback and L9 with labeled reviewer-cause/scenario-category provenance.
+Stop Q16 judges-only publication pending research into Foundry-run evaluation
+with the agent target, built-in judges and custom evaluators. Its branch stays
+unmerged. The three-repeat baseline is postponed; do not prepare its approval
+request. The first feedback-case data PR follows L9's implementation merge.
+No model runs, publication or Azure writes are authorized.
+
 1. Implement ADR 0009 and the changed admission rule (offline).
 2. The first feedback-case PR from the fresh cohort's consensus feedback, reviewed and merged by a person.
-3. The three-repeat baseline with the new gate, then its judges-only publication. Each needs approval.
+3. The three-repeat baseline is postponed until the remote-evaluation direction is decided. No approval request is being prepared.
 4. The score trend page (Q17).
 5. Close-out: backlog targets, evidence and the iteration record.
 

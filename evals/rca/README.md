@@ -3,6 +3,9 @@
 The suite contains 50 cases: the original 18 (`SC-001` through `SC-018`) and 32
 challenge cases across eight categories. The outcome gate follows
 [ADR 0009](../../docs/adr/0009-evaluation-system-design.md).
+It remains the local reference and fallback while remote Foundry execution
+(agent target, built-in judges and custom evaluators) is researched. The
+three-repeat baseline is postponed; no approval request is being prepared.
 Regenerate the manifest with `uv run python -m rca_evals.manifest` after regenerating
 the domain seed; do not hand-edit generated cases.
 
