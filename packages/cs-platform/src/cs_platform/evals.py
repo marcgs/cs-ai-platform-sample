@@ -229,13 +229,19 @@ class SuiteResult(BaseModel):
     suite: str
     cases: list[CaseResult]
     minimum_score_metrics: frozenset[str] = frozenset()
+    hard_check_metrics: frozenset[str] = frozenset()
     bootstrap_samples: int = 2000
     bootstrap_seed: int = 42
 
     @property
+    def required_score_metrics(self) -> frozenset[str]:
+        """Minimum and hard-check declarations share applicability-aware zero filling."""
+        return self.minimum_score_metrics | self.hard_check_metrics
+
+    @property
     def metrics(self) -> dict[str, float]:
         """Quality means over applicable scores; plumbing is excluded."""
-        return aggregate(self.quality_cases, zero_fill=self.minimum_score_metrics)
+        return aggregate(self.quality_cases, zero_fill=self.required_score_metrics)
 
     @property
     def quality_cases(self) -> list[CaseResult]:
@@ -245,7 +251,7 @@ class SuiteResult(BaseModel):
     def gate_metrics(self) -> dict[str, float]:
         return aggregate(
             [case for case in self.quality_cases if case.gated],
-            zero_fill=self.minimum_score_metrics,
+            zero_fill=self.required_score_metrics,
         )
 
     @property
@@ -254,7 +260,7 @@ class SuiteResult(BaseModel):
             self.quality_cases,
             samples=self.bootstrap_samples,
             seed=self.bootstrap_seed,
-            zero_fill=self.minimum_score_metrics,
+            zero_fill=self.required_score_metrics,
         )
 
     @property
@@ -263,7 +269,7 @@ class SuiteResult(BaseModel):
             [case for case in self.quality_cases if case.gated],
             samples=self.bootstrap_samples,
             seed=self.bootstrap_seed,
-            zero_fill=self.minimum_score_metrics,
+            zero_fill=self.required_score_metrics,
         )
 
     @property
@@ -272,7 +278,7 @@ class SuiteResult(BaseModel):
             field: {
                 str(value): aggregate(
                     [case for case in self.quality_cases if str(getattr(case, field)) == value],
-                    zero_fill=self.minimum_score_metrics,
+                    zero_fill=self.required_score_metrics,
                 )
                 for value in sorted(
                     {
@@ -294,7 +300,7 @@ class SuiteResult(BaseModel):
                     [case for case in self.quality_cases if str(getattr(case, field)) == label],
                     samples=self.bootstrap_samples,
                     seed=self.bootstrap_seed,
-                    zero_fill=self.minimum_score_metrics,
+                    zero_fill=self.required_score_metrics,
                 )
                 for label in groups
             }
@@ -309,13 +315,34 @@ class SuiteResult(BaseModel):
     @property
     def invalid_reports(self) -> list[CaseResult]:
         """Invalid reports stay in quality denominators, unlike plumbing failures."""
-        return [case for case in self.quality_cases if case.scores.get("schema_valid") == 0]
+        return [
+            case
+            for case in self.quality_cases
+            if case.scores.get("schema_valid") == 0
+            or (case.output.failure is not None and case.output.failure.kind == "unparseable")
+        ]
+
+    def hard_check_failures(self, thresholds: Thresholds) -> dict[str, list[str]]:
+        """Identify failed applicable case-runs independently of their mean."""
+        return {
+            name: failed
+            for name in sorted(thresholds.hard_checks)
+            if (
+                failed := [
+                    f"{case.case_id}/repeat-{case.repeat}"
+                    for case in self.quality_cases
+                    if case.gated
+                    and _applies(case, name, thresholds.hard_checks)
+                    and case.scores.get(name, 0.0) != 1.0
+                ]
+            )
+        }
 
     def failures(self, thresholds: Thresholds) -> list[str]:
         """Why the gate fails: errored cases first, then threshold violations."""
         metrics = aggregate(
             [case for case in self.quality_cases if case.gated],
-            zero_fill=frozenset(thresholds.minimums),
+            zero_fill=frozenset(thresholds.minimums) | thresholds.hard_checks,
         )
         failures: list[str] = []
         if self.errored:
@@ -334,16 +361,10 @@ class SuiteResult(BaseModel):
                 )
             )
         )
-        for name in sorted(thresholds.hard_checks):
-            failed = [
-                f"{case.case_id}/repeat-{case.repeat}"
-                for case in self.quality_cases
-                if case.gated
-                and _applies(case, name, thresholds.hard_checks)
-                and case.scores.get(name, 0.0) != 1.0
-            ]
-            if failed:
-                failures.append(f"{name}: hard check failed: {', '.join(failed)}")
+        failures.extend(
+            f"{name}: hard check failed: {', '.join(failed)}"
+            for name, failed in self.hard_check_failures(thresholds).items()
+        )
         return failures
 
     def warnings(self, thresholds: Thresholds) -> list[str]:
@@ -385,7 +406,9 @@ def score(suite: EvalSuite, case: EvalCase, output: RunOutput) -> dict[str, floa
     scores: dict[str, float] = {}
     for evaluator in suite.evaluators:
         scores.update(evaluator(case, output))
-    if scores.get("schema_valid") == 0:
+    if scores.get("schema_valid") == 0 or (
+        output.failure is not None and output.failure.kind == "unparseable"
+    ):
         for name in suite.thresholds.minimums.keys() | suite.thresholds.hard_checks:
             if name in scores:
                 scores[name] = 0.0
@@ -394,13 +417,23 @@ def score(suite: EvalSuite, case: EvalCase, output: RunOutput) -> dict[str, floa
 
 def is_plumbing(output: RunOutput) -> bool:
     if output.failure is not None:
-        return output.failure.kind == "plumbing"
+        return output.failure.kind == "plumbing" or (
+            output.failure.kind == "unparseable"
+            and output.value is None
+            and not (output.text or "").strip()
+        )
     return output.error is not None
 
 
 def classify_error(output: RunOutput) -> RunError | None:
     """Prefer target classifications; classify untyped target exceptions conservatively."""
     if output.failure is not None:
+        if (
+            output.failure.kind == "unparseable"
+            and output.value is None
+            and not (output.text or "").strip()
+        ):
+            return RunError(kind="plumbing", code="missing_output")
         return output.failure
     if output.error:
         detail = output.error.lower()
@@ -418,15 +451,15 @@ def classify_error(output: RunOutput) -> RunError | None:
             "target_error",
         )
         return RunError(kind="plumbing", code=code, detail=output.error)
-    if output.value is None and not output.text:
+    if output.value is None and not (output.text or "").strip():
         return RunError(kind="plumbing", code="missing_output")
     return None
 
 
 def _applies(case: CaseResult, name: str, zero_fill: frozenset[str]) -> bool:
-    return name in case.scores or (
-        name in zero_fill and (case.applicable_metrics is None or name in case.applicable_metrics)
-    )
+    if name in zero_fill:
+        return case.applicable_metrics is None or name in case.applicable_metrics
+    return name in case.scores
 
 
 def aggregate(
@@ -482,8 +515,11 @@ def paired_difference_intervals(
     candidate: SuiteResult,
 ) -> dict[str, tuple[float, float]]:
     """Bootstrap paired candidate-minus-baseline scores on the same case/repeat cohort."""
-    required = baseline.minimum_score_metrics
-    if required != candidate.minimum_score_metrics:
+    required = baseline.required_score_metrics
+    if (
+        baseline.minimum_score_metrics != candidate.minimum_score_metrics
+        or baseline.hard_check_metrics != candidate.hard_check_metrics
+    ):
         raise ValueError("paired comparison requires identical minimum-score metrics")
     before = {(case.case_id, case.repeat): case for case in baseline.quality_cases if case.gated}
     after = {(case.case_id, case.repeat): case for case in candidate.quality_cases if case.gated}
@@ -624,4 +660,5 @@ async def run_suite(
         suite=suite.name,
         cases=list(results),
         minimum_score_metrics=frozenset(suite.thresholds.minimums),
+        hard_check_metrics=suite.thresholds.hard_checks,
     )

@@ -8,6 +8,7 @@ from cs_platform.evals import (
     EvalCase,
     EvalSuite,
     EvalTruth,
+    RunError,
     RunOutput,
     SuiteResult,
     Thresholds,
@@ -363,6 +364,88 @@ async def test_sparse_metrics_are_not_penalized_and_unparseable_is_not_plumbing(
     assert result.metrics == {"exact": 0.0, "sparse": 0.8}
     assert result.errored == []
     assert all(case.output.attempts == 1 for case in result.cases)
+
+
+@pytest.mark.parametrize("schema_evaluator", [False, True])
+async def test_unparseable_zeroes_gated_scores_even_without_schema_evaluator(
+    schema_evaluator: bool,
+) -> None:
+    def evaluate(case: EvalCase, output: RunOutput) -> Mapping[str, float]:
+        return {
+            "safe": 1.0,
+            "informational": 1.0,
+            **({"schema_valid": 1.0} if schema_evaluator else {}),
+        }
+
+    async def target(case: EvalCase) -> RunOutput:
+        return RunOutput(text="yes", failure=RunError(kind="unparseable", code="invalid_output"))
+
+    base = suite("yes")
+    thresholds = Thresholds(minimums={"exact": 1.0}, hard_checks=frozenset({"safe"}))
+    selected = EvalSuite(base.name, base.cases, thresholds, (*base.evaluators, evaluate))
+    result = await run_suite(selected, target)
+    assert result.metrics["exact"] == result.metrics["safe"] == 0.0
+    assert result.metrics["informational"] == 1.0
+    assert len(result.invalid_reports) == 1
+    assert not result.errored
+    assert result.cases[0].output.attempts == 1
+    assert len(result.failures(thresholds)) == 2
+
+
+@pytest.mark.parametrize("text", [None, "", " \n"])
+@pytest.mark.parametrize("typed", [False, True])
+async def test_missing_output_retries_as_plumbing_even_if_target_says_unparseable(
+    text: str | None, typed: bool
+) -> None:
+    async def target(case: EvalCase) -> RunOutput:
+        return RunOutput(
+            text=text,
+            failure=RunError(kind="unparseable", code="invalid_output") if typed else None,
+        )
+
+    selected = suite("yes")
+    result = await run_suite(selected, target, retries=1, backoff_s=0)
+    assert result.cases[0].output.attempts == 2
+    assert result.cases[0].output.failure == RunError(kind="plumbing", code="missing_output")
+    assert result.errored == ["C-0"]
+    assert not result.quality_cases
+    assert not result.invalid_reports
+    assert not result.metrics
+    assert result.failures(selected.thresholds)
+
+
+async def test_explicit_applicability_overrides_emitted_minimum_and_hard_scores() -> None:
+    def evaluate(case: EvalCase, output: RunOutput) -> Mapping[str, float]:
+        return {"exact": float(case.id == "C-1"), "safe": float(case.id == "C-1"), "sparse": 0.8}
+
+    async def target(case: EvalCase) -> RunOutput:
+        return RunOutput(text="answer")
+
+    base = suite("yes", "yes")
+    thresholds = Thresholds(minimums={"exact": 1.0}, hard_checks=frozenset({"safe"}))
+    selected = EvalSuite(
+        base.name,
+        base.cases,
+        thresholds,
+        (evaluate,),
+        metric_applicability=lambda case: (
+            frozenset({"exact", "safe"}) if case.id == "C-1" else frozenset()
+        ),
+    )
+    result = await run_suite(selected, target)
+    assert result.metrics == result.gate_metrics == {"exact": 1.0, "safe": 1.0, "sparse": 0.8}
+    assert (
+        result.intervals
+        == result.gate_intervals
+        == {
+            "exact": (1.0, 1.0),
+            "safe": (1.0, 1.0),
+            "sparse": (0.8, 0.8),
+        }
+    )
+    assert result.groups["category"]["clean"] == result.metrics
+    assert not result.failures(thresholds)
+    assert all(case.output.failure is None for case in result.cases)
 
 
 async def test_required_scores_zero_fill_summaries_without_penalizing_sparse_metrics() -> None:

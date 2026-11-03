@@ -567,6 +567,7 @@ def load_run(results_dir: Path) -> RunRecord:
         suite=manifest.suite,
         cases=[completed[key] for key in expected if key in completed],
         minimum_score_metrics=frozenset(manifest.thresholds.minimums),
+        hard_check_metrics=manifest.thresholds.hard_checks,
     )
     complete = (
         len(completed) == len(expected)
@@ -634,6 +635,7 @@ def _export_record(directory: Path, record: RunRecord, *, stage_reports: bool = 
         "plumbing_case_runs": len(result.cases) - len(result.quality_cases),
         "gate_case_ids": sorted({case.case_id for case in result.cases if case.gated}),
         "minimum_score_metrics": sorted(result.minimum_score_metrics),
+        "hard_check_metrics": sorted(result.hard_check_metrics),
         "metrics": result.metrics,
         "intervals": result.intervals,
         "gate_metrics": result.gate_metrics,

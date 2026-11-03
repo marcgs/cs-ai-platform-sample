@@ -19,7 +19,7 @@ from pydantic import BaseModel, JsonValue, TypeAdapter, ValidationError
 
 from cs_platform.capture import EPISODE_ID_KEY
 from cs_platform.episodes import InMemoryEpisodeStore, ToolCall
-from cs_platform.evals import RunError, RunOutput
+from cs_platform.evals import RunError, RunOutput, classify_error
 from cs_platform.hosting import hosted_episode_id
 from cs_platform.settings import SettingsError
 from cs_platform.telemetry import configure_telemetry
@@ -124,7 +124,7 @@ def local_target(
             if isinstance(value, entry.output_type)
             else parse(entry.output_type, response.text)
         )
-        return RunOutput(
+        output = RunOutput(
             text=response.text,
             value=parsed,
             tool_calls=[call.name for call in episode.tool_calls] if episode else [],
@@ -136,6 +136,8 @@ def local_target(
             episode_id=episode.id if episode else None,
             tool_definitions=definitions,
         )
+        output.failure = classify_error(output)
+        return output
 
     return run
 
@@ -208,7 +210,7 @@ def hosted_target(
                     duration_ms=0,
                 )
             )
-        return RunOutput(
+        output = RunOutput(
             response_id=response_id,
             episode_id=episode_id,
             text=text,
@@ -226,5 +228,7 @@ def hosted_target(
                 if item.type in {"function_call", "mcp_call"}
             ],
         )
+        output.failure = classify_error(output)
+        return output
 
     return run

@@ -51,6 +51,27 @@ async def test_console_reports_feedback_cohort_intervals_without_gating_feedback
     )
 
 
+async def test_console_reports_missing_hard_score_as_failed_with_zero_filled_interval(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    suite = EvalSuite(
+        "hard-check",
+        tuple(EvalCase(id=name, input="question", expected={}) for name in ("present", "missing")),
+        Thresholds(minimums={}, hard_checks=frozenset({"safe"})),
+        (lambda case, _: {"safe": 1} if case.id == "present" else {},),
+        metric_applicability=lambda _: frozenset({"safe"}),
+    )
+
+    async def target(case: EvalCase) -> RunOutput:
+        return RunOutput(text="answer")
+
+    result = await run_suite(suite, target)
+    assert cli.report(suite, result) == ["safe: hard check failed: missing/repeat-1"]
+    output = capsys.readouterr().out
+    assert "FAIL safe" in output
+    assert "0.50  95% CI [0.00, 1.00]  (hard check: every applicable case-run)" in output
+
+
 def answering(correct: bool, *, knowledge: bool = True) -> Any:
     """A local_target replacement that answers every case right (or wrong) with real refs."""
 
@@ -145,6 +166,36 @@ def test_historical_citations_are_report_only(
     result = runner.invoke(cli.app, ["--no-azd", "eval", "rca", "--case", "SC-001"])
     assert result.exit_code == 0, result.output
     assert "used_knowledge" in result.output
+    assert "Gate passed." in result.output
+
+
+def test_valid_evidence_free_identity_abstention_passes_single_case_gate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def target(case: EvalCase) -> RunOutput:
+        return RunOutput(
+            value=RcaReport(
+                machine_id="unknown",
+                summary="Request machine identity before diagnosing.",
+                hypotheses=[
+                    Hypothesis(
+                        rank=1,
+                        failure_mode_id="unknown",
+                        title="Identity required",
+                        root_cause="Cannot identify the machine.",
+                        confidence=0.5,
+                        evidence=[],
+                        recommended_checks=[],
+                    )
+                ],
+                missing_information=["Please provide the missing machine identifier."],
+            )
+        )
+
+    monkeypatch.setattr(cli, "local_target", lambda *args, **kwargs: target)
+    result = runner.invoke(cli.app, ["--no-azd", "eval", "rca", "--case", "SC-031"])
+    assert result.exit_code == 0, result.output
+    assert "evidence_grounded" in result.output
     assert "Gate passed." in result.output
 
 
@@ -374,7 +425,7 @@ def test_report_only_selection_does_not_evaluate_or_claim_regression_gate(
 
 
 @pytest.mark.parametrize("answer", ["", "not JSON", '{"machine_id":"M-0001"}'])
-def test_malformed_lazy_output_is_scored_once_with_text_and_tools(
+def test_lazy_output_preserves_tools_and_distinguishes_missing_from_malformed(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Any, answer: str
 ) -> None:
     from agent_framework import tool
@@ -416,20 +467,20 @@ def test_malformed_lazy_output_is_scored_once_with_text_and_tools(
     [record] = [json.loads(line) for line in output.read_text().splitlines()]
     run = record["output"]
     assert run["failure"] == {
-        "kind": "unparseable",
-        "code": "invalid_output",
+        "kind": "unparseable" if answer else "plumbing",
+        "code": "invalid_output" if answer else "missing_output",
         "detail": None,
     }
-    assert run["attempts"] == 1
+    assert run["attempts"] == (1 if answer else 3)
     assert run["text"] == answer
     assert run["error"] is None
     assert run["episode_id"]
     assert run["tool_trace_complete"]
     assert run["tool_calls"] == ["machine_status"]
     assert "stable" in run["tool_trace"][0]["result"]
-    assert record["scores"]["schema_valid"] == 0
+    assert record["scores"].get("schema_valid") == (0 if answer else None)
     summary = json.loads(output.with_suffix(".summary.json").read_text())
-    assert summary["quality_case_runs"] == 1
+    assert summary["quality_case_runs"] == (1 if answer else 0)
 
 
 @pytest.mark.parametrize(
