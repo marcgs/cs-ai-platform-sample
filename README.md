@@ -91,15 +91,20 @@ It requires retained receipt lineage and a zero-row
 receipt and frozen measurement remain unchanged. Other errors, partial grades
 and quality failures cannot use this option; see [ADR 0007](docs/adr/0007-infrastructure-only-publication-retries.md).
 
-To turn a synthetic L8 v2 cluster report into an offline case proposal:
+To turn a synthetic L8 v2 report into an offline case proposal from every reviewed
+episode in its fresh cohort (including episodes never classified):
 
 ```bash
-uv run csai --no-azd cases propose path/to/report.json
+uv run csai --no-azd cases propose path/to/report.json \
+  --episodes path/to/cohort-episodes.jsonl --reviews path/to/cohort-reviews.jsonl
 ```
 
 This creates a local branch, proposed feedback cases and a PR body; it never
 commits, pushes or opens a PR. Human review remains required. See
 [L9 Part B](docs/iteration-4/l9b.md).
+Admission requires consensus, replay and no duplicate, not cluster membership.
+Reviews establish the expected cause; the replay-matched synthetic scenario
+supplies only incident category. Cluster provenance is optional.
 
 ### Clean up
 

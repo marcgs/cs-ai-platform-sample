@@ -58,13 +58,13 @@ class FeedbackProvenance(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    cluster_key: str
+    cluster_key: str | None = Field(default=None, exclude_if=lambda value: value is None)
     episode_id: str
     review_ids: tuple[str, ...]
     supporting_review_ids: tuple[str, ...]
     source: Literal["synthetic"]
-    analysis_category: str
-    condition: str
+    analysis_category: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    condition: str | None = Field(default=None, exclude_if=lambda value: value is None)
     verdict: Verdict
     tool_fingerprints: tuple[str, ...]
 

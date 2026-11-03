@@ -38,6 +38,7 @@ class Prepared(Record):
     uncertain_count: int
     agreement: dict[str, ReviewerAgreement]
     candidates: list[EnrichedEpisode]
+    reviewed_episodes: list[EnrichedEpisode]
     source_reviews: dict[str, list[Review]]
 
 
@@ -81,9 +82,12 @@ def prepare(
     for row in clean_reviews(combined):
         source_reviews[row.episode_id].append(row)
     candidates: list[EnrichedEpisode] = []
+    reviewed_episodes: list[EnrichedEpisode] = []
     uncertain = 0
     for episode in sorted(unique.values(), key=lambda row: row.id):
         summary = summaries.get(episode.id)
+        if summary is not None:
+            reviewed_episodes.append(enrich(episode, summary, dataset))
         if summary is None or summary.verdict is None:
             uncertain += 1
             continue
@@ -98,8 +102,31 @@ def prepare(
         uncertain_count=uncertain,
         agreement=agreement,
         candidates=candidates,
+        reviewed_episodes=reviewed_episodes,
         source_reviews=dict(source_reviews),
     )
+
+
+def review_candidates(prepared: Prepared) -> list[EvalCase]:
+    """Retain every reviewed episode, including those never eligible for classification."""
+    return [
+        EvalCase(
+            episode_id=item.episode.id,
+            input=item.episode.input,
+            expected_failure_mode=item.expected_failure_mode,
+            expected_mode_basis=item.expected_mode_basis,
+            tool_calls=[call.model_dump(mode="json") for call in item.episode.tool_calls],
+            capture_truncated=item.episode.truncated,
+            capture_status=item.episode.status,
+            capture_created_at=item.episode.created_at,
+            capture_completed_at=item.episode.completed_at,
+            review_notes=item.review.notes,
+            review_summary=item.review,
+            source_review_ids=sorted(row.id for row in prepared.source_reviews[item.episode.id]),
+            source_reviews=prepared.source_reviews[item.episode.id],
+        )
+        for item in prepared.reviewed_episodes
+    ]
 
 
 def _route(category: str) -> Route:
@@ -221,4 +248,5 @@ async def analyze(prepared: Prepared, classifier: CachedClassifier | None = None
             "Labels and reproducing eval cases require expert review before promotion.",
             "Without explicit classification, candidates stay unlabeled; no clusters are inferred.",
         ],
+        review_candidates=review_candidates(prepared),
     )

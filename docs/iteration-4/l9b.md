@@ -2,6 +2,14 @@
 
 ## Status
 
+The 2026-11-03 close-out removes clustering as an admission requirement.
+The implementation now retains every reviewed cohort episode in
+`Report.review_candidates`, including correct/uncertain reviews and episodes
+never classified. Consensus still rejects or defers unsupported cases.
+Cluster metadata, when present, is corroborated as provenance, not required.
+This is offline implementation; the first fresh-cohort **data PR**, its human
+merge, and the three-repeat baseline remain outstanding.
+
 Offline implementation prepared for an explicitly authorized local-only commit
 after Q8, Q9, L9 Part A and L8. No push, pull request, deployment or model call is
 part of this validation. L8's acceptance criteria are confirmed; fresh-cohort
@@ -12,6 +20,19 @@ measurement and human review remain pending. L9 is not marked done.
 ```bash
 uv run csai --no-azd cases propose path/to/report.json
 ```
+
+For the retained fresh report, attach the full cohort sources offline:
+
+```bash
+uv run csai --no-azd cases propose path/to/report.json \
+  --episodes path/to/cohort-episodes.jsonl --reviews path/to/cohort-reviews.jsonl
+```
+
+Both options are required together. Cohort membership, counts and recomputed
+reviewer reliability must match the report. No classifier, answer key or model
+is used. New reports already retain report-wide review candidates; the options
+also make legacy v2 reports include episodes outside classification. Without
+them, a legacy report can propose only the review evidence it retained.
 
 The input must be an explicitly synthetic L8 report with the required
 `schema_version: episode-analysis-v2`. Legacy pilots lack the review evidence
@@ -37,7 +58,9 @@ these checks finish before any branch switch or file write.
 
 ## Admission
 
-1. Check stable canonical cluster identity, label and episode membership.
+1. Discover candidates from all report-wide review evidence. Cluster membership
+   is optional. When metadata exists, check its canonical identity and consistency
+   with labels and source rows; reject conflicting copies of the same evidence.
 2. Replay every candidate's captured calls through Part A's helper. Missing,
    truncated, changed, malformed or unsupported captures reject into the K4 list.
    Explicit non-replayable call metadata and capture errors also reject.
@@ -55,7 +78,8 @@ these checks finish before any branch switch or file write.
    expert even when the reliability-weighted summary has a winner. Correct-output
    consensus is not a recurring failure.
 6. Require one replayed machine identity consistent with the incident input and
-   unambiguous supported incident-category metadata.
+   unambiguous generated scenario category for that replayed machine. Category
+   does not come from a classifier label or the review's free-text note.
 7. Link duplicates by machine, reviewer-supported failure mode and Q3 incident
    category, against both original18 and challenge cases, previous feedback cases
    and earlier admitted candidates.
@@ -75,12 +99,13 @@ existing input/expected/truth/split schema and add:
 - `cohort: feedback`;
 - expected machine and **review-consensus** actual failure-mode ID;
 - `truth.category` from existing incident metadata, with other truth fields empty;
-- provenance: canonical cluster key/condition, episode, source review IDs and
+- provenance: optional canonical cluster key/condition, episode, source review IDs and
   supporting review IDs, synthetic source, verdict, L8 analysis category and
   replay fingerprints.
 
-L8's failure-analysis category is not Q3's incident category. Existing manifest
-and seed incident metadata establish the latter. Part A's four feedback-only
+L8's failure-analysis category is not Q3's incident category. As approved during
+close-out, reviewers establish the cause; seed scenario metadata establishes
+only the incident category. Part A's four feedback-only
 machines expose their copied incident metadata through `feedback_scenarios`;
 promotion reads category only, never their expected cause. Unknown or ambiguous
 incident metadata is deferred, not guessed from a condition or assumed clean.
@@ -95,8 +120,8 @@ informational.
 The loader appends the reviewed file as a feedback cohort and validates provenance,
 duplicates and split conflicts. Q2's `assign_splits` receives original, challenge,
 existing feedback and new cases together; existing machine assignments stay frozen.
-`EvalSuite.gate_case_ids` remains exactly original18. Feedback failures never enter
-that gate's denominator. The command proposes cases; it does not claim their PR
+Feedback failures never enter the quality gate's denominator until its baseline
+is approved (plan invariant 3). The command proposes cases; it does not claim their PR
 has been reviewed or merged.
 
 ## Integration details
@@ -111,6 +136,11 @@ regenerated through the generator; seed records, tools, original/challenge cases
 and frozen L3 pilot artifacts remain unchanged.
 
 ## Verification
+
+Close-out regressions cover unclustered consensus admission, split patterns,
+forged evidence without a cluster, full-cohort attachment without classification,
+optional-provenance loading and byte-identical public-command reruns. Older
+validation below is retained as historical evidence, not the current admission rule.
 
 The public CLI tests use real isolated local git repositories with no commits,
 L2-generated populations, L8's actual preparation/analysis and a test-only offline

@@ -6,9 +6,13 @@ from typing import Annotated
 
 import typer
 
+from cs_platform.episode_io import load_episodes
 from cs_platform.evals import EvalCase
 from csai.case_proposal import CaseProposal, propose_cases
+from diagnostics_domain.dataset import load_seed
+from diagnostics_domain.feedback_models import Review
 from episode_analysis.models import Report
+from episode_analysis.pipeline import prepare, review_candidates
 from rca_evals.feedback import load_feedback_cases
 
 app = typer.Typer(no_args_is_help=True)
@@ -36,36 +40,43 @@ def _reject_symlinks(path: Path) -> None:
 
 def _evidence(report: Report) -> str:
     lines = ["# Feedback proposal evidence", "", "Source: synthetic; human review required.", ""]
+    clustered: set[str] = set()
     for cluster in sorted(report.clusters, key=lambda value: value.id):
+        clustered.update(candidate.episode_id for candidate in cluster.eval_cases)
         lines.extend(
             [f"## Cluster {cluster.id}", "", f"{cluster.category}: {cluster.condition}", ""]
         )
-        for candidate in sorted(cluster.eval_cases, key=lambda value: value.episode_id):
+    candidates = report.review_candidates or [
+        candidate for cluster in report.clusters for candidate in cluster.eval_cases
+    ]
+    for candidate in sorted(candidates, key=lambda value: value.episode_id):
+        if candidate.episode_id not in clustered:
+            lines.extend(["Unclustered review evidence:", ""])
+        lines.extend(
+            [
+                f"### Episode {candidate.episode_id}",
+                "",
+                f"Input: {candidate.input}",
+                "",
+                "Review summary:",
+                "",
+                "```json",
+                candidate.review_summary.model_dump_json(indent=2),
+                "```",
+                "",
+            ]
+        )
+        for review in sorted(candidate.source_reviews, key=lambda value: value.id):
             lines.extend(
                 [
-                    f"### Episode {candidate.episode_id}",
-                    "",
-                    f"Input: {candidate.input}",
-                    "",
-                    "Review summary:",
+                    f"#### Review {review.id}",
                     "",
                     "```json",
-                    candidate.review_summary.model_dump_json(indent=2),
+                    review.model_dump_json(indent=2),
                     "```",
                     "",
                 ]
             )
-            for review in sorted(candidate.source_reviews, key=lambda value: value.id):
-                lines.extend(
-                    [
-                        f"#### Review {review.id}",
-                        "",
-                        "```json",
-                        review.model_dump_json(indent=2),
-                        "```",
-                        "",
-                    ]
-                )
     return "\n".join(lines)
 
 
@@ -103,8 +114,13 @@ def _body(proposal: CaseProposal, evidence_path: Path) -> str:
         if decision.case_id:
             path = FEEDBACK if decision.case_id.startswith("FB-") else MANIFEST
             reason += f"; [{decision.case_id}]({path.as_posix()})"
+        cluster = (
+            f"[{decision.cluster_key}]({evidence}#cluster-{decision.cluster_key})"
+            if decision.cluster_key
+            else "unclustered"
+        )
         lines.append(
-            f"| [{decision.cluster_key}]({evidence}#cluster-{decision.cluster_key}) "
+            f"| {cluster} "
             f"| [{decision.episode_id}]({evidence}#episode-{decision.episode_id.lower()}) "
             f"| {reviews} | {decision.status} | {statistics} | {reason} |"
         )
@@ -208,10 +224,38 @@ def propose(
     repository: Annotated[
         Path, typer.Option(help="Repository root for the local proposal branch and files.")
     ] = Path(),
+    episodes: Annotated[
+        Path | None, typer.Option(exists=True, dir_okay=False, help="Full fresh-cohort episodes.")
+    ] = None,
+    reviews: Annotated[
+        Path | None, typer.Option(exists=True, dir_okay=False, help="Full fresh-cohort reviews.")
+    ] = None,
 ) -> None:
-    """Prepare a reviewed feedback cohort and PR body from a synthetic L8 v2 report."""
+    """Propose consensus/replay-backed cases, with optional cluster provenance."""
     try:
         source = Report.model_validate_json(report.read_text("utf-8"))
+        if (episodes is None) != (reviews is None):
+            raise ValueError("--episodes and --reviews must be supplied together")
+        if episodes is not None and reviews is not None:
+            cohort = prepare(
+                load_episodes(episodes, source="synthetic"),
+                [
+                    Review.model_validate_json(line)
+                    for line in reviews.read_text("utf-8").splitlines()
+                    if line.strip()
+                ],
+                load_seed(),
+            )
+            if (
+                source.source != cohort.source
+                or sorted(source.episode_ids) != cohort.episode_ids
+                or source.episode_count != cohort.episode_count
+                or source.reviewed_count != cohort.reviewed_count
+                or source.uncertain_count != cohort.uncertain_count
+                or source.reviewer_agreement != cohort.agreement
+            ):
+                raise ValueError("Fresh-cohort evidence conflicts with the report")
+            source = source.model_copy(update={"review_candidates": review_candidates(cohort)})
         result, branch, body = write_proposal(source, repository)
     except (OSError, ValueError) as error:
         raise typer.BadParameter(str(error)) from error
