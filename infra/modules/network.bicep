@@ -10,6 +10,10 @@ param vnetName string
 @description('Address space of the virtual network; the subnets are carved out of it.')
 param addressPrefix string
 
+param privateEndpointSubnetNetworkSecurityGroupId string = ''
+param functionsSubnetNetworkSecurityGroupId string = ''
+param agentsSubnetNetworkSecurityGroupId string = ''
+
 // Azure DNS zone names for the private endpoint groups used in this sample.
 var dnsZoneNames = {
   blob: 'privatelink.blob.${environment().suffixes.storage}'
@@ -31,6 +35,9 @@ resource vnet 'Microsoft.Network/virtualNetworks@2024-05-01' = {
         name: 'snet-private-endpoints'
         properties: {
           addressPrefix: cidrSubnet(addressPrefix, 24, 1)
+          ...(empty(privateEndpointSubnetNetworkSecurityGroupId) ? {} : {
+            networkSecurityGroup: { id: privateEndpointSubnetNetworkSecurityGroupId }
+          })
         }
       }
       {
@@ -38,6 +45,9 @@ resource vnet 'Microsoft.Network/virtualNetworks@2024-05-01' = {
         name: 'snet-functions'
         properties: {
           addressPrefix: cidrSubnet(addressPrefix, 26, 8)
+          ...(empty(functionsSubnetNetworkSecurityGroupId) ? {} : {
+            networkSecurityGroup: { id: functionsSubnetNetworkSecurityGroupId }
+          })
           delegations: [
             {
               name: 'functions'
@@ -51,6 +61,9 @@ resource vnet 'Microsoft.Network/virtualNetworks@2024-05-01' = {
         name: 'snet-agents'
         properties: {
           addressPrefix: cidrSubnet(addressPrefix, 24, 3)
+          ...(empty(agentsSubnetNetworkSecurityGroupId) ? {} : {
+            networkSecurityGroup: { id: agentsSubnetNetworkSecurityGroupId }
+          })
           delegations: [
             {
               name: 'agents'

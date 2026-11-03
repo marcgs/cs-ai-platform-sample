@@ -48,6 +48,8 @@ resource account 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
   }
   properties: {
     allowProjectManagement: true
+    associatedProjects: [projectName]
+    defaultProject: projectName
     customSubDomainName: accountName
     publicNetworkAccess: 'Enabled'
     disableLocalAuth: true
@@ -67,6 +69,8 @@ resource account 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
       name: d.name
       properties: {
         model: d.model
+        raiPolicyName: 'Microsoft.DefaultV2'
+        versionUpgradeOption: 'OnceNewDefaultVersionAvailable'
       }
       sku: d.sku
     }

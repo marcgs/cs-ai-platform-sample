@@ -16,6 +16,15 @@
     },
     "principalType": {
       "value": "${AZURE_PRINCIPAL_TYPE=User}"
+    },
+    "privateEndpointSubnetNetworkSecurityGroupId": {
+      "value": "${PRIVATE_ENDPOINT_SUBNET_NSG_ID=}"
+    },
+    "functionsSubnetNetworkSecurityGroupId": {
+      "value": "${FUNCTIONS_SUBNET_NSG_ID=}"
+    },
+    "agentsSubnetNetworkSecurityGroupId": {
+      "value": "${AGENTS_SUBNET_NSG_ID=}"
     }
   }
 }

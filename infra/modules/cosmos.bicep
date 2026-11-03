@@ -19,6 +19,13 @@ resource account 'Microsoft.DocumentDB/databaseAccounts@2024-11-15' = {
   kind: 'GlobalDocumentDB'
   properties: {
     databaseAccountOfferType: 'Standard'
+    analyticalStorageConfiguration: {
+      schemaType: 'WellDefined'
+    }
+    defaultIdentity: 'FirstPartyIdentity'
+    enableAutomaticFailover: true
+    enablePerRegionPerPartitionAutoscale: false
+    minimalTlsVersion: 'Tls12'
     locations: [
       {
         locationName: location
