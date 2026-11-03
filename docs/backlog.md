@@ -48,7 +48,7 @@ The design is [ADR 0009](adr/0009-evaluation-system-design.md): a small outcome 
 Notes:
 
 - **Q4:** gate on `hit_at_1_lenient`, `decisive_evidence_recall` and `evidence_grounded` on minimum means, each over every case it applies to, and on `injection_resisted` as a hard check: one followed injection fails the gate. `schema_valid` becomes a plumbing failure; the other metrics stay in the report. Thresholds come from a three-repeat baseline, which needs approval. Adopted for iteration 4 on 2026-11-03.
-- **Q16:** remove the `csai_<metric>` code evaluators from `testing_criteria`; keep the four judges and the run's provenance. The judge-only definition is a new evaluation definition; existing definitions and runs are not migrated or deleted. The offline implementation retains submission/retry receipts and reports a still-running run with its ID, portal URL and exit 3 after the local wait. Repeat the same command to observe that run, never to resubmit it. The 50-case publication ran 19m38s against a 15-minute wait, and a three-repeat run is expected to take 60–90 minutes. Implementation review/PR and later separately approved judges-only publication remain open. This supersedes the former Q10, Q12, Q13, Q14 and Q15; their evidence is in [iteration 4's Q9 record](iteration-4/q9.md) and [ADR 0008](adr/0008-evaluation-storage-network-exception.md).
+- **Q16:** remove the `csai_<metric>` code evaluators from `testing_criteria`; keep the four judges and the run's provenance. The judge-only definition is a new evaluation definition. Also keep observing a registered run after the local wait ends: the 50-case publication ran 19m38s against a 15-minute wait, and a three-repeat run is expected to take 60–90 minutes. Never resubmit because local polling stopped. This closes the former Q10, Q12, Q13, Q14 and Q15; their evidence is in [iteration 4's Q9 record](iteration-4/q9.md) and [ADR 0008](adr/0008-evaluation-storage-network-exception.md).
 - **Q17:** read the retained run records (`results.summary.json` per run), not Foundry. One static page: each gated metric per run with its interval and threshold, by agent, skill and exact model version. The chat deployment upgrades its model version automatically, so a change in the trend can come from the model rather than the agent.
 - **Q18:** the 20 blind person judgments from L8's fresh cohort are a first label set. Measure each judge's agreement on the same episodes before it gates anything.
 - **Q19:** grow where intervals are widest first: injection, missing machine, then the other challenge categories. Q3's generator and answer-key format apply; L9 adds feedback cases on top.
@@ -56,6 +56,13 @@ Notes:
 - **Q5:** report cost and latency per diagnosis; don't gate on them.
 - **Q6:** Q3's missing-machine cohort scores 1/12 on both hit-at-1 and schema validity.
 - **Q8, Q9, Q11:** implemented in iteration 4 ([#20](https://github.com/marcgs/cs-ai-platform-sample/pull/20), [#21](https://github.com/marcgs/cs-ai-platform-sample/pull/21), [#26](https://github.com/marcgs/cs-ai-platform-sample/pull/26)); evidence in [Q8](iteration-4/q8.md), [Q9](iteration-4/q9.md) and [ADR 0007](adr/0007-infrastructure-only-publication-retries.md). Removed at iteration 4's close-out.
+
+**Q16 implementation:** the offline publisher now uses that separate judges-only
+definition, without migrating or deleting existing definitions, runs or receipts.
+It retains submission/retry safety and reports still-running runs with their ID,
+service portal URL (explicitly unavailable if absent) and exit 3. Repeating the
+same command observes that run, never resubmits it. Implementation review/merge
+and later separately approved judges-only publication remain open.
 
 ## L. Governed learning loop
 
