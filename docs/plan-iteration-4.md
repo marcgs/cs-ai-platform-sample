@@ -18,6 +18,58 @@ Four items from the [backlog](backlog.md):
 | L8 Stable evidence-pattern clustering | M | Foundry models for classification |
 | L9 Feedback becomes eval cases, as a pull request | M | |
 
+During acceptance, the user adopted Q11 (explicit infrastructure-only publication
+retries, size S) as additional recovery scope and approved its offline
+implementation. [ADR 0007](adr/0007-infrastructure-only-publication-retries.md)
+records the exception to one cloud run per immutable measurement. This adds no
+automatic retry or model-usage authorization.
+
+### Acceptance execution update — 2 November 2026
+
+Q9 publication no longer blocks local acceptance. L8's fresh classification and
+human acceptance, the feedback-case proposal/PR, and the grown-suite local
+baseline may proceed in their dependency order while publication is diagnosed.
+Each model-consuming measurement still needs its own cost approval, and token
+work remains serialized at concurrency 1. Keep durable local evidence and
+publish saved measurements later; **published in Foundry remains open**.
+The baseline still follows the first feedback-case PR's human review and merge.
+
+| Local step | Expected model usage before approval |
+|---|---|
+| L8 fresh classification | Frozen preflight: 30 uncached requests, about 141,046 input + at most 36,000 output tokens; retry/hidden overhead is additional |
+| Feedback-case proposal | Zero model tokens for deterministic `csai cases propose`; commits, push and PR opening need separate permission |
+| Three-repeat local baseline | About 2.15M agent tokens for the existing 50 cases, plus about 43k per added feedback case; no cloud judges until later publication |
+
+The logged project-identity CreateContainer AuthorizationFailure persisted
+after an approved account-only rule. A separately approved AzureServices bypass
+then enabled publication without an Owner grant or other access change.
+Actual StorageBlobLogs ingestion works; ARM destination-type readback still
+differs from the declaration.
+
+The approved retry completed in **19m37.727s with 50 output rows and zero
+errored**, despite the publisher's 900-second observation timeout. The
+200 judge invocations report 763,268 tokens. The user confirmed the rows,
+code/judge scores and version labels in the portal.
+Of 450 common scores, 410 match exactly and 40 calibration values differ by
+less than 10^-15. All service-retained inline inputs match exactly; the internal
+stage producing the returned differences is unknown. The user approved an
+offline per-row audit at absolute tolerance 1e-12 and a separately named
+`calibration_score = 1 - Brier`. Local gates and the existing run stay unchanged.
+The current 50-failed display includes inverted calibration pass flags and is
+not a replacement for the local gate. No republication is approved.
+See [Q9 evidence](iteration-4/q9.md#completed-validation-and-acceptance-findings--2-november-2026)
+and [ADR 0008](adr/0008-evaluation-storage-network-exception.md).
+Any matching network/RBAC fix and another request need separate approval.
+If a setup aligned with template 15a in both
+respects still fails, stop and prepare the support-case evidence; do not add
+publisher retry, receipt or lock machinery.
+
+L8's fresh 300-episode population and 50-episode cohort are generated, the
+preflight is frozen, and the approved offline 10+10 blind pack is prepared.
+The key remains closed. Blind person judgments,
+classification token approval, the measurement and human acceptance remain
+outstanding; no classification has run.
+
 Out of scope: tool selection (Q1), knowledge citation (Q7), changes to which metrics gate (Q4), cost and latency (Q5), asking for missing information (Q6), proposals, the learner, release and the post-release check (L4, L5, L10, L11), scheduling (L6), knowledge from diagnoses (L7), replayable data beyond the check in L9 (K4), Fabric, and any change to the agent's behavior or `RcaReport`. Findings go to the backlog.
 
 This is the plan, not authorization to implement. Like iterations 2 and 3: one worktree and **one pull request per item**, developed in parallel, with live evals, model traffic and deployments serialized. This plan approves no deployment, infrastructure change, role assignment or model traffic.
@@ -127,7 +179,7 @@ Done in the pull request that adds this plan, in the backlog only:
 
 After L9's first pull request merges:
 
-- Run the full suite (original 18, Q3 challenge cases, the feedback cohort) with `--repeats 3 --concurrency 1` on the local target, with Q8's capture, and publish it (Q9).
+- Run the full suite (original 18, Q3 challenge cases, the feedback cohort) with `--repeats 3 --concurrency 1` on the local target, with Q8's capture. Retain the measurement and publish it after Q9 works.
 - Record it in `docs/iteration-4/baseline.md`: revision, model, date, per cohort and split, with confidence intervals. Iteration 5's proposals are judged against this run.
 - Cost: about 50 cases plus the feedback cohort × 3 repeats × 12k tokens, roughly 2M tokens, plus judge tokens. It needs approval.
 - No data release is expected, since feedback cases use seed machines. If L9 changes any tool result, stop: that breaks invariant 1.
@@ -154,14 +206,38 @@ While work is pending, the four backlog rows carry target `it4`. When an item me
 
 ## Implementation and validation status
 
+Clean-main preparation at `7b56c46` passed 590 tests after the local S6 SDK
+compatibility restoration; the initial two failures remain recorded. The
+reviewed drift-preserving provision retained subnet NSGs, Cosmos DB failover,
+connection sharing, account routing and model policies. The project host is
+`Succeeded`, one hosted diagnosis verified its exact stored episode, and
+episodes listing works. Explicit seeding confirmed 40 historical cases;
+automatic provision-hook dispatch remains unverified (S14).
+
+The post-review local validation retained all 50 case-runs, episodes and
+transcripts, passed the unchanged original-18 gate and preserved its journal
+through offline rebuilding. Dedicated private evaluation storage, diagnostics
+and the approved network-only exception enabled one completed, portal-confirmed
+publication. The earlier rejected requests, startup failure and original
+receipts remain retained. No Owner grant was needed.
+
+The recovery implementation is committed on `it4/finish-acceptance`.
+Its acceptance snapshot passes **608 tests, 32 existing warnings**, Ruff
+(149 formatted files), strict Pyright and Bicep build. Calibration reporting
+and the numeric audit are approved code-only follow-ups. No Azure writes,
+model runs or republication are approved. L8 acceptance, the first case PR,
+the three-repeat baseline and **its Foundry publication remain open**.
+See [the sanitized Q9 evidence](iteration-4/q9.md).
+
 The reviewed implementation is committed in five stacked item pull requests.
 The original dirty checkout and the uncommitted integration snapshot were
 preserved. All domain data and measurements are synthetic and fictional.
 
 | Item | Implementation PR | Initial stacked offline tests | Still outstanding |
 |---|---|---|---|
-| Q8 | [#20](https://github.com/marcgs/cs-ai-platform-sample/pull/20) | 426 | Fresh local eval after capture review fixes |
-| Q9 | [#21](https://github.com/marcgs/cs-ai-platform-sample/pull/21) | 454 | Approved deployment, hosted smoke test, publication and parity comparison |
+| Q8 | [#20](https://github.com/marcgs/cs-ai-platform-sample/pull/20) | 426 | Fresh post-review local eval passed; final feedback-suite baseline remains |
+| Q9 | [#21](https://github.com/marcgs/cs-ai-platform-sample/pull/21) | 454 | Validation completed and confirmed in portal; calibration reporting, numeric audit, sparse parity and baseline publication remain |
+| Q11 | Recovery on `it4/finish-acceptance` | 77 focused / 608 full | Completed approved live retry; acceptance PR merge remains |
 | L9 Part A | [#23](https://github.com/marcgs/cs-ai-platform-sample/pull/23) | 456 | No additional live measurement for replay implementation |
 | L8 | [#24](https://github.com/marcgs/cs-ai-platform-sample/pull/24) | 478 | Fresh approved measurement and person acceptance |
 | L9 Part B | [#22](https://github.com/marcgs/cs-ai-platform-sample/pull/22) | 497 | First fresh-cohort case PR reviewed and merged by a person |
