@@ -466,7 +466,7 @@ def test_present_default_feedback_preserves_explicit_seed_baselines(
     seeded = load_suite(feedback_cases=absent)
     combined = load_suite()
     assert len(seeded.cases) == 50
-    assert len(seeded.gate_case_ids or ()) == 18
+    assert len(seeded.gate_case_ids or ()) == 50
     assert combined.cases[:50] == seeded.cases
     assert len(combined.cases) == 50 + len(cases)
     assert combined.gate_case_ids == seeded.gate_case_ids

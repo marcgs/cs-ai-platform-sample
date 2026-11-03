@@ -92,12 +92,21 @@ def describe(result: CaseResult) -> str:
 
 def report(suite: EvalSuite, result: SuiteResult) -> list[str]:
     typer.echo(f"\n{suite.name}: {len(result.cases)} cases")
+    typer.echo(
+        f"  Invalid reports: {len(result.invalid_reports)} (scored); "
+        f"plumbing failures: {len(result.cases) - len(result.quality_cases)} (excluded)"
+    )
     metrics = result.gate_metrics
     intervals = result.gate_intervals
     for name, value in metrics.items():
         minimum = suite.thresholds.minimums.get(name)
         gate = f"  (min {minimum:.2f})" if minimum is not None else ""
-        mark = "FAIL" if minimum is not None and value < minimum else "ok  "
+        hard = name in suite.thresholds.hard_checks
+        if hard:
+            gate = "  (hard check: every applicable case-run)"
+        mark = (
+            "FAIL" if (minimum is not None and value < minimum) or (hard and value < 1) else "ok  "
+        )
         low, high = intervals[name]
         typer.echo(f"  {mark} {name:<20} {value:.2f}  95% CI [{low:.2f}, {high:.2f}]{gate}")
     group_intervals = result.group_intervals

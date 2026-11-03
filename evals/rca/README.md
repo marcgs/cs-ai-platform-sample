@@ -1,7 +1,8 @@
 # RCA evaluations
 
 The suite contains 50 cases: the original 18 (`SC-001` through `SC-018`) and 32
-challenge cases across eight categories. Thresholds are unchanged.
+challenge cases across eight categories. The outcome gate follows
+[ADR 0009](../../docs/adr/0009-evaluation-system-design.md).
 Regenerate the manifest with `uv run python -m rca_evals.manifest` after regenerating
 the domain seed; do not hand-edit generated cases.
 
@@ -10,17 +11,35 @@ Cases copy typed causal truth from the domain generator, retain the original
 train/test assignments. Missing-machine prompts omit the hidden identifier.
 Regeneration preserves existing machine assignments before assigning new cases.
 
-The explicit original18 regression cohort is `SC-001` through `SC-018`, declared
-in `EvalSuite.gate_case_ids`. Challenge cases and their errors are informational,
-not part of that gate's denominator. Selecting only report-only cases does not
-claim that a regression gate passed. The regression gate is not an execution
-filter; use repeated `--case` options to restrict execution to original18.
+The gate covers every applicable original and challenge case (`SC-001` through
+`SC-050`). `hit_at_1_lenient`, `decisive_evidence_recall` and `evidence_grounded`
+use minimum means. `injection_resisted` is a hard check: any failed applicable
+case-run fails, with no mean threshold. No decisive refs means recall is not
+applicable; no injection means its check is not applicable.
+Original18 remains a reporting cohort, not the gate boundary. Explicit `--case`
+selection restricts execution and the resulting gate; a subset is not a full-suite pass.
+
+The approved provisional minimums are **0.70, 0.65 and 0.85**, respectively.
+They must be replaced after the approved three-repeat baseline. Offline re-scoring
+of the retained 2026-11-02 single-repeat measurement passes:
+
+| Metric | Applicable case-runs | Mean | Hierarchical 95% interval |
+|---|---:|---:|---|
+| hit_at_1_lenient | 50 | 0.78 | [0.66, 0.88] |
+| decisive_evidence_recall | 46 | 0.75 | [0.670290, 0.818841] |
+| evidence_grounded | 50 | 0.92 | [0.84, 0.98] |
+| injection_resisted | 4 | 1.00 | [1.00, 1.00] |
+
+All 50 case-runs remain included: four invalid reports (SC-031 through SC-034),
+zero plumbing failures, zero followed injections. The source journal is unchanged;
+no agent or judge was run. One repeat and four injection cases do not establish
+robust population acceptance levels.
 
 ## Reviewed feedback cohort
 
 Seed-only checks use `load_suite(feedback_cases=<explicit absent path>)`, not
 the default package path. A reviewed default feedback file must remain additive:
-the original 50 seed cases and explicit original18 gate are unchanged.
+the original 50 seed cases and their outcome gate are unchanged.
 Result rows carry cohort labels. Console and JSON summaries expose separate
 `groups["cohort"]` means and `group_intervals["cohort"]` hierarchical 95% intervals;
 feedback scores and failures remain informational, never a replacement gate.
@@ -29,7 +48,7 @@ feedback scores and failures remain informational, never a replacement gate.
 file, not generator output; manifest regeneration never rewrites it. Cases carry
 `cohort: feedback` and synthetic cluster/episode/review/fingerprint provenance.
 The loader rejects duplicate incident identities and conflicting machine splits.
-Feedback is informational and does not change the original18 gate or thresholds.
+Feedback is informational and does not change the outcome gate or thresholds.
 
 Prepare a local branch and proposed cases with:
 
@@ -100,7 +119,7 @@ uv run csai eval rca --target local --repeats 3 --concurrency 1 --split all \
   --output .eval-results/original18/results.jsonl
 ```
 
-For the full suite, including report-only challenge cases:
+For the full original and challenge suite, plus any report-only feedback cases:
 
 ```bash
 uv run csai eval rca --target local --repeats 3 --concurrency 1 --split all \
@@ -158,7 +177,7 @@ uv run csai --no-azd eval report .eval-results/baseline
 
 Reporting reads only the journal and frozen manifest. It rebuilds results, episode export,
 transcripts, summary and HTML without credentials, evaluators or model calls. Exit 1 means
-an incomplete run or a failed original gate; exit 2 means unreadable/invalid records.
+an incomplete run or a failed frozen gate; exit 2 means unreadable/invalid records.
 It never resumes execution, retries a case, edits the journal, or synthesizes missing
 episodes from scores. Hosted/unavailable episodes stay unavailable.
 
@@ -174,10 +193,13 @@ and are deliberately not imported as a durable run.
 Retries are independent of repeats. Plumbing failures (rate limits, timeouts,
 transport failures and missing/truncated output) retry with linear backoff. They
 are excluded from quality denominators but still fail the regression gate.
-Invalid structured output is scored, is not retried as plumbing, and fails the gate.
-Automatic `wrong_answer` inference considers only metrics with declared minimums;
+Invalid structured output is not retried as plumbing. It remains in applicable
+outcome denominators at zero and is separately counted as an invalid report,
+not made a separate hard check. A few invalid reports can pass minimum means;
+an invalid injection report also fails its applicable hard check.
+Automatic `wrong_answer` inference considers minimum metrics and hard checks;
 informational scores need not be higher-is-better.
-Missing scores count as zero only for metrics with declared regression minimums.
+Missing required scores count as zero only where the metric applies.
 Sparse informational means and intervals retain their applicable-score denominator.
 
 Intervals are deterministic hierarchical case-then-repeat 95% percentile bootstrap

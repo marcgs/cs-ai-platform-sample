@@ -361,7 +361,7 @@ async def test_sparse_metrics_are_not_penalized_and_unparseable_is_not_plumbing(
 
     result = await run_suite(extended, target)
     assert result.metrics == {"exact": 0.0, "sparse": 0.8}
-    assert result.errored == ["C-0", "C-1"]
+    assert result.errored == []
     assert all(case.output.attempts == 1 for case in result.cases)
 
 

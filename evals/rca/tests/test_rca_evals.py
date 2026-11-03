@@ -2,12 +2,18 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from cs_platform.evals import CaseResult, EvalCase, RunOutput, SuiteResult, run_suite, score
+from cs_platform.evals import (
+    EvalCase,
+    RunError,
+    RunOutput,
+    run_suite,
+    score,
+)
 from cs_platform.evidence import Evidence
 from diagnostics_domain.dataset import load_seed
 from diagnostics_mcp.tools import TOOL_NAMES
 from rca_agent.report import Hypothesis, RcaReport
-from rca_evals import load_suite
+from rca_evals import gate_metric_applicability, load_suite
 from rca_evals.evaluators import (
     calibration,
     data_quality_disclosed,
@@ -60,12 +66,7 @@ def test_committed_manifest_matches_the_seed_scenarios(tmp_path: Path) -> None:
 
 def test_thresholds_gate_the_metrics_the_evaluators_produce() -> None:
     suite = load_suite()
-    produced = {
-        **outcome(CASE, output(hypothesis(1, "FM-01", "EC-2101"))),
-        **evidence_grounded(CASE, output(hypothesis(1, "FM-01", "EC-2101"))),
-        **tool_coverage(CASE, RunOutput()),
-        **knowledge_search(CASE, RunOutput()),
-    }
+    produced = score(suite, suite.cases[0], _truthful_output(suite.cases[0]))
     assert set(suite.thresholds.minimums) <= set(produced)
 
 
@@ -144,40 +145,6 @@ def test_fabricated_history_is_used_but_not_grounded() -> None:
     assert outcome(CASE, result)["used_knowledge"] == 1.0
     assert evidence_grounded(CASE, result) == {"evidence_grounded": 0.0}
     assert knowledge_search(CASE, result) == {"knowledge_search_called": 0.0}
-
-
-@pytest.mark.parametrize(("citing_reports", "passes"), [(13, True), (12, False)])
-def test_measured_knowledge_gate_allows_one_case_below_the_observed_minimum(
-    tmp_path: Path, citing_reports: int, passes: bool
-) -> None:
-    suite = load_suite(feedback_cases=tmp_path / "absent-feedback.jsonl")
-    dataset = load_seed()
-    results = []
-    for index, case in enumerate(suite.cases):
-        if case.truth and case.truth.category != "clean":
-            continue
-        history = next(
-            item
-            for item in dataset.historical_cases
-            if item.confirmed_failure_mode == case.expected["failure_mode"]
-        )
-        observed = output(
-            hypothesis(
-                1,
-                case.expected["failure_mode"],
-                history.id if index < citing_reports else "EC-2101",
-            ),
-            machine_id=case.expected["machine_id"],
-        )
-        observed.tool_calls = [*TOOL_NAMES, "azure_ai_search"]
-        results.append(
-            CaseResult(case_id=case.id, scores=score(suite, case, observed), output=observed)
-        )
-    failures = SuiteResult(suite=suite.name, cases=results).failures(suite.thresholds)
-    assert (not failures) == passes
-    if not passes:
-        assert len(failures) == 1
-        assert failures[0].startswith("used_knowledge:")
 
 
 def test_refs_must_exist_and_belong_to_the_machine() -> None:
@@ -436,7 +403,7 @@ def test_nonapplicable_metrics_are_sparse_and_calibration_is_brier_loss() -> Non
     assert calibration(clean, observed)["calibration"] == pytest.approx(0.81)
 
 
-async def test_new_categories_are_report_only_and_do_not_weaken_original_gate(
+async def test_original_and_challenge_failures_gate_but_feedback_stays_report_only(
     tmp_path: Path,
 ) -> None:
     suite = load_suite(feedback_cases=tmp_path / "absent-feedback.jsonl")
@@ -454,7 +421,91 @@ async def test_new_categories_are_report_only_and_do_not_weaken_original_gate(
 
     result = await run_suite(suite, target, retries=0)
     assert len(result.cases) == 50
-    assert sum(case.gated for case in result.cases) == 18
-    assert not result.failures(suite.thresholds)
+    assert sum(case.gated for case in result.cases) == 50
+    assert result.failures(suite.thresholds)
     assert result.gate_metrics["hit_at_1"] == 1.0
     assert "injection_resisted" not in result.metrics
+    assert {case.cohort for case in result.cases[:18]} == {"original"}
+    assert {case.cohort for case in result.cases[18:]} == {"challenge"}
+
+
+async def test_invalid_report_scores_zero_without_a_separate_hard_failure(tmp_path: Path) -> None:
+    from dataclasses import replace
+
+    suite = load_suite(feedback_cases=tmp_path / "absent.jsonl")
+    selected = replace(suite, cases=suite.cases[:10])
+
+    async def target(case: EvalCase) -> RunOutput:
+        observed = _truthful_output(case)
+        if case.id == selected.cases[0].id:
+            assert isinstance(observed.value, RcaReport)
+            observed.value.machine_id = "M-9999"
+            observed.failure = RunError(kind="unparseable", code="invalid_output")
+        return observed
+
+    result = await run_suite(selected, target, retries=0)
+    invalid = result.invalid_reports
+    assert len(invalid) == 1
+    assert len(result.quality_cases) == 10
+    assert result.errored == []
+    assert not result.failures(suite.thresholds)
+    assert all(invalid[0].scores[name] == 0 for name in suite.thresholds.minimums)
+    assert result.gate_metrics["hit_at_1_lenient"] == 0.9
+
+
+async def test_hard_injection_check_cannot_be_averaged_away(tmp_path: Path) -> None:
+    from dataclasses import replace
+
+    suite = load_suite(feedback_cases=tmp_path / "absent.jsonl")
+    injected = next(
+        case for case in suite.cases if case.truth and case.truth.category == "injection"
+    )
+    attempts = 0
+
+    async def target(case: EvalCase) -> RunOutput:
+        nonlocal attempts
+        observed = _truthful_output(case)
+        if case.id == injected.id:
+            attempts += 1
+            if attempts == 1:
+                assert isinstance(observed.value, RcaReport)
+                observed.value.summary = (
+                    injected.truth.injection_markers[0] if injected.truth else ""
+                )
+        return observed
+
+    result = await run_suite(replace(suite, cases=(*suite.cases[:18], injected)), target, repeats=2)
+    failures = result.failures(suite.thresholds)
+    assert len(failures) == 1
+    assert "injection_resisted: hard check failed" in failures[0]
+    assert f"{injected.id}/repeat-1" in failures[0]
+    assert f"{injected.id}/repeat-2" not in failures[0]
+    assert result.gate_metrics["injection_resisted"] == 0.5
+    assert "injection_resisted" not in suite.thresholds.minimums
+
+
+async def test_metric_applicability_and_feedback_scope(tmp_path: Path) -> None:
+    from dataclasses import replace
+
+    suite = load_suite(feedback_cases=tmp_path / "absent.jsonl")
+    missing = next(
+        case for case in suite.cases if case.truth and case.truth.category == "missing_machine"
+    )
+    feedback = suite.cases[0].model_copy(update={"id": "FB-test", "cohort": "feedback"})
+
+    async def target(case: EvalCase) -> RunOutput:
+        if case.cohort == "feedback":
+            return RunOutput(error="feedback-only plumbing")
+        return _truthful_output(case)
+
+    result = await run_suite(replace(suite, cases=(missing, feedback)), target, retries=0)
+    assert "decisive_evidence_recall" not in result.gate_metrics
+    assert "injection_resisted" not in result.gate_metrics
+    assert "decisive_evidence_recall" not in result.gate_intervals
+    assert result.cases[0].applicable_metrics == gate_metric_applicability(missing)
+    assert result.cases[1].gated is False
+    assert result.cases[1].cohort == "feedback"
+    assert not any(
+        "decisive_evidence_recall" in item or "errored" in item
+        for item in result.failures(suite.thresholds)
+    )

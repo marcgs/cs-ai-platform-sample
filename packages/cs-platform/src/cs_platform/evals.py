@@ -160,6 +160,8 @@ class Thresholds(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     minimums: dict[str, float] = Field(description="Minimum mean score per metric.")
+    hard_checks: frozenset[str] = frozenset()
+    provisional: bool = False
 
 
 @dataclass(frozen=True)
@@ -169,6 +171,8 @@ class EvalSuite:
     thresholds: Thresholds
     evaluators: tuple[Evaluator, ...]
     gate_case_ids: frozenset[str] | None = None
+    original_case_ids: frozenset[str] | None = None
+    metric_applicability: Callable[[EvalCase], frozenset[str]] | None = None
 
     @classmethod
     def from_files(
@@ -194,9 +198,10 @@ def case_cohort(suite: EvalSuite, case: EvalCase) -> Cohort:
     """Label informational populations without changing the regression gate."""
     if case.cohort is not None:
         return case.cohort
-    return (
-        "original" if suite.gate_case_ids is None or case.id in suite.gate_case_ids else "challenge"
+    originals = (
+        suite.original_case_ids if suite.original_case_ids is not None else suite.gate_case_ids
     )
+    return "original" if originals is None or case.id in originals else "challenge"
 
 
 class CaseResult(BaseModel):
@@ -209,6 +214,9 @@ class CaseResult(BaseModel):
     split: Split | None = None
     gated: bool = True
     cohort: Cohort | None = Field(default=None, exclude_if=lambda value: value is None)
+    applicable_metrics: frozenset[str] | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class SuiteResult(BaseModel):
@@ -290,15 +298,12 @@ class SuiteResult(BaseModel):
     @property
     def errored(self) -> list[str]:
         """Cases the target couldn't run, even after retries."""
-        return [
-            case.case_id
-            for case in self.cases
-            if case.gated
-            and (
-                case.output.error
-                or (case.output.failure and case.output.failure.kind != "wrong_answer")
-            )
-        ]
+        return [case.case_id for case in self.cases if case.gated and is_plumbing(case.output)]
+
+    @property
+    def invalid_reports(self) -> list[CaseResult]:
+        """Invalid reports stay in quality denominators, unlike plumbing failures."""
+        return [case for case in self.quality_cases if case.scores.get("schema_valid") == 0]
 
     def failures(self, thresholds: Thresholds) -> list[str]:
         """Why the gate fails: errored cases first, then threshold violations."""
@@ -315,7 +320,24 @@ class SuiteResult(BaseModel):
             f"{name}: {metrics.get(name, 0.0):.2f} < {minimum:.2f}"
             for name, minimum in thresholds.minimums.items()
             if metrics.get(name, 0.0) < minimum
+            and (
+                not self.cases
+                or any(
+                    case.gated and _applies(case, name, frozenset(thresholds.minimums))
+                    for case in self.quality_cases
+                )
+            )
         )
+        for name in sorted(thresholds.hard_checks):
+            failed = [
+                f"{case.case_id}/repeat-{case.repeat}"
+                for case in self.quality_cases
+                if case.gated
+                and _applies(case, name, thresholds.hard_checks)
+                and case.scores.get(name, 0.0) != 1.0
+            ]
+            if failed:
+                failures.append(f"{name}: hard check failed: {', '.join(failed)}")
         return failures
 
     def warnings(self, thresholds: Thresholds) -> list[str]:
@@ -357,6 +379,10 @@ def score(suite: EvalSuite, case: EvalCase, output: RunOutput) -> dict[str, floa
     scores: dict[str, float] = {}
     for evaluator in suite.evaluators:
         scores.update(evaluator(case, output))
+    if scores.get("schema_valid") == 0:
+        for name in suite.thresholds.minimums.keys() | suite.thresholds.hard_checks:
+            if name in scores:
+                scores[name] = 0.0
     return scores
 
 
@@ -391,6 +417,12 @@ def classify_error(output: RunOutput) -> RunError | None:
     return None
 
 
+def _applies(case: CaseResult, name: str, zero_fill: frozenset[str]) -> bool:
+    return name in case.scores or (
+        name in zero_fill and (case.applicable_metrics is None or name in case.applicable_metrics)
+    )
+
+
 def aggregate(
     cases: list[CaseResult], *, zero_fill: frozenset[str] = frozenset()
 ) -> dict[str, float]:
@@ -398,10 +430,13 @@ def aggregate(
         return {}
     names = sorted(zero_fill | {name for case in cases for name in case.scores})
     return {
-        name: mean(
-            case.scores.get(name, 0.0) for case in cases if name in zero_fill or name in case.scores
-        )
+        name: mean(values)
         for name in names
+        if (
+            values := [
+                case.scores.get(name, 0.0) for case in cases if _applies(case, name, zero_fill)
+            ]
+        )
     }
 
 
@@ -422,9 +457,11 @@ def bootstrap_intervals(
     for name in sorted(zero_fill | {name for case in cases for name in case.scores}):
         clusters: dict[str, list[float]] = {}
         for case in sorted(cases, key=lambda case: (case.case_id, case.repeat)):
-            if name in zero_fill or name in case.scores:
+            if _applies(case, name, zero_fill):
                 clusters.setdefault(case.case_id, []).append(case.scores.get(name, 0.0))
         groups = list(clusters.values())
+        if not groups:
+            continue
         draws: list[float] = []
         for _ in range(samples):
             sampled = [rng.choice(groups) for _ in groups]
@@ -449,6 +486,8 @@ def paired_difference_intervals(
     differences: list[CaseResult] = []
     for key in sorted(before):
         old, new = before[key], after[key]
+        if old.applicable_metrics != new.applicable_metrics:
+            raise ValueError("paired comparison requires identical metric applicability")
         if old.scores.keys() - required != new.scores.keys() - required:
             raise ValueError("paired comparison requires identical metric applicability")
         differences.append(
@@ -457,6 +496,7 @@ def paired_difference_intervals(
                     "scores": {
                         name: new.scores.get(name, 0.0) - old.scores.get(name, 0.0)
                         for name in required | new.scores.keys()
+                        if _applies(new, name, required)
                     }
                 }
             )
@@ -534,8 +574,13 @@ async def run_suite(
                     on_start(case, repeat)
                 output = await attempt(case, repeat)
                 scores = {} if is_plumbing(output) else score(suite, case, output)
+                applicable = (
+                    suite.metric_applicability(case) if suite.metric_applicability else None
+                )
                 if output.failure is None and any(
-                    scores.get(name, 0.0) < 1.0 for name in suite.thresholds.minimums
+                    scores.get(name, 0.0) < 1.0
+                    for name in suite.thresholds.minimums.keys() | suite.thresholds.hard_checks
+                    if applicable is None or name in applicable
                 ):
                     output.failure = RunError(kind="wrong_answer", code="quality_miss")
                 result = CaseResult(
@@ -548,6 +593,7 @@ async def run_suite(
                     split=case.split,
                     gated=suite.gate_case_ids is None or case.id in suite.gate_case_ids,
                     cohort=case_cohort(suite, case),
+                    applicable_metrics=applicable,
                 )
                 if on_result is not None:
                     on_result(result)

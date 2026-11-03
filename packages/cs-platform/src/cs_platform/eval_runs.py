@@ -627,6 +627,11 @@ def _export_record(directory: Path, record: RunRecord, *, stage_reports: bool = 
         "interrupted": [key.model_dump() for key in record.interrupted],
         "attempts": len(record.attempts),
         "quality_case_runs": len(result.quality_cases),
+        "invalid_report_case_runs": len(result.invalid_reports),
+        "invalid_reports": [
+            {"case_id": case.case_id, "repeat": case.repeat} for case in result.invalid_reports
+        ],
+        "plumbing_case_runs": len(result.cases) - len(result.quality_cases),
         "gate_case_ids": sorted({case.case_id for case in result.cases if case.gated}),
         "minimum_score_metrics": sorted(result.minimum_score_metrics),
         "metrics": result.metrics,
