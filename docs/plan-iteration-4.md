@@ -57,7 +57,7 @@ remain; the earlier judges-only direction is not implemented on main.
 | Q11 | Delivered in [#26](https://github.com/marcgs/cs-ai-platform-sample/pull/26); approved infrastructure-only recovery completed, original receipts retained ([ADR 0007](adr/0007-infrastructure-only-publication-retries.md)) |
 | Q4 | Done in merged [#28](https://github.com/marcgs/cs-ai-platform-sample/pull/28); local reference/fallback, provisional floors 0.70 / 0.65 / 0.85 and injection hard check |
 | L9 | Replay in [#23](https://github.com/marcgs/cs-ai-platform-sample/pull/23), proposals in [#22](https://github.com/marcgs/cs-ai-platform-sample/pull/22), consensus admission completed in merged [#30](https://github.com/marcgs/cs-ai-platform-sample/pull/30) |
-| First feedback cases | [#32](https://github.com/marcgs/cs-ai-platform-sample/pull/32) open for human review/merge: 3 admitted, 8 duplicates, 12 rejected, 27 expert referrals from all 50 fresh-cohort episodes |
+| First feedback cases | [#32](https://github.com/marcgs/cs-ai-platform-sample/pull/32) open for human review/merge: 2 retained cases, 8 duplicates, 12 correct-output rejections, 27 expert referrals and 1 manually excluded conflict from all 50 fresh-cohort episodes; the original automatic 3-admit proposal remains historical evidence |
 | L8 | Closed as a finding, continued under L12; fresh acceptance failed recall/fragmentation, no retuning or rerun ([evidence](iteration-4/l8.md#approved-fresh-classification-and-failed-acceptance--3-november-2026)) |
 | Q16 | Closed, superseded by the spike; #29 closed/unmerged |
 | Three-repeat baseline and publication | Deferred to the #31 spike decision and follow-up; provisional floors remain |

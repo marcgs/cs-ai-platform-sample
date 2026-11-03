@@ -43,7 +43,11 @@ robust population acceptance levels.
 ## Reviewed feedback cohort
 
 The first proposal, [#32](https://github.com/marcgs/cs-ai-platform-sample/pull/32),
-adds three synthetic feedback cases and retains all 50 fresh-cohort decisions.
+retains two synthetic feedback cases: 2 retained cases, 8 duplicates,
+12 correct-output rejections, 27 expert referrals and 1 manually excluded
+conflict from all 50 fresh-cohort episodes. The conflict is
+`FB-099561399790d755` (`M-0010`). Frozen decisions preserve the original
+automatic 3-admit proposal as historical evidence, not the final manifest.
 It is open for human review/merge, not yet accepted. See the
 [close-out record](../../docs/iteration-4/close-out.md).
 
