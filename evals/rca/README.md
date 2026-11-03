@@ -40,6 +40,9 @@ uv run csai --no-azd cases propose path/to/l8-v2-report.json
 
 No commit, push or PR opening is automatic. Reviewers establish the expected cause;
 the replay-matched generated scenario supplies only the incident category.
+Provenance labels the cause as `reviewer_consensus` and the category as
+`replay_matched_synthetic_scenario`. This synthetic-only path does not admit real
+feedback: it needs independently supported category metadata, not a seed lookup.
 Clustering is not required. New reports retain every reviewed episode; for an
 older fresh report, supply both `--episodes <cohort.jsonl>` and
 `--reviews <reviews.jsonl>` to include episodes never classified.

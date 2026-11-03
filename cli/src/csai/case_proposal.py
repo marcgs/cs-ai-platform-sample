@@ -186,6 +186,8 @@ def _candidate_case(
                 review_ids=tuple(sorted(candidate.source_review_ids)),
                 supporting_review_ids=tuple(consensus.supporting_review_ids),
                 source="synthetic",
+                failure_mode_basis="reviewer_consensus",
+                category_basis="replay_matched_synthetic_scenario",
                 analysis_category=cluster.category if cluster else None,
                 condition=cluster.condition if cluster else None,
                 verdict=consensus.verdict,
@@ -376,5 +378,6 @@ def propose_cases(report: Report, existing: Sequence[EvalCase]) -> CaseProposal:
             "Evidence-dependent truth metrics are not applicable without reviewed truth fields.",
             "Report consistency is checked; reviewer assertions are not independently verified.",
             "Cluster membership is optional provenance, never an admission requirement.",
+            "Real feedback needs independently supported categories; this path is synthetic-only.",
         ],
     )
