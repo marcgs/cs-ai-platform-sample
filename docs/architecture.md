@@ -66,7 +66,7 @@ flowchart LR
 | **C4** Knowledge grounding | AI Search index `diagnostics-cases` (historical cases), keyword + semantic + vector search with a Foundry vectorizer, exposed through the same toolbox. Seeded by `scripts/setup_platform.py seed-search`. |
 | **C5** Episode store | `cs_platform.capture` middleware records every run (input, tool calls with arguments, results and durations, structured output, tokens, trace ID) in Cosmos DB; feedback is attached through the platform API. |
 | **C6** Observability | OpenTelemetry via the Microsoft OpenTelemetry distro to Application Insights; Foundry's trace views read from the connected workspace. |
-| **C7** Evaluation | `cs_platform.evals` harness + `evals/rca` suite; `csai eval` gate (exit 1 below thresholds), local or against the hosted agent. |
+| **C7** Evaluation | `cs_platform.evals` harness + `evals/rca` suite; `csai eval` gate (exit 1 below thresholds), local or against the hosted agent. Saved runs can be published to Foundry for model judges and visibility; the gate never depends on Foundry ([ADR 0009](adr/0009-evaluation-system-design.md)). |
 | **C8** Identity and security | Entra everywhere, `disableLocalAuth` on Foundry, Cosmos DB and Search; no shared keys on storage; data stores private (ADR 0003). The one secret, the MCP function key, never leaves Azure. |
 | **C9** Delivery path | Bicep + azd (`azd up` from an empty subscription), pre-commit gates, documented pipeline (`docs/ci-cd.md`). |
 
