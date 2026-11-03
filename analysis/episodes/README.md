@@ -5,8 +5,10 @@ No Azure, Fabric, deployment or learner changes occur by default.
 
 Iteration 4's offline L8 changes introduce a closed condition vocabulary, stable
 cluster keys and candidate review evidence. See [the L8 contract and pending
-acceptance](../../docs/iteration-4/l8.md). No fresh L8 cohort or model measurement
-has been run. The iteration 3 pilot and all its outputs below remain frozen.
+acceptance](../../docs/iteration-4/l8.md). One approved fresh L8 classification
+has now produced 30 valid labels but failed the confirmed recall and
+fragmentation criteria; person top-five review remains outstanding. The
+iteration 3 pilot and all its outputs below remain frozen.
 
 ## Offline preparation
 
