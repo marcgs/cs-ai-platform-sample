@@ -72,8 +72,11 @@ See the [eval guide](evals/rca/README.md) for splits, artifacts and paired compa
 After explicit publishing approval, `uv run csai eval publish .eval-results/<run>`
 publishes the saved measurement without rerunning the agent. Publishing never
 changes the local gate. The 50-case validation completed and is visible in
-Foundry. Calibration reporting and numeric-parity acceptance are being corrected
-offline; sparse-score parity remains blocked, without inventing false zeroes.
+Foundry. All 450 published code scores meet the approved absolute parity
+tolerance of `1e-12`. Future publications report `calibration_score = 1 - Brier`
+(higher is better), preserving the local loss and gate. This incompatible
+definition needs reviewed migration before publication; the existing run is
+unchanged. Sparse-score parity remains blocked, without inventing false zeroes.
 The feedback-case PR and three-repeat baseline are still outstanding.
 See [Q9's validation and limitations](docs/iteration-4/q9.md).
 

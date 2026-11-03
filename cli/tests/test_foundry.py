@@ -693,8 +693,9 @@ def test_user_level_suite_state_is_private_and_contains_no_measurements(monkeypa
 
 
 def test_published_rows_preserve_scores_truth_and_metadata(monkeypatch):
-    saved = publication(scores={"hit_at_1": 1.0, "valid_refs": 0.875})
+    saved = publication(scores={"calibration": 0.04, "hit_at_1": 1.0, "valid_refs": 0.875})
     before = saved.model_dump_json()
+    measurement_id = saved.measurement_id
     calls = fake_boundary(monkeypatch)
     assert foundry.publish(saved, endpoint="unused", model="judge") == "https://example.test/report"
     payload = next(value for name, value in calls if name == "run")
@@ -708,12 +709,26 @@ def test_published_rows_preserve_scores_truth_and_metadata(monkeypatch):
     assert row["source"] == "synthetic"
     assert row["cohort"] == "regression"
     assert saved.model_dump_json() == before
+    assert saved.measurement_id == measurement_id
     criteria = next(value for name, value in calls if name == "evaluation")["testing_criteria"]
     assert {criterion["name"] for criterion in criteria} == {
+        "code_calibration_score",
         "code_hit_at_1",
         "code_valid_refs",
         *foundry.BUILTIN_EVALUATORS,
     }
+    calibration = next(item for item in criteria if item["name"] == "code_calibration_score")
+    assert calibration["evaluator_name"] == "csai_calibration_score"
+    assert calibration["initialization_parameters"] == {
+        "deployment_name": "judge",
+        "pass_threshold": 0.5,
+    }
+    registered = next(
+        value
+        for name, value in calls
+        if name == "evaluator" and value["name"] == "csai_calibration_score"
+    )
+    assert registered["evaluator_version"] == foundry.evaluator_definition("calibration")
 
 
 def test_code_mirror_does_not_invent_an_inapplicable_score():
@@ -726,13 +741,16 @@ def test_code_mirror_does_not_invent_an_inapplicable_score():
 
 
 def test_sparse_metrics_remain_in_rows_without_false_zero_grades():
-    recorded = publication(scores={"hit_at_1": 1.0, "decisive_ref_recall": 0.75})
+    recorded = publication(
+        scores={"calibration": 0.25, "hit_at_1": 1.0, "decisive_ref_recall": 0.75}
+    )
     recorded.rows.append(
         recorded.rows[0].model_copy(update={"case_id": "case-2", "scores": {"hit_at_1": 0.0}})
     )
     assert recorded.metric_names == ("hit_at_1",)
     assert recorded.items() == [{"item": row.model_dump(mode="json")} for row in recorded.rows]
     assert recorded.rows[0].scores["decisive_ref_recall"] == 0.75
+    assert recorded.rows[0].scores["calibration"] == 0.25
     assert "decisive_ref_recall" not in recorded.rows[1].scores
 
 
@@ -790,12 +808,17 @@ def test_reuses_suite_evaluation_and_keeps_independent_run_metadata(monkeypatch)
     assert calls[0][1]["eval_id"] == "existing-eval"
 
 
-def test_changed_schema_does_not_create_duplicate_suite_evaluation(monkeypatch):
-    recorded = publication()
+@pytest.mark.parametrize("schema", [2, 3])
+@pytest.mark.parametrize("cached", [False, True])
+def test_changed_schema_does_not_create_duplicate_suite_evaluation(monkeypatch, schema, cached):
+    recorded = publication(scores={"calibration": 0.04, "hit_at_1": 1.0})
     previous_definition = {
-        "metrics": {name: foundry.metric_direction(name) for name in recorded.metric_names},
+        "metrics": {
+            name: "decrease" if name == "calibration" else "increase"
+            for name in recorded.metric_names
+        },
         "judges": foundry.BUILTIN_EVALUATORS,
-        "schema": 2,
+        "schema": schema,
     }
     previous_key = hashlib.sha256(
         json.dumps(previous_definition, sort_keys=True).encode()
@@ -813,6 +836,17 @@ def test_changed_schema_does_not_create_duplicate_suite_evaluation(monkeypatch):
             )
         ],
     )
+    if cached:
+        key = hashlib.sha256(json.dumps(["unused", recorded.suite]).encode()).hexdigest()
+        with eval_receipts.suite_receipt(foundry.SUITE_DIRECTORY, key) as cache:
+            cache.write(
+                eval_receipts.SuiteReceipt(
+                    key=key,
+                    definition_key=previous_key,
+                    judge_model="judge",
+                    evaluation_id="existing-eval",
+                )
+            )
     with pytest.raises(foundry.FoundryEvalError, match="schema differs"):
         foundry.publish(recorded, endpoint="unused", model="judge")
     assert not calls
@@ -851,19 +885,21 @@ def test_incomplete_traces_fail_before_authentication(calls):
         foundry.publish(recorded, endpoint="unused", model="judge")
 
 
-def test_calibration_mirror_retains_loss_and_declares_lower_is_better():
-    metric = foundry.evaluator_definition("calibration")["definition"]["metrics"]["result"]
-    assert metric["desirable_direction"] == "decrease"
-    assert (
-        foundry.evaluator_definition("hit_at_1")["definition"]["metrics"]["result"][
-            "desirable_direction"
-        ]
-        == "increase"
-    )
+def test_calibration_score_inverts_brier_without_replacing_the_recorded_loss():
+    evaluator = foundry.evaluator_definition("calibration")
+    assert evaluator["name"] == "csai_calibration_score"
+    assert "calibration_score" in evaluator["display_name"]
+    assert "1 - calibration (binary Brier loss)" in evaluator["description"]
+    assert evaluator["definition"]["metrics"]["result"]["desirable_direction"] == "increase"
     namespace = {}
-    exec(foundry.mirror_code("calibration"), namespace)
-    for loss in (0.01, 0.81):
-        assert namespace["grade"]({}, {"scores": {"calibration": loss}}) == loss
+    exec(evaluator["definition"]["code_text"], namespace)
+    grade = namespace["grade"]
+    for loss, expected in ((0.0, 1.0), (0.01, 0.99), (0.5, 0.5), (0.81, 0.19), (1.0, 0.0)):
+        scores = {"calibration": loss}
+        assert grade({}, {"scores": scores}) == pytest.approx(expected, rel=0, abs=1e-12)
+        assert scores == {"calibration": loss}
+    with pytest.raises(KeyError):
+        grade({}, {"scores": {"calibration_score": 0.99}})
 
 
 def test_timeout_retry_resumes_the_same_run_without_more_judge_calls(monkeypatch):
