@@ -280,6 +280,61 @@ def test_uncertain_startup_retry_never_submits_another_attempt(monkeypatch, visi
     assert original in [p.read_bytes() for p in foundry.RECEIPT_DIRECTORY.glob("*.json")]
 
 
+def test_explicit_retry_cannot_reconstruct_a_missing_child_receipt(monkeypatch):
+    recorded, runs, calls = startup_failure(monkeypatch)
+    original_path = next(foundry.RECEIPT_DIRECTORY.glob("*.json"))
+    original = original_path.read_bytes()
+    previous = runs[0].id
+    foundry.publish(recorded, endpoint="unused", model="judge", retry_infrastructure=previous)
+    child_path = next(
+        path for path in foundry.RECEIPT_DIRECTORY.glob("*.json") if path != original_path
+    )
+    eval_receipts.ReceiptStore(child_path, eval_receipts.PublicationReceipt).clear()
+
+    with pytest.raises(foundry.FoundryEvalError, match="matching receipt evidence"):
+        foundry.publish(recorded, endpoint="unused", model="judge", retry_infrastructure=previous)
+
+    assert not child_path.exists()
+    assert original_path.read_bytes() == original
+    assert sum(name == "run" for name, _ in calls) == 2
+
+
+@pytest.mark.parametrize("pending", [False, True])
+@pytest.mark.parametrize("missing", [False, True])
+def test_retry_reconciliation_checks_all_provenance_before_writing_receipts(
+    monkeypatch, pending, missing
+):
+    recorded, runs, calls = startup_failure(monkeypatch)
+    original_path = next(foundry.RECEIPT_DIRECTORY.glob("*.json"))
+    original = original_path.read_bytes()
+    previous = runs[0].id
+    foundry.publish(recorded, endpoint="unused", model="judge", retry_infrastructure=previous)
+    child_path = next(
+        path for path in foundry.RECEIPT_DIRECTORY.glob("*.json") if path != original_path
+    )
+    store = eval_receipts.ReceiptStore(child_path, eval_receipts.PublicationReceipt)
+    child = store.read()
+    assert child is not None
+    if pending:
+        store.write(child.model_copy(update={"run_id": None}))
+    before = child_path.read_bytes()
+
+    for field, value in recorded.metadata.items():
+        if missing:
+            runs[1].metadata.pop(field)
+        else:
+            runs[1].metadata[field] = f"conflicting-{value}"
+        with pytest.raises(foundry.FoundryEvalError, match="frozen measurement"):
+            foundry.publish(
+                recorded, endpoint="unused", model="judge", retry_infrastructure=previous
+            )
+        assert child_path.read_bytes() == before
+        assert original_path.read_bytes() == original
+        runs[1].metadata[field] = value
+
+    assert sum(name == "run" for name, _ in calls) == 2
+
+
 def test_queued_startup_retry_resumes_only_its_recorded_run(monkeypatch):
     recorded, runs, calls = startup_failure(monkeypatch, status=["failed", "queued"])
     monkeypatch.setattr(foundry, "TIMEOUT_S", 0)

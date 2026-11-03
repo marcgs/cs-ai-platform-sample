@@ -225,7 +225,7 @@ publication. The earlier rejected requests, startup failure and original
 receipts remain retained. No Owner grant was needed.
 
 The recovery implementation is committed on `it4/finish-acceptance`.
-With the calibration correction it passes **611 tests, 32 existing warnings**, Ruff
+With the calibration and retry-review corrections it passes **616 tests, 32 existing warnings**, Ruff
 (149 formatted files), strict Pyright and Bicep build. Calibration reporting
 is fixed offline and the numeric audit passes 450/450 at absolute tolerance
 1e-12 in [#26](https://github.com/marcgs/cs-ai-platform-sample/pull/26).

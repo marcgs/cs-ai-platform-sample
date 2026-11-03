@@ -381,6 +381,7 @@ def _publication_run(
     run_name: str | None = None,
 ) -> RunCreateResponse | RunRetrieveResponse:
     measurement_id = publication.measurement_id
+    metadata = {**publication.metadata, "csai_measurement": measurement_id}
     receipt = receipts.read()
     if receipt is not None and (
         receipt.key != receipt_key or receipt.evaluation_id != evaluation_id
@@ -404,20 +405,24 @@ def _publication_run(
             matches.remove(candidate)
     if len(matches) > 1:
         raise FoundryEvalError("Duplicate measurement runs exist; no new run was submitted.")
+    if run_name is not None and matches and receipt is None:
+        raise FoundryEvalError("Publication retry lineage lacks matching receipt evidence.")
     run_id = receipt.run_id if receipt else None
     if run_id is not None and matches and matches[0].id != run_id:
         raise FoundryEvalError("Publication receipt conflicts with the recorded remote run.")
     if run_id is None and matches:
         run_id = matches[0].id
     if run_id is not None:
-        receipts.write(
-            PublicationReceipt(key=receipt_key, evaluation_id=evaluation_id, run_id=run_id)
-        )
         run = client.evals.runs.retrieve(run_id, eval_id=evaluation_id)
-        if (run.metadata or {}).get("csai_measurement") != measurement_id:
+        if run.id != run_id or any(
+            (run.metadata or {}).get(key) != value for key, value in metadata.items()
+        ):
             raise FoundryEvalError("Original run evidence conflicts with the frozen measurement.")
         if run_name is not None and getattr(run, "name", None) != run_name:
             raise FoundryEvalError("Publication retry receipt conflicts with its remote run name.")
+        receipts.write(
+            PublicationReceipt(key=receipt_key, evaluation_id=evaluation_id, run_id=run_id)
+        )
         return run
     if receipt is not None:
         raise FoundryEvalError(
@@ -429,7 +434,7 @@ def _publication_run(
         run = client.evals.runs.create(
             eval_id=evaluation_id,
             name=run_name or _publication_name(publication),
-            metadata={**publication.metadata, "csai_measurement": measurement_id},
+            metadata=metadata,
             data_source={
                 "type": "jsonl",
                 "source": {"type": "file_content", "content": publication.items()},
