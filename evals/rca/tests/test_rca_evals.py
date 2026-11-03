@@ -539,3 +539,30 @@ def test_identity_abstention_rejects_unsupported_secondary_hypotheses(
     assert scores["schema_valid"] == 0.0
     assert scores["evidence_grounded"] == 0.0
     assert scores["hit_at_1_lenient"] == 0.0
+
+
+@pytest.mark.parametrize(
+    ("statement", "valid"),
+    [
+        ("No machine identifier required", False),
+        ("Machine ID is not needed.", False),
+        ("Do not ask for a machine identifier.", False),
+        ("No need to provide machine ID.", False),
+        ("Machine identity is unnecessary.", False),
+        ("We don't need a machine identifier.", False),
+        ("A machine identifier isn't required.", False),
+        ("Machine identifier not recorded; please provide it.", True),
+        ("No machine identifier supplied; please provide one.", True),
+    ],
+)
+def test_identity_abstention_distinguishes_negated_requests_from_missing_identity(
+    statement: str, valid: bool
+) -> None:
+    case = _challenge_case("missing_machine")
+    observed = _truthful_output(case)
+    assert isinstance(observed.value, RcaReport)
+    observed.value.missing_information = [statement]
+    scores = score(load_suite(), case, observed)
+    assert scores["schema_valid"] == float(valid)
+    assert scores["evidence_grounded"] == float(valid)
+    assert scores["hit_at_1_lenient"] == float(valid)
