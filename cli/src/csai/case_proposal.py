@@ -213,9 +213,10 @@ def propose_cases(report: Report, existing: Sequence[EvalCase]) -> CaseProposal:
     known = {case_identity(case): case for case in existing}
     proposed: dict[str, EvalCase] = {}
     decisions: list[CaseDecision] = []
-    candidates = report.review_candidates or [
+    cluster_candidates = [
         candidate for cluster in report.clusters for candidate in cluster.eval_cases
     ]
+    candidates = report.review_candidates or cluster_candidates
     episode_counts = Counter(candidate.episode_id for candidate in candidates)
     cluster_counts = Counter(cluster.id for cluster in report.clusters)
     memberships: dict[str, list[Cluster]] = defaultdict(list)
@@ -225,12 +226,18 @@ def propose_cases(report: Report, existing: Sequence[EvalCase]) -> CaseProposal:
         for candidate in cluster.eval_cases:
             memberships[candidate.episode_id].append(cluster)
             source = by_episode.get(candidate.episode_id)
-            if source is None or source.model_dump(exclude={"expected_category"}) != (
-                candidate.model_dump(exclude={"expected_category"})
+            if (
+                (
+                    candidate.expected_category is not None
+                    and candidate.expected_category != cluster.category
+                )
+                or source is None
+                or source.model_dump(exclude={"expected_category"})
+                != (candidate.model_dump(exclude={"expected_category"}))
             ):
                 conflicting.add(candidate.episode_id)
     review_records: dict[str, set[str]] = defaultdict(set)
-    for candidate in candidates:
+    for candidate in (*candidates, *cluster_candidates):
         for review in candidate.source_reviews:
             review_records[review.id].add(review.model_dump_json())
     groups = [

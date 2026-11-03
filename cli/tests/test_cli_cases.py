@@ -267,6 +267,52 @@ def test_real_feedback_cannot_borrow_synthetic_category_metadata(feedback_report
         propose_cases(report.model_copy(update={"source": "real"}), load_suite().cases)
 
 
+def test_report_wide_candidates_do_not_hide_forged_cluster_category(feedback_report) -> None:
+    _, report = feedback_report
+    selected = only_mapping(report)
+    cluster = selected.clusters[0]
+    candidate = cluster.eval_cases[0]
+    selected = selected.model_copy(
+        update={"review_candidates": [candidate.model_copy(update={"expected_category": None})]}
+    )
+    assert propose_cases(selected, load_suite().cases).cases
+    cluster.eval_cases[0] = candidate.model_copy(update={"expected_category": "wrong_ranking"})
+    result = propose_cases(selected, load_suite().cases)
+    assert not result.cases
+    assert result.decisions[0].status == "rejected"
+
+
+def test_cluster_review_id_conflict_rejects_other_report_wide_episode(feedback_report) -> None:
+    _, report = feedback_report
+    selected = only_mapping(report)
+    candidate = selected.clusters[0].eval_cases[0]
+    admitted = {
+        case.provenance.episode_id
+        for case in propose_cases(report, load_suite().cases).cases
+        if case.provenance is not None
+    }
+    other = next(
+        item
+        for item in report.review_candidates
+        if item.episode_id in admitted and item.episode_id != candidate.episode_id
+    )
+    selected = selected.model_copy(
+        update={
+            "review_candidates": [
+                candidate.model_copy(update={"expected_category": None}, deep=True),
+                other,
+            ]
+        }
+    )
+    assert len(propose_cases(selected, load_suite().cases).cases) == 2
+    candidate.source_reviews[0] = candidate.source_reviews[0].model_copy(
+        update={"id": other.source_reviews[0].id}
+    )
+    result = propose_cases(selected, load_suite().cases)
+    assert not result.cases
+    assert {decision.status for decision in result.decisions} == {"rejected"}
+
+
 def test_split_pattern_does_not_block_individual_cases(feedback_report) -> None:
     _, report = feedback_report
     cluster = next(cluster for cluster in report.clusters if cluster.category == "knowledge_gap")
@@ -336,6 +382,65 @@ def test_cli_attaches_all_fresh_cohort_reviews_without_classification(
     assert len(result.decisions) == report.reviewed_count
     assert result.cases
     assert all(decision.cluster_key is None for decision in result.decisions)
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+@pytest.mark.parametrize("mutation", ["cause", "capture"])
+def test_cli_rejects_attached_sources_conflicting_with_retained_evidence(
+    feedback_report, tmp_path: Path, legacy: bool, mutation: str
+) -> None:
+    population, _ = feedback_report
+    report = asyncio.run(analyze(prepare(population.episodes, population.reviews, load_seed())))
+    retained = next(item for item in report.unclassified if item.expected_failure_mode is not None)
+    if legacy:
+        report = report.model_copy(update={"review_candidates": []})
+    changed_episodes = list(population.episodes)
+    changed_reviews = list(population.reviews)
+    if mutation == "cause":
+        mode = "FM-01" if retained.expected_failure_mode != "FM-01" else "FM-02"
+        changed_reviews = [
+            row.model_copy(
+                update={"feedback": row.feedback.model_copy(update={"actual_root_cause": mode})}
+            )
+            if row.episode_id == retained.episode.id
+            else row
+            for row in changed_reviews
+        ]
+    else:
+        changed_episodes = [
+            item.model_copy(update={"input": item.input + " Changed capture."})
+            if item.id == retained.episode.id
+            else item
+            for item in changed_episodes
+        ]
+    source = tmp_path / "retained-report.json"
+    source.write_text(report.model_dump_json())
+    episodes = tmp_path / "episodes.jsonl"
+    episodes.write_text("".join(item.model_dump_json() + "\n" for item in changed_episodes))
+    reviews = tmp_path / "reviews.jsonl"
+    reviews.write_text("".join(item.model_dump_json() + "\n" for item in changed_reviews))
+    repo = repository(tmp_path / "repo")
+    response = runner.invoke(
+        app,
+        [
+            "--no-azd",
+            "cases",
+            "propose",
+            str(source),
+            "--repository",
+            str(repo),
+            "--episodes",
+            str(episodes),
+            "--reviews",
+            str(reviews),
+        ],
+    )
+    assert response.exit_code == 2, response.output
+    assert "conflicts with retained" in response.output
+    assert not (repo / FEEDBACK).exists()
+    assert subprocess.check_output(
+        ["git", "-C", str(repo), "branch", "--show-current"]
+    ).strip() == (b"main")
 
 
 @pytest.mark.parametrize(
