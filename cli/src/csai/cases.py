@@ -255,7 +255,29 @@ def propose(
                 or source.reviewer_agreement != cohort.agreement
             ):
                 raise ValueError("Fresh-cohort evidence conflicts with the report")
-            source = source.model_copy(update={"review_candidates": review_candidates(cohort)})
+            attached = review_candidates(cohort)
+            by_episode = {candidate.episode_id: candidate for candidate in attached}
+            retained = [
+                *source.review_candidates,
+                *(candidate for cluster in source.clusters for candidate in cluster.eval_cases),
+            ]
+            for candidate in retained:
+                fresh = by_episode.get(candidate.episode_id)
+                if fresh is None or fresh.model_dump(exclude={"expected_category"}) != (
+                    candidate.model_dump(exclude={"expected_category"})
+                ):
+                    raise ValueError("Fresh-cohort evidence conflicts with retained candidates")
+            enriched = {item.episode.id: item for item in cohort.reviewed_episodes}
+            for item in source.unclassified:
+                fresh_item = enriched.get(item.episode.id)
+                if fresh_item is None or (
+                    fresh_item.episode != item.episode
+                    or fresh_item.review != item.review
+                    or fresh_item.expected_failure_mode != item.expected_failure_mode
+                    or fresh_item.expected_mode_basis != item.expected_mode_basis
+                ):
+                    raise ValueError("Fresh-cohort evidence conflicts with retained unclassified")
+            source = source.model_copy(update={"review_candidates": attached})
         result, branch, body = write_proposal(source, repository)
     except (OSError, ValueError) as error:
         raise typer.BadParameter(str(error)) from error
