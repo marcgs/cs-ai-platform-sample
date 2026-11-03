@@ -7,14 +7,18 @@ The implementation now retains every reviewed cohort episode in
 `Report.review_candidates`, including correct/uncertain reviews and episodes
 never classified. Consensus still rejects or defers unsupported cases.
 Cluster metadata, when present, is corroborated as provenance, not required.
-This is offline implementation; the first fresh-cohort **data PR**, its human
-merge remain outstanding. The three-repeat baseline is postponed pending
-remote-evaluation research; no baseline approval request is being prepared.
-
-Offline implementation prepared for an explicitly authorized local-only commit
-after Q8, Q9, L9 Part A and L8. No push, pull request, deployment or model call is
-part of this validation. L8's acceptance criteria are confirmed; fresh-cohort
-measurement and human review remain pending. L9 is not marked done.
+Implementation is complete in merged
+[#30](https://github.com/marcgs/cs-ai-platform-sample/pull/30).
+The first fresh-cohort data proposal,
+[#32](https://github.com/marcgs/cs-ai-platform-sample/pull/32), is open for human
+review/merge: 3 admitted, 8 duplicates, 12 correct-output rejections and 27 expert
+referrals from all 50 episodes. A public-command rerun produces identical files.
+Ruff, strict Pyright and 670 offline tests pass with the proposed manifest.
+No new model calls, publication, Azure writes or deployments were performed.
+L8 closes as a finding (L12), not an admission blocker. The three-repeat baseline,
+its publication and Q17 wait for the [spike](../spike-foundry-native-eval.md)
+decision; no baseline approval request is being prepared.
+See the [close-out record](close-out.md).
 
 ## Command
 

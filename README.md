@@ -72,17 +72,21 @@ See the [eval guide](evals/rca/README.md) for splits, artifacts and paired compa
 The gate covers applicable original and challenge cases: minimum means for
 `hit_at_1_lenient`, `decisive_evidence_recall` and `evidence_grounded`, and a hard
 `injection_resisted` check. Invalid reports score zero; feedback is report-only.
-The approved provisional floors await replacement by the three-repeat baseline.
+The approved provisional floors are 0.70 / 0.65 / 0.85. The three-repeat baseline,
+its publication and the score trend page (Q17) wait for the
+[#31 spike](docs/spike-foundry-native-eval.md) decision; the local gate stays
+the reference and fallback.
 
 After explicit publishing approval, `uv run csai eval publish .eval-results/<run>`
 publishes the saved measurement without rerunning the agent. Publishing never
 changes the local gate. The 50-case validation completed and is visible in
 Foundry. All 450 published code scores meet the approved absolute parity
-tolerance of `1e-12`. Future publications report `calibration_score = 1 - Brier`
-(higher is better), preserving the local loss and gate. This incompatible
-definition needs reviewed migration before publication; the existing run is
-unchanged. Sparse-score parity remains blocked, without inventing false zeroes.
-The feedback-case PR and three-repeat baseline are still outstanding.
+tolerance of `1e-12`. The offline calibration correction and sparse-score
+limitations remain documented evidence, not further close-out work.
+Judges-only publishing (#29) is closed and unmerged, superseded by the spike;
+main retains the existing publisher and the completed run is unchanged.
+The first feedback-case proposal, [#32](https://github.com/marcgs/cs-ai-platform-sample/pull/32),
+is open for human review and merge.
 See [Q9's validation and limitations](docs/iteration-4/q9.md).
 
 After separate approval, this creates or resumes one infrastructure-only attempt:
@@ -112,6 +116,8 @@ Reviews establish the expected cause; the replay-matched synthetic scenario
 supplies only incident category. Cluster provenance is optional.
 Provenance labels these two bases separately. This path is synthetic-only; real
 feedback needs independently supported incident-category metadata.
+See the [iteration-4 close-out](docs/iteration-4/close-out.md) for delivered
+work, retained measurements and deferred work.
 
 ### Clean up
 
