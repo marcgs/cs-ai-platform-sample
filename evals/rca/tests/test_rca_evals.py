@@ -553,6 +553,8 @@ def test_identity_abstention_rejects_unsupported_secondary_hypotheses(
         ("A machine identifier isn't required.", False),
         ("Machine identifier not recorded; please provide it.", True),
         ("No machine identifier supplied; please provide one.", True),
+        ("Machine identifier required; operator identity is not required.", True),
+        ("Operator identity is not required; machine identifier required.", True),
     ],
 )
 def test_identity_abstention_distinguishes_negated_requests_from_missing_identity(

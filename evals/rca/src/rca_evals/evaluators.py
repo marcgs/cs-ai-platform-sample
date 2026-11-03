@@ -127,7 +127,7 @@ def _identity_abstention(report: RcaReport) -> bool:
         .replace("isn't", "is not")
         .replace("don't", "do not")
     )
-    identity = r"(?:machine\s+(?:id|identifier|identity)|identifier|identity)"
+    identity = r"machine\s+(?:id|identifier|identity)"
     negated_request = re.search(
         rf"\b(?:no\s+{identity}\s+(?:is\s+)?(?:required|needed|necessary)"
         rf"|{identity}\s+(?:is\s+)?(?:not\s+(?:required|needed|necessary)|unnecessary)"
