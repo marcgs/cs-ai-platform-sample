@@ -82,9 +82,7 @@ See the [synthetic feedback generator](../diagnostics-domain/README.md).
 `EvalCase.cohort` and `EvalCase.provenance` optionally identify reviewed feedback
 cases. They are excluded from serialization when absent, preserving existing
 manifests. `FeedbackProvenance` records synthetic cluster, episode, review and tool
-fingerprint origins, not additional causal truth. Cluster key/category/condition are
-omitted together when no classification exists; partial or inconsistent cluster
-metadata is rejected by the feedback loader. RCA loads these cases additively
+fingerprint origins, not additional causal truth. RCA loads these cases additively
 without changing its explicit original18 gate.
 
 New `CaseResult` rows carry `original`, `challenge` or `feedback` cohort labels.
@@ -221,6 +219,10 @@ replay with the arithmetic-only mean-aggregation fix in
 [PR #4](https://github.com/marcgs/cs-ai-platform-sample/pull/4). The third run's exact
 tool coverage was 81/90; naive float summation had incorrectly put it below 0.90.
 The replay changed no per-case score or threshold and made no additional model calls.
+
+Feedback admission no longer requires clustering. `FeedbackProvenance` omits
+cluster key/category/condition together when none exists; the feedback loader
+still rejects partial or inconsistent cluster metadata.
 
 ## Tests
 
