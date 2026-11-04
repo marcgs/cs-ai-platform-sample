@@ -139,3 +139,43 @@ augment and grade the retained outputs as above. **New target runs consume
 model tokens** and need the same approval/budget check as any agent run.
 `submit_metrics --scope sparse --metric <name>` selects just one static metric.
 Never regenerate retained outputs to improve scores.
+
+## Retained local scoreboard: no model calls
+
+Export a complete, single-repeat local measurement read-only, preserving its
+original scores separately from the grading inputs:
+
+```bash
+uv run python -m evals.rca.foundry.retained \
+  --reference <private-reference-results.run> \
+  --output .eval-results/foundry-native/retained-local
+uv run python -m evals.rca.foundry.submit_metrics \
+  --dataset .eval-results/foundry-native/retained-local/scoring.jsonl \
+  --receipts .eval-results/foundry-native/retained-local/receipts \
+  --scope dense --label "retained local outputs 2026-11-02" \
+  --dataset-name retained-local-2026-11-02
+```
+
+Repeat the submission command with `--scope sparse` for the four applicable-only
+datasets/runs. These are uploaded JSONL evaluation datasets through the project
+Files API (`purpose=evals`, `file_id` sources), not registered storage-backed
+DatasetVersion assets. Direct storage-backed upload was denied by the existing
+private-storage boundary; no access rule was changed.
+
+Inspect the saved run IDs with `results.py`, then use `parity` as above, adding
+`--retained-scores .eval-results/foundry-native/retained-local/retained-scores.json`.
+Service/current-local mismatches still fail. Historical differences are reported
+separately rather than silently updating the original measurement.
+The [532-score comparison](retained-parity.csv) records the completed 50-case
+scoreboard. It is not a new agent-target measurement.
+
+Reproduce the deployed streaming-accounting defect entirely offline:
+
+```bash
+uv run python -m evals.rca.foundry.stream_repro
+```
+
+This diagnostic uses private hosting SDK internals intentionally; it does not
+patch the SDK, agent or local harness. Its output contrasts hosting serialization
+with the framework's authoritative final-response aggregation. See the results
+document for the proposed fix and remaining deployment approval.

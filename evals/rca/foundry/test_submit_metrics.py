@@ -14,11 +14,13 @@ if TYPE_CHECKING:
 
 
 @pytest.mark.parametrize("pending", [False, True])
+@pytest.mark.parametrize("upload", [False, True])
 def test_submission_uses_applicable_rows_once(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pending: bool
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pending: bool, upload: bool
 ) -> None:
     submissions: list[dict] = []
     criteria: list[dict] = []
+    uploads: list[list[dict]] = []
 
     def create_evaluation(*, testing_criteria: list[dict], **_kwargs: object) -> SimpleNamespace:
         criteria.extend(testing_criteria)
@@ -31,8 +33,14 @@ def test_submission_uses_applicable_rows_once(
     def create_version(**_kwargs: object) -> SimpleNamespace:
         return SimpleNamespace(name="metric", version="1")
 
+    def create_file(*, file, purpose: str) -> SimpleNamespace:
+        assert purpose == "evals"
+        uploads.append([json.loads(line) for line in file])
+        return SimpleNamespace(id="dataset-file")
+
     client = SimpleNamespace(
-        evals=SimpleNamespace(create=create_evaluation, runs=SimpleNamespace(create=create_run))
+        evals=SimpleNamespace(create=create_evaluation, runs=SimpleNamespace(create=create_run)),
+        files=SimpleNamespace(create=create_file),
     )
     project = SimpleNamespace(
         beta=SimpleNamespace(evaluators=SimpleNamespace(create_version=create_version)),
@@ -72,6 +80,9 @@ def test_submission_uses_applicable_rows_once(
             "sparse",
             "--metric",
             "data_quality_disclosed",
+            "--label",
+            "retained local outputs",
+            *(["--dataset-name", "retained-local"] if upload else []),
         ],
     )
     submit_metrics.main()
@@ -83,6 +94,11 @@ def test_submission_uses_applicable_rows_once(
     assert len(submissions) == 1
     data = submissions[0]
     assert data["type"] == "jsonl"
-    assert data["source"]["content"] == [{"item": rows[1]}]
+    if upload:
+        assert uploads == [[{"item": rows[1]}]]
+        assert data["source"] == {"type": "file_id", "id": "dataset-file"}
+    else:
+        assert not uploads
+        assert data["source"]["content"] == [{"item": rows[1]}]
     assert criteria[0]["data_mapping"]["response"] == "{{item.response}}"
     assert criteria[0]["data_mapping"]["output_items"] == "{{item.output_items}}"
