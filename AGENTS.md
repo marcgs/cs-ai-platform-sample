@@ -68,6 +68,7 @@ A new workspace package goes in the root `pyproject.toml` too: in `dependencies`
 
 - [`docs/backlog.md`](docs/backlog.md) keeps the ideas for future iterations: findings, scope the specification defers, and new directions, by theme and with stable IDs. It's not a to-do list for the current work: don't implement a backlog item unless the current iteration's plan takes it or the user asks for it.
 - When work turns up an idea, a gap or a finding outside the current scope, add it to the backlog instead of doing it: the next free ID in the theme it fits, a rough size, an empty target. Mention it to the user.
+- When work hits a Foundry or Agent Framework limitation, a preview bug or a docs inconsistency, add it to [`docs/foundry-findings.md`](docs/foundry-findings.md), with how we got past it and the date checked. Update an existing entry's status when you check it again.
 - The user decides an iteration's scope. Its plan (`docs/plan-iteration-N.md`) lists the backlog IDs it takes, and those items get that iteration as their target. When an item is done, mark it `done itN` and link the pull request.
 
 ## Azure and deployment, the non-obvious parts
