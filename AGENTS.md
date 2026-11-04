@@ -13,6 +13,24 @@ These come before anything else, including a request that seems to need an excep
 5. **Don't change shared Azure state on your own.** Applying infrastructure or deployments (`azd up`, `azd provision`, `azd deploy`), creating role assignments outside Bicep, opening network access, and anything destructive (`azd down`, deleting, purging) are for the user to run or explicitly approve. Read-only checks are fine (`az bicep build`, `az deployment sub validate`/`what-if`, `azd env get-values`, `az … show/list`). The same goes for `git push`.
 6. **No CI pipeline.** The pre-commit hooks and the commands below are the gates; don't add workflow files ([`docs/ci-cd.md`](docs/ci-cd.md)).
 
+## Official documentation first
+
+Microsoft's documentation is the main source for how this sample uses Foundry and Agent Framework ([ADR 0010](docs/adr/0010-evaluation-runs-in-foundry.md)). Before designing or changing anything they cover (agents, tools, datasets, evaluation, tracing, networking, identity), find the current Microsoft Learn page for it and follow it: its commands, file layout, names and SDK calls. Fetch the page; don't work from memory, because these features are in preview and change often.
+
+Write our own code only where the documented way doesn't work for us or doesn't cover what we need. Then record the gap in [`docs/foundry-findings.md`](docs/foundry-findings.md) with a link to the page, what failed, and what we did instead. Say in the pull request which pages you followed.
+
+Starting points:
+
+| Topic | Pages |
+|---|---|
+| Hosted agents | [Overview](https://learn.microsoft.com/azure/foundry/agents/concepts/hosted-agents) · [Permissions](https://learn.microsoft.com/azure/foundry/agents/concepts/hosted-agent-permissions) · [Virtual networks](https://learn.microsoft.com/azure/foundry/agents/how-to/virtual-networks) · [Samples](https://github.com/microsoft-foundry/foundry-samples/tree/main/samples/python/hosted-agents) |
+| Tools | [Toolbox](https://learn.microsoft.com/azure/foundry/agents/how-to/tools/toolbox) |
+| Evaluation | [Evaluate a hosted agent (quickstart)](https://learn.microsoft.com/azure/foundry/observability/quickstarts/quickstart-evaluate-hosted-agent) · [Agent targets](https://learn.microsoft.com/azure/foundry/observability/how-to/cloud-evaluation-targets) · [Evaluation with azd](https://learn.microsoft.com/azure/foundry/observability/how-to/azure-developer-cli-evaluation) · [Custom evaluators](https://learn.microsoft.com/azure/foundry/concepts/evaluation-evaluators/custom-evaluators) · [Compare results](https://learn.microsoft.com/azure/foundry/how-to/evaluate-results) · [Permissions](https://learn.microsoft.com/azure/foundry/observability/how-to/evaluation-permissions) · [Virtual networks](https://learn.microsoft.com/azure/foundry/concepts/evaluation-virtual-network) |
+| Agent Framework | [Evaluation](https://learn.microsoft.com/agent-framework/agents/evaluation) |
+| Observability | [Tracing](https://learn.microsoft.com/azure/foundry/observability/concepts/trace-agent-concept) |
+
+Microsoft also publishes a [Foundry skill for coding agents](https://learn.microsoft.com/azure/foundry/how-to/develop/use-microsoft-foundry-skill) that maps these concepts to implementation tasks.
+
 ## Commands
 
 ```bash
@@ -61,7 +79,7 @@ A new workspace package goes in the root `pyproject.toml` too: in `dependencies`
 
 ## Code conventions
 
-- **Platform first.** Use what Foundry and Agent Framework provide. Write our own code only for a gap that's proven and recorded in [`docs/foundry-findings.md`](docs/foundry-findings.md) ([ADR 0010](docs/adr/0010-evaluation-runs-in-foundry.md)).
+- **Platform first.** Use what Foundry and Agent Framework provide, the way their documentation shows ([above](#official-documentation-first)). Write our own code only for a gap that's proven and recorded in [`docs/foundry-findings.md`](docs/foundry-findings.md).
 - **Python 3.14** everywhere ([ADR 0001](docs/adr/0001-python-version.md)). Annotations are deferred. When something inspects a signature at runtime, as the hosted-agent server does on `agent_factory`, import those types at runtime and add `# noqa: TC002`. A test (`test_hosting_server_accepts_the_factory`) guards this for the RCA agent.
 - **Typing:** pyright strict. Avoid `Any` and `cast` unless an SDK forces them, and keep those to the boundary. Pydantic models for anything that crosses a boundary (tool results, reports, episodes, API bodies). Output schemas use `extra="forbid"` with all fields required, for strict structured outputs.
 - **Azure access is Entra only**: `DefaultAzureCredential`/`AzureCliCredential`, never keys in code or settings. The two function keys are exceptions, fetched at runtime with ARM (the toolbox connection; `csai` → platform API) and listed in the backlog to replace.

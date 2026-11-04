@@ -21,7 +21,7 @@ We also drifted from a principle we started with. We built our own evaluation ha
 
 **Foundry is where evaluation runs and where results live.**
 
-1. **Platform first.** Use what Foundry and Agent Framework provide. Write our own code only for a gap that's proven and recorded in [Foundry findings](../foundry-findings.md).
+1. **Platform first, documentation first.** Use what Foundry and Agent Framework provide, the way Microsoft's documentation shows it: its commands, file layout and SDK calls. Write our own code only for a gap that's proven and recorded in [Foundry findings](../foundry-findings.md), with a link to the page it departs from.
 2. **The design is two steps, which is proven:** Foundry calls the hosted agent on the evaluation dataset, then a second run scores the saved outputs with the judges and our code evaluators.
 3. **A single run is iteration 5's first task, timeboxed.** If the agent call and all evaluators work in one run within the timebox, that becomes the design. Otherwise two steps stay.
 4. **One recipe, one command.** An `eval.yaml` per agent, run with `azd ai eval` (or `azd ai agent eval`, whichever the current extension supports), following the [hosted agent evaluation quickstart](https://learn.microsoft.com/azure/foundry/observability/quickstarts/quickstart-evaluate-hosted-agent). No custom submission scripts beyond what a gap requires.

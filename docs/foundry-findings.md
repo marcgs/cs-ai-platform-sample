@@ -251,10 +251,10 @@ Add a finding when you hit one, and update its status when you check it again. I
 
 ### Traffic splitting between agent versions
 
-- **Hit:** "Manage hosted agents" says traffic splitting isn't supported, while "Promote hosted agents to production" shows a 90/10 split.
+- **Hit:** "Manage hosted agents" and the [hosted agents overview](https://learn.microsoft.com/azure/foundry/agents/concepts/hosted-agents#versioning) say an endpoint routes all traffic to one version and traffic splitting isn't supported, while "Promote hosted agents to production" shows a 90/10 split.
 - **Matters because:** canary releases depend on it.
-- **Got past it:** not tried.
-- **Status:** unverified. Checked 2026-11-03.
+- **Got past it:** not tried. Plan releases as a full switch to the new version, with redeploying the previous version as rollback.
+- **Status:** two pages against one; unverified. Checked 2026-11-04.
 
 ### Trusted-service provider spelling
 

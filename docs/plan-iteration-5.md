@@ -15,7 +15,7 @@ From here on, the sample is brought into its final shape one stage at a time, in
 
 Stages 5 and 6 stay thin: one cluster, one proposal, one release. The aim is to see every stage work and where it breaks, not to make the learner good.
 
-Rules for every iteration: [ADR 0010](adr/0010-evaluation-runs-in-foundry.md)'s platform first (our own code only for a recorded gap), the hard rules in [AGENTS.md](../AGENTS.md), and nothing from a later stage.
+Rules for every iteration: official documentation first ([AGENTS.md](../AGENTS.md#official-documentation-first)): each item starts from the Microsoft Learn page that covers it, follows it, and departs from it only for a gap recorded in the findings. Also the hard rules in AGENTS.md, and nothing from a later stage.
 
 ## Goal
 
