@@ -38,14 +38,14 @@ Add a finding when you hit one, and update its status when you check it again. I
 
 - **Hit:** the hosting server inspects the agent factory's signature at runtime, so types that are only imported for annotations break startup. Packages imported only on the hosted path are missing from an image that passed every local test.
 - **Matters because:** a deployment succeeds and the agent then fails to start.
-- **Got past it:** import the inspected types at runtime, guarded by a test (`test_hosting_server_accepts_the_factory`). The Dockerfile imports the entry point at build time. `csai eval --target hosted` checks the live agent.
+- **Got past it:** import the inspected types at runtime, guarded by a test (`test_hosting_server_accepts_the_factory`). The Dockerfile imports the entry point at build time. `azd ai agent invoke` checks the live agent.
 - **Status:** by design. Checked 2026-10-28.
 
 ### The hosting adapter corrupts tool-call arguments and over-reports tokens
 
 - **Hit:** in the hosted agent's Responses output, tool-call arguments arrive as strings holding the same JSON object twice (`{"machine_id":"M-0001"}{"machine_id":"M-0001"}`). Reported token usage is about 2.8 times the real usage. The cause is in `agent-framework-foundry-hosting` 1.0.0b261015: it appends argument snapshots that should replace the deltas, and sums cumulative usage snapshots instead of keeping the last. The tools aren't actually called twice.
 - **Matters because:** Foundry's tool judges reject the output (see [tool judges reject string arguments](#tool-judges-reject-string-arguments)), and any cost tracking based on reported usage is wrong.
-- **Got past it:** for evaluation, a normalization step converts arguments to single JSON objects before judging. The adapter fix (honor replace semantics, keep the final usage) is reproduced offline in `evals/rca/foundry/stream_repro.py` and still needs a deployment ([spike results](spike-foundry-native-eval-results.md)).
+- **Got past it:** for evaluation, a normalization step converted arguments to single JSON objects before judging ([offline reproduction](https://github.com/marcgs/cs-ai-platform-sample/blob/before-cleanup/evals/rca/foundry/stream_repro.py), [spike results](https://github.com/marcgs/cs-ai-platform-sample/blob/before-cleanup/docs/spike-foundry-native-eval-results.md)). A tested agent middleware that corrects the stream is parked in [#43](https://github.com/marcgs/cs-ai-platform-sample/pull/43), with a draft upstream issue; it's only worth deploying if something reads hosted tool calls or usage.
 - **Status:** open. Checked 2026-11-04.
 
 ### Hosted runs stream internally
@@ -68,7 +68,7 @@ Add a finding when you hit one, and update its status when you check it again. I
 
 - **Hit:** when the model asks for several tools at once, the calls still run one after another. Agent Framework's MCP client holds a lock across each call whenever a header provider is set, and `FoundryToolbox` always sets one. A tool that takes 6 seconds can appear to take 20.
 - **Matters because:** parallel tool calls give no speed-up, and per-tool durations include queueing time.
-- **Got past it:** not worked around. Bypassing the lock would risk mixing identities. Measured and documented in [A6](iteration-2/a6-latency.md).
+- **Got past it:** not worked around. Bypassing the lock would risk mixing identities. Measured and documented in [A6](https://github.com/marcgs/cs-ai-platform-sample/blob/before-cleanup/docs/iteration-2/a6-latency.md).
 - **Status:** open, still present in `agent-framework-core` 1.23.0. Checked 2026-10-29.
 
 ### Traces stop at the toolbox
@@ -123,7 +123,7 @@ Add a finding when you hit one, and update its status when you check it again. I
 
 - **Hit:** a run that fails at startup stays failed. Fixing the infrastructure doesn't revive it, and resubmitting creates a new run.
 - **Matters because:** run history fills with failed attempts, and tooling that keeps one run per measurement has to decide how retries work.
-- **Got past it:** an explicit retry for infrastructure failures only, keeping the failed run ([ADR 0007](adr/0007-infrastructure-only-publication-retries.md)). Simpler tooling can just resubmit.
+- **Got past it:** fix the cause, then submit a new run. Keep the failed run as evidence.
 - **Status:** by design. Checked 2026-11-02.
 
 ### Built-in judges don't know the right answer
@@ -158,7 +158,7 @@ Add a finding when you hit one, and update its status when you check it again. I
 
 - **Hit:** with Foundry calling the hosted agent, task adherence and tool call accuracy failed on every row: "The 'arguments' field must be a dictionary in tool_call content items."
 - **Matters because:** two of the four agent judges don't work when Foundry calls a hosted agent. The Responses protocol carries arguments as JSON strings, so fixing the [adapter bug](#the-hosting-adapter-corrupts-tool-call-arguments-and-over-reports-tokens) alone won't help: Foundry's own agent target and its judges disagree on the format.
-- **Got past it:** two steps. Run the agent, convert the saved arguments to dictionaries, then judge the saved outputs in a second run. All four judges then scored every row ([ADR 0010](adr/0010-evaluation-runs-in-foundry.md)).
+- **Got past it:** two steps. Run the agent, convert the saved arguments to dictionaries, then judge the saved outputs in a second run. All four judges then scored every row.
 - **Status:** open. Checked 2026-11-04.
 
 ### A completed run can hide failed judges

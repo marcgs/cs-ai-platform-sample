@@ -24,16 +24,13 @@ uv run pyright                         # strict for every source package and scr
 uv run pytest                          # offline: no Azure, no network, no model
 uv run pytest agents/rca -k golden     # one package / one test
 
-uv run csai eval rca --target local    # quality gate, agent in-process (uses Azure models + toolbox)
-uv run csai diagnose "M-0007: ..." --target local
+azd ai agent run                       # the agent locally (uses Azure models + toolbox)
+azd ai agent invoke --local "M-0007: ..."
+azd ai agent invoke "M-0007: ..."      # the deployed agent
+uv run csai episodes list              # recorded runs; csai feedback records an expert verdict
 ```
 
-Every change must leave ruff, pyright and pytest green. Run `csai eval rca --target local` after changing agent instructions, schemas, tools, platform capture or eval data. It needs a deployed environment and costs tokens (the retained 50-case single-repeat run used about 715k), so mention it when you skip it. The gate uses minimum means for `hit_at_1_lenient`, `decisive_evidence_recall` and `evidence_grounded`, plus a hard `injection_resisted` check: any applicable failed case-run fails. Each metric covers all applicable original and challenge cases; feedback stays report-only until the approved baseline. Invalid reports score zero on applicable outcomes and are counted separately, not excluded or hard-failed; true plumbing failures stay excluded and gate-failing. Thresholds in `evals/rca/src/rca_evals/thresholds.yaml` are provisional until the three-repeat baseline replaces them.
-
-Iteration 4's three-repeat baseline, its publication and Q17 wait for the
-[#31 spike](docs/spike-foundry-native-eval.md) decision. The local gate stays the
-reference and fallback; do not treat the retained single-repeat re-score or
-feedback-case proposal as that baseline. See the [close-out record](docs/iteration-4/close-out.md).
+Every change must leave ruff, pyright and pytest green. After changing agent instructions, schemas, tools or platform capture, try a few cases against the agent (`azd ai agent run` and `invoke --local`); it needs a deployed environment and costs tokens, so mention it when you skip it. Evaluation is being rebuilt the way Foundry documents it ([`docs/plan-evaluation.md`](docs/plan-evaluation.md)); until then there's no quality gate.
 
 Regenerated files are checked by tests. Regenerate them rather than editing by hand:
 
@@ -46,13 +43,13 @@ uv run python -m rca_evals.manifest        # evals/rca/.../cases.jsonl (from the
 
 | Change | Where | Also update |
 |---|---|---|
-| Shared agent plumbing (spec, capture, episodes, eval harness, telemetry) | `packages/cs-platform` | its README |
+| Shared agent plumbing (spec, capture, episodes, telemetry) | `packages/cs-platform` | its README |
 | Synthetic data, failure modes | `packages/diagnostics-domain` (`catalog.py`, `generator.py`) | regenerate seed + cases |
-| RCA behavior | `agents/rca/src/rca_agent/instructions.md`, `report.py`, `agent.spec.yaml` | run the local eval |
-| Diagnostic tools | `services/diagnostics-mcp` (`TOOL_NAMES`, tool functions) | `tool_coverage` in `evals/rca/.../evaluators.py` |
+| RCA behavior | `agents/rca/src/rca_agent/instructions.md`, `report.py`, `agent.spec.yaml` | try a few cases |
+| Diagnostic tools | `services/diagnostics-mcp` (`TOOL_NAMES`, tool functions) | the agent's instructions |
 | Episodes and feedback API | `services/platform-api` | `cli/src/csai/platform.py` |
-| CLI | `cli/src/csai` (`targets.py` registers agents in `AGENTS`) | README "Try it" |
-| Eval cases, metrics, thresholds | `evals/rca` | thresholds come from a measured baseline |
+| CLI (episodes and feedback only; azd does the rest) | `cli/src/csai` | README "Try it" |
+| Test cases | generator in `evals/rca`, scenarios in `packages/diagnostics-domain` | regenerate, don't hand-edit |
 | Azure resources | `infra/main.bicep`, `infra/modules/*.bicep` | outputs → `azure.yaml` / `csai` |
 | Data-plane setup Bicep can't do | `scripts/setup_platform.py` (azd hooks; idempotent) | `azure.yaml` hooks |
 | A new agent | follow [`docs/onboarding-an-agent.md`](docs/onboarding-an-agent.md) | |
@@ -61,44 +58,45 @@ A new workspace package goes in the root `pyproject.toml` too: in `dependencies`
 
 ## Code conventions
 
-- **Platform first.** Use what Foundry and Agent Framework provide. Write our own code only for a gap that's proven and recorded in [`docs/foundry-findings.md`](docs/foundry-findings.md) ([ADR 0010](docs/adr/0010-evaluation-runs-in-foundry.md)).
+- **Platform first.** Use what Foundry, Agent Framework and azd provide, following their documentation. Write our own code only for a gap that's proven and recorded in [`docs/foundry-findings.md`](docs/foundry-findings.md).
 - **Python 3.14** everywhere ([ADR 0001](docs/adr/0001-python-version.md)). Annotations are deferred. When something inspects a signature at runtime, as the hosted-agent server does on `agent_factory`, import those types at runtime and add `# noqa: TC002`. A test (`test_hosting_server_accepts_the_factory`) guards this for the RCA agent.
 - **Typing:** pyright strict. Avoid `Any` and `cast` unless an SDK forces them, and keep those to the boundary. Pydantic models for anything that crosses a boundary (tool results, reports, episodes, API bodies). Output schemas use `extra="forbid"` with all fields required, for strict structured outputs.
 - **Azure access is Entra only**: `DefaultAzureCredential`/`AzureCliCredential`, never keys in code or settings. The two function keys are exceptions, fetched at runtime with ARM (the toolbox connection; `csai` → platform API) and listed in the backlog to replace.
 - **Settings come from the environment.** Bicep outputs become azd environment values, which `azure.yaml`, the hooks and `csai` read (`cli/src/csai/environment.py`). Add a Bicep output instead of hard-coding a name.
 - **Tests are offline.** Use `cs_platform.testing.ScriptedChatClient` to run the real tool loop with scripted model turns, the in-memory episode store, and the seed data. Don't mock what you can run.
 - Match the surrounding style: small modules, docstrings on public functions, comments that explain *why*. Ruff's rule set is in the root `pyproject.toml`.
-- Docs are plain and specific: short sentences, real commands, no marketing. Record a decision with real trade-offs as a new ADR in `docs/adr/` (next number, same format). Findings and ideas go in the backlog (below).
+- Docs are plain and specific: short sentences, real commands, no marketing. Record a decision with real trade-offs as a new ADR in `docs/adr/` (next number, same format). Ideas go in the backlog, platform limitations in the findings (below).
 
-## Backlog and iterations
+## Backlog, findings and plans
 
-- [`docs/backlog.md`](docs/backlog.md) keeps the ideas for future iterations: findings, scope the specification defers, and new directions, by theme and with stable IDs. It's not a to-do list for the current work: don't implement a backlog item unless the current iteration's plan takes it or the user asks for it.
-- When work turns up an idea, a gap or a finding outside the current scope, add it to the backlog instead of doing it: the next free ID in the theme it fits, a rough size, an empty target. Mention it to the user.
-- When work hits a Foundry or Agent Framework limitation, a preview bug or a docs inconsistency, add it to [`docs/foundry-findings.md`](docs/foundry-findings.md), with how we got past it and the date checked. Update an existing entry's status when you check it again.
-- The user decides an iteration's scope. Its plan (`docs/plan-iteration-N.md`) lists the backlog IDs it takes, and those items get that iteration as their target. When an item is done, mark it `done itN` and link the pull request.
+- [`docs/backlog.md`](docs/backlog.md) keeps ideas for later, by theme and with stable IDs. It's not a to-do list: don't implement a backlog item unless the user asks for it.
+- When work turns up an idea or a gap outside the current scope, add it to the backlog instead of doing it: the next free ID in the theme it fits and a rough size. Mention it to the user.
+- When work hits a Foundry, Agent Framework or azd limitation, a preview bug or a docs inconsistency, add it to [`docs/foundry-findings.md`](docs/foundry-findings.md), with how we got past it and the date checked. Update an existing entry's status when you check it again.
+- The user decides what's worked on. Larger work gets a short plan in `docs/plan-<topic>.md`; when it's done, its results go into the docs it changes and the plan is deleted. The repository describes the current state, not its history.
 
 ## Azure and deployment, the non-obvious parts
 
 - **Topology:** Foundry, the registry and AI Search are public and Entra-only. Cosmos DB and the functions' storage are **private**, and an Azure Policy in the subscription forces their public access off ([ADR 0003](docs/adr/0003-private-data-stores.md)). From a laptop you can't reach Cosmos DB: local runs keep episodes in memory, and `csai episodes` goes through the platform API.
-- **Agent network injection is set only when the Foundry account is created.** Changing `networkInjections` or the agent subnet means `azd down --purge` and `azd up`, which is the user's call. The same applies to capability hosts, which is why Foundry-published evals are parked.
+- **Agent network injection is set only when the Foundry account is created.** Changing `networkInjections` or the agent subnet means `azd down --purge` and `azd up`, which is the user's call. Foundry evaluation in this network needs the project capability host and the evaluation storage exception ([ADR 0008](docs/adr/0008-evaluation-storage-network-exception.md)), both in Bicep.
 - **`azd down` clears `AZURE_LOCATION`** (and similar) from the environment. Set it again before the next `azd up`.
 - **Function apps deploy prebuilt Linux wheels** (`scripts/package_function.sh`, `remoteBuild: false`): workspace packages aren't on any index, and installs use the locked versions with hashes. The agent image installs `agents/rca/requirements.lock.txt`, exported by the `prepackage` hook from the local `uv.lock`. A new runtime dependency must be declared in the package that imports it; otherwise the image or the function app misses it.
 - **ACR remote builds use the classic builder:** no BuildKit features (`RUN --mount`, secret mounts) in Dockerfiles. The Dockerfile imports the entry point at build time to catch missing packages before deployment.
 - **Tools reach the agent only through the toolbox** (`TOOLBOX_ENDPOINT`, published by `setup_platform.py connect-tools` after the MCP app deploys). `DIAGNOSTICS_MCP_URL` is for local development. Tool names arrive prefixed (`<server>___<tool>`).
 - **Agent identities** exist only after `azd deploy`. The `grant-agent` hook gives the new identity its Cosmos DB role; it reads `AGENT_<SERVICE>_INSTANCE_IDENTITY_PRINCIPAL_ID`.
-- **Hosted runs can fail on model rate limits** (50k TPM by default). The eval harness retries errored cases; keep `--concurrency` low.
+- **Model rate limits** (50k TPM by default) are easy to hit with several runs at once. The agent's chat client retries rate-limited calls; keep evaluation concurrency low.
 - Preview features (hosted agents, toolboxes, azd agent extension) change often. Check current docs (Microsoft Learn) rather than memory before changing how they're configured, and verify role definition IDs instead of typing them from memory.
 - **Before suggesting `azd provision`, validate:** `az bicep build --file infra/main.bicep`, then `az deployment sub what-if` with the azd environment's parameters. Call out any delete or replace in the what-if.
 
 ## Commits
 
-- One logical change per commit, with all gates green. Imperative subject line that says what changed for a reader ("Add the platform API and csai diagnose, episodes and feedback"), with a body only when the why isn't obvious.
+- One logical change per commit, with all gates green. Imperative subject line that says what changed for a reader ("Add the platform API and csai episodes and feedback"), with a body only when the why isn't obvious.
 - Commit only when asked, on a feature branch (not `main`), and don't push.
 - Re-check the staged diff against the hard rules first.
 
-## State and history
+## Where to start reading
 
 - [`docs/specification.md`](docs/specification.md): what the platform must do and what's out of scope.
-- [`docs/plan-iteration-1.md`](docs/plan-iteration-1.md): how iteration 1 was built, step by step, with what was verified.
-- [`docs/backlog.md`](docs/backlog.md): every idea and known issue, by theme, with IDs; the current iteration's plan says which ones it takes. Start here when asked "what's next".
+- [`docs/architecture.md`](docs/architecture.md): how the parts fit together.
+- [`docs/foundry-findings.md`](docs/foundry-findings.md): limitations we hit and how we got past them.
 - [`docs/adr/`](docs/adr/): decisions and their consequences. Read the relevant ADR before reversing one of them.
+- [`docs/backlog.md`](docs/backlog.md): ideas for later, by theme. Start here when asked "what's next".
