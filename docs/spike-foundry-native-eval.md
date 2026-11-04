@@ -1,6 +1,6 @@
 # Spike: can Foundry run our evaluation?
 
-Status: planned, 2026-11-03. Time box: a few working days. Backlog item [Q20](backlog.md#q-evaluation-you-can-trust), widened.
+Status: closed on 2026-11-04; results in [the results](spike-foundry-native-eval-results.md), decision in [ADR 0010](adr/0010-evaluation-runs-in-foundry.md). Planned 2026-11-03. Backlog item [Q20](backlog.md#q-evaluation-you-can-trust), widened.
 
 Today `csai eval` runs the agent locally, scores it with our own checks and is the only gate ([ADR 0009](adr/0009-evaluation-system-design.md)). Foundry only receives saved runs and adds model judges. This spike tests the opposite: Foundry calls the hosted agent, scores it with built-in judges **and** our own metrics as custom evaluators, compares runs and gates a release. The result is a decision, recorded as ADR 0010, and the plan for iteration 5.
 

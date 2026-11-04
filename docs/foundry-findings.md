@@ -157,9 +157,16 @@ Add a finding when you hit one, and update its status when you check it again. I
 ### Tool judges reject string arguments
 
 - **Hit:** with Foundry calling the hosted agent, task adherence and tool call accuracy failed on every row: "The 'arguments' field must be a dictionary in tool_call content items."
-- **Matters because:** two of the four agent judges don't work on hosted agents with this adapter version.
-- **Got past it:** two steps. Run the agent, convert the saved arguments to dictionaries, then judge the saved outputs in a second run. All four judges then scored every row.
-- **Status:** open, depends on the [adapter fix](#the-hosting-adapter-corrupts-tool-call-arguments-and-over-reports-tokens). Checked 2026-11-04.
+- **Matters because:** two of the four agent judges don't work when Foundry calls a hosted agent. The Responses protocol carries arguments as JSON strings, so fixing the [adapter bug](#the-hosting-adapter-corrupts-tool-call-arguments-and-over-reports-tokens) alone won't help: Foundry's own agent target and its judges disagree on the format.
+- **Got past it:** two steps. Run the agent, convert the saved arguments to dictionaries, then judge the saved outputs in a second run. All four judges then scored every row ([ADR 0010](adr/0010-evaluation-runs-in-foundry.md)).
+- **Status:** open. Checked 2026-11-04.
+
+### A completed run can hide failed judges
+
+- **Hit:** the first agent-target run reported `completed` with five rows passed and none errored, while two judges had failed on every row with `FAILED_EXECUTION`.
+- **Matters because:** a summary that says everything passed can mean some evaluators never ran.
+- **Got past it:** check the per-evaluator results (scored rows and execution errors) of every run, not the run summary.
+- **Status:** open. Checked 2026-11-04.
 
 ### Agent target plus custom evaluators failed in one run
 
@@ -167,6 +174,13 @@ Add a finding when you hit one, and update its status when you check it again. I
 - **Matters because:** the simplest setup (Foundry calls the agent and scores it with our metrics in one run) isn't proven.
 - **Got past it:** two runs: one where Foundry calls the agent, one that scores the saved outputs.
 - **Status:** open, cause unknown. Checked 2026-11-04.
+
+### Dataset upload fails behind private storage
+
+- **Hit:** uploading an evaluation dataset with `datasets.upload_file` failed with `AuthorizationFailure` against the project's private storage, even with the trusted-services bypass that lets evaluation runs write results.
+- **Matters because:** the documented way to register a dataset doesn't work in a private-network project.
+- **Got past it:** upload the JSONL through the project's Files API (`purpose=evals`) and reference it as `source.type=file_id`. These are files, not versioned dataset assets.
+- **Status:** open. Checked 2026-11-04.
 
 ### Large outputs are dropped from `sample.output`
 
@@ -191,7 +205,7 @@ Add a finding when you hit one, and update its status when you check it again. I
 
 ### No repeats, no concurrency control, long runs
 
-- **Hit:** agent-target runs have no repetition setting, judge scheduling is managed by the service, and a 50-row run with four judges took 19m38s.
+- **Hit:** agent-target runs have no repetition setting, judge scheduling is managed by the service, and a 50-row run with four judges took 19m38s. During one judge run, a quarter of the judge model's requests were rate-limited (HTTP 429); the run still completed.
 - **Matters because:** measuring run-to-run variance needs duplicated rows or several runs. Client tools must wait longer than a typical 15-minute timeout.
 - **Got past it:** wait for the run instead of resubmitting. Repeats: duplicate rows with a repeat index, or several runs (not done yet).
 - **Status:** by design. Checked 2026-11-04.

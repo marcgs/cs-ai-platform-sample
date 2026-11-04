@@ -61,6 +61,7 @@ A new workspace package goes in the root `pyproject.toml` too: in `dependencies`
 
 ## Code conventions
 
+- **Platform first.** Use what Foundry and Agent Framework provide. Write our own code only for a gap that's proven and recorded in [`docs/foundry-findings.md`](docs/foundry-findings.md) ([ADR 0010](docs/adr/0010-evaluation-runs-in-foundry.md)).
 - **Python 3.14** everywhere ([ADR 0001](docs/adr/0001-python-version.md)). Annotations are deferred. When something inspects a signature at runtime, as the hosted-agent server does on `agent_factory`, import those types at runtime and add `# noqa: TC002`. A test (`test_hosting_server_accepts_the_factory`) guards this for the RCA agent.
 - **Typing:** pyright strict. Avoid `Any` and `cast` unless an SDK forces them, and keep those to the boundary. Pydantic models for anything that crosses a boundary (tool results, reports, episodes, API bodies). Output schemas use `extra="forbid"` with all fields required, for strict structured outputs.
 - **Azure access is Entra only**: `DefaultAzureCredential`/`AzureCliCredential`, never keys in code or settings. The two function keys are exceptions, fetched at runtime with ARM (the toolbox connection; `csai` → platform API) and listed in the backlog to replace.

@@ -1,6 +1,6 @@
 # ADR 0009: A small outcome gate locally, judges only in Foundry
 
-- **Status:** Accepted
+- **Status:** Accepted; where evaluation runs is superseded by [ADR 0010](0010-evaluation-runs-in-foundry.md). The gate metrics and rules below stay.
 - **Date:** 2026-11-03
 
 **Close-out implementation note:** the local outcome gate shipped in

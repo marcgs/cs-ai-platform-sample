@@ -1,12 +1,37 @@
 # Foundry-native evaluation results
 
-Status: four judges and all 13 code metrics verified; the retained local 50-case
-scoreboard is complete with zero new model tokens. Fresh full-suite agent runs
-await a deployment decision and separately approved budget, 4 November 2026.
-The [spike](spike-foundry-native-eval.md) is now an execution task.
-Model usage is authorized up to 1.5M tokens cumulatively; project evaluation
-data-plane writes are approved. Infrastructure, network, roles and deployments
-remain unchanged.
+Status: **closed on 4 November 2026.** The decision is
+[ADR 0010](adr/0010-evaluation-runs-in-foundry.md); the remaining work is in the
+[backlog](backlog.md#q-evaluation-you-can-trust) as iteration 5's scope.
+Limitations found here are also in [Foundry findings](foundry-findings.md).
+The spike used 701,428 of the approved 1.5M model tokens and made no
+infrastructure, network, role or deployment changes.
+
+## Outcome
+
+The [spike plan's](spike-foundry-native-eval.md) capability table, answered:
+
+| Need | Result | Evidence |
+|---|---|---|
+| Foundry calls our hosted agent | **Supported** | Five agent-target invocations, then two more cases ([step 1](#step-1-hosted-agent-and-four-judges)) |
+| The target works in our network-injected project | **Supported** | Same runs; no network change needed |
+| Evaluators see tool calls and results | **Supported** | `sample.output_items` holds the toolbox calls with results; use `sample.output_text` for the answer, since `sample.output` is dropped for size |
+| Tool judges work with our tools | **Partial** | Only after converting the arguments to dictionaries in a second run; a hosting adapter bug also duplicates them ([diagnosis](#proven-snapshot-defect-not-repeated-tool-execution)) |
+| Our metrics as custom evaluators | **Supported** | All 13 as code evaluators: 53/53 exact matches on the probe outputs and 532/532 on the retained 50-case run |
+| The answer key reaches the evaluator | **Supported** | Dataset fields read from `item` |
+| "Doesn't apply" for some cases | **Partial** | One evaluation per sparse metric over its applicable cases; endpoint evaluators (which can skip) not tried |
+| Agent and our metrics in one run | **Not working** | Three SDK attempts failed with zero rows and a generic invalid-input error |
+| Repeats per case | Not tested | No repetition setting; duplicate rows or several runs |
+| Run comparison with statistics | Not tested | |
+| A gate in a pipeline, including a hard check | Not tested | Pass counts per evaluator only; the gate's means and hard check have to be computed from run results |
+| Versioned cases and evaluators | **Partial** | Evaluator versions work. Dataset upload hit the private storage boundary; the Files API worked. `azd ai eval` can't pin the agent version |
+| Episodes captured with Foundry as caller | **Supported** | Hosted episodes retrieved for all five probe cases |
+| Cost | **Measured** | About 25k agent tokens and 22k judge tokens per case; reported usage is inflated by the adapter bug and duplicate judge entries |
+
+Against the plan's decision rules this is between Foundry-native and hybrid:
+Foundry calls the agent, runs the judges and computes all our metrics with exact
+parity, but in two steps, with sparse metrics split into separate evaluations,
+and without proven repeats, comparison or a pipeline gate.
 
 ## Step 1: hosted agent and four judges
 

@@ -29,28 +29,42 @@ Everything else goes under [Later](#later) as one line, or is left out. Items re
 
 ## Q. Evaluation you can trust
 
-The design is [ADR 0009](adr/0009-evaluation-system-design.md): a small outcome gate computed locally, model judges in Foundry, and more cases rather than more metrics.
+The gate and its rules are [ADR 0009](adr/0009-evaluation-system-design.md): four outcome metrics, judges report only, and more cases rather than more metrics. Where it runs is [ADR 0010](adr/0010-evaluation-runs-in-foundry.md): in Foundry, platform first. Q21–Q27 are iteration 5's candidate scope, in order.
 
 | ID | Item | Why | Explores | Size | Target |
 |---|---|---|---|---|---|
 | Q4 | **Gate on four outcome metrics** | `tool_coverage` and `used_knowledge` reward a ritual; the gate should say whether the diagnosis is right, grounded and safe ([ADR 0009](adr/0009-evaluation-system-design.md)). | | M | done it4 ([#28](https://github.com/marcgs/cs-ai-platform-sample/pull/28)) |
 | Q16 | **Publish judges only** | Superseded by the Foundry-native evaluation spike; the branch remains unmerged. | Foundry evaluations | S | closed, superseded ([#29](https://github.com/marcgs/cs-ai-platform-sample/pull/29)) |
-| Q17 | **Score trend across runs** | Progress needs a scoreboard over time, including the metrics Foundry can't show; today each run is a separate report. | | S | Q20 spike follow-up |
+| Q17 | **Score trend across runs** | Progress needs a scoreboard over time; today each run is a separate report. | Foundry run comparison | S | |
 | Q18 | **Judges checked against expert labels** | A model judge can only join the gate once its agreement with experts is measured on the same cases. | Foundry evaluators | S | |
 | Q19 | **Grow thin cohorts** | Four injection cases and twelve missing-machine cases give intervals too wide to act on; the gate and the learner need more cases, not more metrics. | | M | |
-| Q20 | **Foundry-run agent evaluation** | Foundry's own flow calls the hosted agent and scores it; we've only sent Foundry our results. Shows what a team gets from Foundry alone, compared with our harness. | Foundry agent-target evaluation, `azd ai agent eval` | M | spike |
+| Q20 | **Foundry-run agent evaluation** | Foundry's own flow calls the hosted agent and scores it; we've only sent Foundry our results. Shows what a team gets from Foundry alone, compared with our harness. | Foundry agent-target evaluation, `azd ai agent eval` | M | done, spike ([#34](https://github.com/marcgs/cs-ai-platform-sample/pull/34), [#37](https://github.com/marcgs/cs-ai-platform-sample/pull/37)) |
+| Q21 | **Fix the hosting adapter's tool-call arguments and usage** | The hosted agent's Responses output duplicates tool-call arguments and over-reports tokens about 2.8 times, which breaks tool judges and cost tracking. | Agent Framework hosting | S | |
+| Q22 | **One evaluation recipe, one command** | Evaluation should be an `eval.yaml` and one `azd` command, as in Microsoft's quickstart, not our scripts. First try a single run (agent plus all evaluators), timeboxed; otherwise two steps. | `azd ai eval`, Foundry agent-target evaluation, code evaluators | M | |
+| Q23 | **Gate from Foundry results** | Foundry reports pass counts per evaluator; the gate needs means and a hard check, computed from the run's results. | Foundry evaluation API | S | |
+| Q24 | **Smaller judge inputs and datasets** | Tool judges get every tool result (about 22k tokens per case for four judges), and wide dataset rows bury the scores in the portal. | Foundry evaluator data mapping | S | |
+| Q25 | **Baseline in Foundry** | Thresholds are provisional until a three-repeat baseline is measured in the setup we keep; repeats and comparison are untested. | Foundry run comparison | M | |
+| Q26 | **Agent Framework evaluation locally** | Development runs should use Agent Framework's `evaluate_agent` with the same evaluators, instead of our harness. | Agent Framework evaluation | M | |
+| Q27 | **Retire our evaluation harness** | Once Q22 and Q25 work, our local runner, publisher and spike scripts duplicate the platform. | | M | |
 | Q5 | **Cost and latency per diagnosis** | Time to diagnosis is the main outcome, and cost decides the model. | Foundry tracing | S | |
 | Q6 | **Ask instead of guess** | Given a symptom without a machine, the agent picks one and diagnoses it; the report can't ask a question. | | S | |
 
 Notes:
 
 - **Q4:** done in [#28](https://github.com/marcgs/cs-ai-platform-sample/pull/28): minimum means for `hit_at_1_lenient`, `decisive_evidence_recall` and `evidence_grounded` across applicable original and challenge cases; `injection_resisted` hard-fails any applicable failed case-run. Invalid reports score zero, stay in the denominator and are counted separately; only true plumbing is excluded. Other metrics and feedback stay report-only. Approved provisional minimums 0.70 / 0.65 / 0.85 pass the final retained 50-case re-score at 0.78 / 0.75 / 0.92 (four invalid reports, no plumbing, all four injection checks pass); see the [eval guide](../evals/rca/README.md).
-- **Baseline (Q4 follow-up), target: Q20 spike follow-up.** The three-repeat baseline and its publication wait for [#31](https://github.com/marcgs/cs-ai-platform-sample/pull/31)'s decision and human merge of the feedback cases. They replace provisional floors in the selected evaluation setup; no approval request is being prepared.
+- **Baseline (Q4 follow-up):** now Q25, measured in Foundry.
 - **Q16:** closed as superseded by [the Q20 spike](spike-foundry-native-eval.md). [#29](https://github.com/marcgs/cs-ai-platform-sample/pull/29) is closed; its judges-only definition, observation-timeout handling and mirror removal remain on an unmerged branch. Main still has the existing publisher. Earlier sparse-parity, calibration-direction and transport findings remain evidence in [Q9](iteration-4/q9.md), not extra iteration-4 completion gates. Further publication work depends on the spike decision.
-- **Q17:** read the retained run records (`results.summary.json` per run), not Foundry. One static page: each gated metric per run with its interval and threshold, by agent, skill and exact model version. The chat deployment upgrades its model version automatically, so a change in the trend can come from the model rather than the agent.
+- **Q17:** check first whether Foundry's run comparison is enough. Otherwise one static page from the runs' results: each gated metric per run with its threshold, by agent, skill and exact model version. The chat deployment upgrades its model version automatically, so a change in the trend can come from the model rather than the agent.
 - **Q18:** the 20 blind person judgments from L8's fresh cohort are a first label set. Measure each judge's agreement on the same episodes before it gates anything.
 - **Q19:** grow where intervals are widest first: injection, missing machine, then the other challenge categories. Q3's generator and answer-key format apply; L9 adds feedback cases on top.
-- **Q20:** widened in [#31](https://github.com/marcgs/cs-ai-platform-sample/pull/31) into a spike on whether Foundry can run the whole evaluation: agent target, judges, all our metrics as custom evaluators (endpoint evaluators for sparse applicability), repeats, comparison and a pipeline gate. Plan and capability matrix in [the spike plan](spike-foundry-native-eval.md); the decision becomes ADR 0010. No probe has run. Run 1 follows human merge of the case and close-out PRs and separate model/write approvals.
+- **Q20:** closed on 2026-11-04. Foundry calls the hosted agent in our network, runs the four judges and all 13 of our metrics with exact parity, in two steps. Outcome in [the results](spike-foundry-native-eval-results.md#outcome), decision in [ADR 0010](adr/0010-evaluation-runs-in-foundry.md).
+- **Q21:** the bug is in `agent-framework-foundry-hosting` 1.0.0b261015: it appends argument snapshots that should replace the deltas and sums cumulative usage. Reproduced offline in `evals/rca/foundry/stream_repro.py`. Prefer a fixed package version; otherwise a small tested workaround in our code, and a drafted upstream issue. Needs a deployment, approved separately. Even fixed, arguments stay JSON strings as the protocol requires, so the judges still need them converted to dictionaries.
+- **Q22:** follow the [quickstart](https://learn.microsoft.com/azure/foundry/observability/quickstarts/quickstart-evaluate-hosted-agent). Check the installed `azd` extension first: during the spike `azd ai agent eval` reported it was replaced by `azd ai eval`, which can't pin the agent version. Gate metrics as code evaluators, answer key in the dataset, judges report only. Sparse gate metrics run as separate evaluations until "doesn't apply" is handled (an endpoint evaluator can return `skipped`). Name things by ADR 0010's rules.
+- **Q23:** read the run's output items; compute the three minimum means and the injection hard check exactly as `csai eval` does today; exit non-zero on a failed gate.
+- **Q24:** map tool calls with their arguments and shortened results to the judges; keep dataset columns to what an evaluator reads. Strip search result URLs, which contain the search service's host name.
+- **Q25:** three repeats of the 50 cases (duplicate rows with a repeat index, or three runs), then Foundry's comparison. At measured rates one 50-case run with four judges costs about 2.4M tokens before Q24; needs a budget decision.
+- **Q26:** check that its results land in the Foundry project next to the hosted runs.
+- **Q27:** remove the local runner, the publisher and its retry machinery ([ADR 0007](adr/0007-infrastructure-only-publication-retries.md)), and the spike scripts in `evals/rca/foundry/` that the final recipe doesn't use. The spike evidence stays in git history.
 - **Q5:** report cost and latency per diagnosis; don't gate on them.
 - **Q6:** Q3's missing-machine cohort scores 1/12 on both hit-at-1 and schema validity.
 
@@ -146,6 +160,7 @@ Notes:
 | S7 | **Reproducible offline packaging gate** | A freshly recreated workspace environment lacks `hatchling`, so the offline skill-packaging test fails until its build backend is installed separately. | uv, Hatchling | S | |
 | S13 | **Drift-safe reprovisioning** | The full provision preview detaches subnet NSGs, changes connection sharing and disables Cosmos DB automatic failover; preserve or explicitly approve existing live configuration before acceptance provisioning. | ARM what-if, Bicep | S | |
 | S14 | **Verify provision-hook dispatch** | An approved provision succeeded without search-seeding completion output, while explicitly running the postprovision hook seeded successfully; establish reliable hook dispatch and its verification. | azd hooks | S | |
+| S16 | **Search tool moderation fails** | Every `azure_ai_search` result carries failed content-safety annotations, so the guardrail isn't running, and at least one answer avoided citing search results because of it. | Foundry guardrails, AI Search tool | S | |
 
 Notes:
 
@@ -156,6 +171,7 @@ Notes:
 - **S13:** read-only acceptance preparation on clean `7b56c46` reproduced 44 modifications and five unsupported resources. Three subnet NSG associations are removed, three connections change `isSharedToAll` from false to true, and Cosmos DB automatic failover changes from true to false. Twelve role-principal expressions and both apps' settings/storage were verified as drift. The user-approved prepared branch removes the real deltas with environment-backed NSG IDs and explicit live settings; deployment and unsupported-assignment verification remain outstanding. No provisioning was performed; see [Q9 acceptance preparation](iteration-4/q9.md#acceptance-preparation--1-november-2026). S8–S12 are reserved for the separate networking plan.
 - **S13, applied:** after separate approval, provision succeeded from the prepared branch. Post-provision reads confirmed the three NSGs, failover, connection visibility, model policies and account routing were preserved. The infrastructure is committed in [#26](https://github.com/marcgs/cs-ai-platform-sample/pull/26), not yet merged, so unchanged main retains the unsafe preview.
 - **S14:** the successful acceptance provision had no search-seeding completion in its retained log. Explicitly invoking the already-approved `azd hooks run postprovision` exited zero and printed 40 historical cases. Automatic dispatch is unverified, not passed; the cause was not investigated as part of acceptance.
+- **S16:** found on 2026-11-04 in the spike's outputs: `raiPreToolAnnotations` and `raiPostToolAnnotations` say "Error during input moderation for knowledge tool: azure_ai_search for general harms" (and output). Search still returns results. Cause not investigated. S15 is reserved for the environments item on an unmerged branch.
 
 ## Later
 
@@ -163,7 +179,6 @@ Kept in view, not planned. Each would get a proper item when it becomes relevant
 
 - Full private networking for Foundry, the registry, AI Search and Application Insights.
 - Continuous evaluation of production traffic (after Q9), judges only ([ADR 0009](adr/0009-evaluation-system-design.md)).
-- Agent Framework `evaluate_agent` as the eval runner, if its local results can reach the Foundry portal (ADR 0009).
 - Model comparison across providers, and the model router.
 - Conversations (multi-turn) and managed agent memory.
 - Long-running diagnoses with a human in the loop, and action tools with approvals.
