@@ -12,7 +12,6 @@ dependencies = [
     "platform-api",
     "rca-agent",
     "rca-evals",
-    "episode-analysis",
 ]
 
 [dependency-groups]
@@ -34,7 +33,7 @@ dev = [
 package = false
 
 [tool.uv.workspace]
-members = ["packages/*", "services/*", "agents/*", "evals/*", "analysis/*", "cli"]
+members = ["packages/*", "services/*", "agents/*", "evals/*", "cli"]
 
 [tool.uv.sources]
 cs-platform = { workspace = true }
@@ -44,13 +43,12 @@ diagnostics-mcp = { workspace = true }
 platform-api = { workspace = true }
 rca-agent = { workspace = true }
 rca-evals = { workspace = true }
-episode-analysis = { workspace = true }
 
 # --- Ruff: lint + format -----------------------------------------------------
 [tool.ruff]
 line-length = 100
 target-version = "py314"
-src = ["packages/*/src", "services/*/src", "services/*", "agents/*/src", "evals/*/src", "analysis/*/src", "cli/src", "scripts"]
+src = ["packages/*/src", "services/*/src", "services/*", "agents/*/src", "evals/*/src", "cli/src", "scripts"]
 
 [tool.ruff.lint]
 select = [
@@ -82,12 +80,12 @@ pythonVersion = "3.14"
 venvPath = "."
 venv = ".venv"
 typeCheckingMode = "standard"
-strict = ["packages/*/src", "services/*/src", "agents/*/src", "evals/*/src", "analysis/*/src", "cli/src", "scripts"]
+strict = ["packages/*/src", "services/*/src", "agents/*/src", "evals/*/src", "cli/src", "scripts"]
 exclude = ["**/.venv", "**/__pycache__", "**/node_modules"]
 
 # --- Pytest -------------------------------------------------------------------
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib", "-ra"]
-testpaths = ["packages", "services", "agents", "evals", "analysis", "cli"]
+testpaths = ["packages", "services", "agents", "evals", "cli"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"

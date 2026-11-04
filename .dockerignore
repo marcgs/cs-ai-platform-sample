@@ -4,8 +4,6 @@
 .claude
 .azure
 .eval-results
-analysis-output
-analysis/episodes/output
 **/.venv
 **/__pycache__
 **/.pytest_cache
