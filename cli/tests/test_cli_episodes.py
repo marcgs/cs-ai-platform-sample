@@ -5,13 +5,11 @@ import pytest
 from typer.testing import CliRunner
 
 from cs_platform.episodes import Episode, Feedback, ToolCall
-from cs_platform.evals import RunOutput
 from csai import app as cli
 from csai.platform import PlatformClient
 from platform_api.api import EpisodeSummary
 
 if TYPE_CHECKING:
-    from cs_platform.evals import EvalCase, Target
     from platform_api.api import FeedbackRequest
 
 runner = CliRunner()
@@ -94,22 +92,3 @@ def test_feedback_is_attached(fake: FakePlatform) -> None:
     assert fake.episode.feedback.actual_root_cause == "FM-05"
     shown = runner.invoke(cli.app, ["--no-azd", "episodes", "show", "ep-1"])
     assert "incorrect; actual root cause FM-05" in shown.output
-
-
-def test_diagnose_prints_the_report(monkeypatch: pytest.MonkeyPatch) -> None:
-    def factory(*_: object) -> Target:
-        async def run(case: EvalCase) -> RunOutput:
-            from rca_agent.report import RcaReport
-
-            return RunOutput(value=RcaReport.model_validate(REPORT), tool_calls=["get_logbook"])
-
-        return run
-
-    monkeypatch.setenv(
-        "FOUNDRY_PROJECT_ENDPOINT", "https://example.services.ai.azure.com/api/projects/p"
-    )
-    monkeypatch.setattr(cli, "local_target", factory)
-    result = runner.invoke(cli.app, ["--no-azd", "diagnose", "M-0001: alarm", "--target", "local"])
-    assert result.exit_code == 0, result.output
-    assert "Stage cooling drift [FM-01]" in result.output
-    assert "Tool calls: get_logbook" in result.output

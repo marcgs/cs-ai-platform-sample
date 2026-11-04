@@ -1,13 +1,11 @@
 [project]
 name = "rca-evals"
 version = "0.1.0"
-description = "Evaluation suite for the RCA agent: case manifest, thresholds and evaluators."
+description = "The RCA agent's test cases, generated from the seed scenarios."
 requires-python = ">=3.14,<3.15"
 dependencies = [
-    "cs-platform",
     "diagnostics-domain",
-    "diagnostics-mcp",
-    "rca-agent",
+    "pydantic>=2.14.1",
 ]
 
 [build-system]
@@ -15,7 +13,4 @@ requires = ["uv_build>=0.13.5,<0.14"]
 build-backend = "uv_build"
 
 [tool.uv.sources]
-cs-platform = { workspace = true }
 diagnostics-domain = { workspace = true }
-diagnostics-mcp = { workspace = true }
-rca-agent = { workspace = true }
