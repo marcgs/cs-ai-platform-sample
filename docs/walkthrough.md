@@ -88,7 +88,7 @@ uv run csai feedback <episode-id> --verdict incorrect --actual-root-cause FM-02 
 The loop for any change to the agent:
 
 1. Edit [`agents/rca/src/rca_agent/instructions.md`](../agents/rca/src/rca_agent/instructions.md).
-2. Run the edited agent on your machine, against the deployed models and tools: `azd ai agent run` starts it and opens the Agent Inspector, and `azd ai agent invoke --local "M-0007: ..."` sends a request from another terminal. Nothing deployed changes.
+2. Run the edited agent on your machine, against the deployed models and tools: `azd ai agent run rca-agent --start-command "uv run python -m rca_agent.main"` starts it and opens the Agent Inspector, and `azd ai agent invoke --local "M-0007: ..."` sends a request from another terminal. Nothing deployed changes.
 3. Keep a real improvement and deploy it with `azd deploy rca-agent`, or undo the experiment with `git restore agents/rca/src/rca_agent/instructions.md`.
 4. Check what's live with `azd ai agent invoke`, and follow its logs with `azd ai agent monitor --follow`.
 

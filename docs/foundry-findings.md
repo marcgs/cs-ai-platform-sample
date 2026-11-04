@@ -219,6 +219,13 @@ Add a finding when you hit one, and update its status when you check it again. I
 
 ## Deployment and tooling
 
+### `azd ai agent run` can't find a workspace agent's entry point
+
+- **Hit:** `azd ai agent run` detects the project type and its startup command, or reads `startupCommand` from `azure.yaml`. Our agent is a module inside a uv workspace (`agents/rca/src/rca_agent/main.py`), built from a Dockerfile, and azd can't detect how to start it. Setting `startupCommand` isn't a clean fix: the docs say azd also uses it to start the deployed container.
+- **Matters because:** monorepo agents don't run locally with the documented command alone.
+- **Got past it:** pass the command on each run: `azd ai agent run rca-agent --start-command "uv run python -m rca_agent.main"`. The deployed container keeps the Dockerfile's `CMD`.
+- **Status:** by design. Checked 2026-11-04.
+
 ### `azd down` clears the location
 
 - **Hit:** after `azd down`, `AZURE_LOCATION` (and similar values) are gone from the azd environment.

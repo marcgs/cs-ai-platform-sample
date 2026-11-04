@@ -9,7 +9,7 @@ This exploration repository has **no active pipeline**. Quality is enforced loca
 | Lint and format | `uv run ruff check`, `uv run ruff format --check` | Every commit (pre-commit) |
 | Types | `uv run pyright` | Every commit (pre-commit) |
 | Tests | `uv run pytest` | Before every commit |
-| Agent smoke test, before deploying | `azd ai agent run`, then `azd ai agent invoke --local "…"` | After changes to agents, tools, prompts or platform code |
+| Agent smoke test, before deploying | `azd ai agent run rca-agent --start-command "uv run python -m rca_agent.main"`, then `azd ai agent invoke --local "…"` | After changes to agents, tools, prompts or platform code |
 | Agent smoke test, deployed | `azd ai agent invoke "…"` | After `azd deploy` |
 | Deployment | `azd up` (or `azd provision` / `azd deploy <service>`) | When you want an environment or a new version |
 

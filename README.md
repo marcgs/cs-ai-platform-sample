@@ -75,7 +75,7 @@ uv run ruff check && uv run ruff format --check   # lint and format
 uv run pyright                                     # types (strict for all source packages)
 uv run pytest                                      # tests, all offline
 
-azd ai agent run                                   # the agent locally, with the Agent Inspector
+azd ai agent run rca-agent --start-command "uv run python -m rca_agent.main"   # the agent locally, with the Agent Inspector
 azd ai agent invoke --local "M-0001: ..."          # one request to the local agent
 azd ai agent monitor --follow                      # the deployed agent's logs
 ```
