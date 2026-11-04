@@ -6,18 +6,15 @@ it after changing the seed data:
     uv run python -m rca_evals.manifest
 """
 
-from importlib import resources
-from pathlib import Path
 from typing import TYPE_CHECKING
 
-from cs_platform.evals import EvalCase, EvalTruth, assign_splits
 from diagnostics_domain.dataset import DiagnosticsDataset, load_seed
+from rca_evals.cases import EvalCase, EvalTruth, assign_splits, cases_path, load_cases
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from cs_platform.evals import Split
-CASES_FILE = "cases.jsonl"
+    from rca_evals.cases import Split
 
 
 def cases_from_seed(
@@ -57,16 +54,8 @@ def render(cases: list[EvalCase]) -> str:
 
 
 def main() -> None:
-    path = Path(str(resources.files("rca_evals"))) / CASES_FILE
-    previous = (
-        tuple(
-            EvalCase.model_validate_json(line)
-            for line in path.read_text("utf-8").splitlines()
-            if line.strip()
-        )
-        if path.exists()
-        else ()
-    )
+    path = cases_path()
+    previous = load_cases(path) if path.exists() else ()
     path.write_text(render(cases_from_seed(load_seed(), previous=previous)), encoding="utf-8")
     print(f"Wrote {path}")
 
