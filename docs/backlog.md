@@ -37,6 +37,7 @@ Evaluation is being rebuilt the way Foundry documents it ([plan](plan-evaluation
 | Q18 | **Judges checked against expert labels** | A model judge should only gate once its agreement with experts is measured on the same cases. | Foundry evaluators | S |
 | Q19 | **Grow thin cohorts** | Four injection cases and twelve missing-machine cases are too few to act on; more cases beat more metrics. | | M |
 | Q28 | **Continuous evaluation of live traffic** | Judges on a sample of real runs show drift that a fixed case set misses. | Foundry continuous evaluation | S |
+| Q29 | **Metrics that skip cases they don't apply to** | Code evaluators must return a score, so `decisive_evidence_recall` and `injection_resisted` score 1.0 on cases they don't apply to, and the portal's pass counts include those cases. An endpoint evaluator can return `skipped`, but needs a hosted endpoint and a project connection. | Foundry endpoint evaluators | M |
 
 Notes:
 

@@ -11,7 +11,7 @@ A reference sample that shows the path from **an agent prototype** to **an agent
 - Adding an agent: [`docs/onboarding-an-agent.md`](docs/onboarding-an-agent.md)
 - Changing the code (rules, commands, gotchas; for people and coding agents): [`AGENTS.md`](AGENTS.md)
 
-> **Evaluation is being rebuilt** the way Foundry documents it (`azd ai eval`, built-in and custom evaluators). So far, two built-in judges score five test cases ([Evaluate](#evaluate)); nothing checks the answers against the answer key yet. The earlier, self-built evaluation harness and the project's history are in the `before-cleanup` tag.
+> **Evaluation is being rebuilt** the way Foundry documents it (`azd ai eval`, built-in and custom evaluators). Two built-in judges and six code evaluators score the 50 test cases, the latter against each case's answer key ([Evaluate](#evaluate)). The earlier, self-built evaluation harness and the project's history are in the `before-cleanup` tag.
 
 ## What runs where
 
@@ -69,7 +69,7 @@ azd ai eval create rca-quality               # once per environment, and after c
 azd ai eval run start --no-wait --name "rca-agent-$(azd env get-value AGENT_RCA_AGENT_VERSION)-$(date +%F)"
 ```
 
-Foundry sends five test cases ([`evals/rca`](evals/rca/README.md#evaluation)) to the deployed agent and scores the answers with the intent resolution and task adherence judges. Results are in the Foundry portal under the project's evaluations, `rca-quality`; a run takes about five minutes and 150–350k tokens. `--no-wait` is needed: azd can't read this evaluation's runs back yet, and each `create` adds another evaluation with the same name ([findings](docs/foundry-findings.md#evaluation)).
+Foundry sends the 50 test cases ([`evals/rca`](evals/rca/README.md#evaluation)) to the deployed agent and scores each answer twice: with the intent resolution and task adherence judges, and with six code evaluators that compare it with the case's answer key (`hit_at_1`, `hit_at_1_lenient`, `hit_at_3`, `decisive_evidence_recall`, `evidence_grounded`, `injection_resisted`). Results are in the Foundry portal under the project's evaluations, `rca-quality`, with per-case scores. All 50 cases take about 2.2M reported tokens and 25 minutes, but the agent calls currently stop working after about 14 minutes, so the last cases of a run fail and score 0 although the run says `completed` ([finding](docs/foundry-findings.md#an-evaluation-runs-agent-calls-stop-working-after-about-14-minutes)). Check the per-case results for agent errors before reading the scores. `--no-wait` is needed: azd can't read this evaluation's runs back yet, and each `create` adds another evaluation with the same name ([findings](docs/foundry-findings.md#evaluation)).
 
 ### Clean up
 

@@ -1,9 +1,10 @@
 import json
 from collections import Counter
-from pathlib import Path
 
 from diagnostics_domain.dataset import load_seed
 from rca_evals import load_cases
+from rca_evals.assets import EVALUATORS_DIR, QUERIES_FILE, render_evaluator, render_queries
+from rca_evals.graders import METRICS
 from rca_evals.manifest import cases_from_seed, render
 
 
@@ -20,12 +21,26 @@ def test_every_case_has_an_answer_key_and_a_split() -> None:
     assert Counter(case.split for case in cases)["test"] > 0
 
 
-def test_evaluation_queries_are_case_inputs() -> None:
-    queries = Path(__file__).parents[1] / "queries.jsonl"
-    rows = [json.loads(line) for line in queries.read_text(encoding="utf-8").splitlines()]
-    inputs = {case.input for case in load_cases()}
-    assert rows
-    assert all(row["query"] in inputs for row in rows)
+def test_committed_evaluation_assets_match_the_generator() -> None:
+    assert QUERIES_FILE.read_text(encoding="utf-8") == render_queries(load_seed(), load_cases()), (
+        "Stale: run `uv run python -m rca_evals.assets`."
+    )
+    for metric in METRICS:
+        path = EVALUATORS_DIR / f"{metric}.json"
+        assert path.read_text(encoding="utf-8") == render_evaluator(metric)
+
+
+def test_evaluation_rows_carry_each_case_answer_key() -> None:
+    rows = [json.loads(line) for line in QUERIES_FILE.read_text(encoding="utf-8").splitlines()]
+    cases = {case.id: case for case in load_cases()}
+    assert [row["case_id"] for row in rows] == list(cases)
+    for row in rows:
+        case = cases[row["case_id"]]
+        assert row["query"] == case.input
+        assert set(row["decisive_refs"]) <= set(row["valid_refs"])
+        assert ("injection_resisted" in row["applicable_metrics"]) == (
+            row["category"] == "injection"
+        )
 
 
 def test_manifest_preserves_persisted_machine_splits_on_extension() -> None:

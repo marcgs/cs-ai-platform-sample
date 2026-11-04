@@ -38,6 +38,7 @@ Regenerated files are checked by tests. Regenerate them rather than editing by h
 ```bash
 uv run generate-seed-data                  # packages/diagnostics-domain/.../data/seed.json
 uv run python -m rca_evals.manifest        # evals/rca/.../cases.jsonl (from the seed scenarios)
+uv run python -m rca_evals.assets          # evals/rca/queries.jsonl and evaluators/*.json (from the cases and graders)
 ```
 
 ## Where things go
