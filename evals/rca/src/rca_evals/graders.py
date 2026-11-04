@@ -84,9 +84,8 @@ def _cited_refs(report: dict[str, object] | None) -> list[str]:
         entries: list[object] = list(evidence)  # pyright: ignore[reportUnknownArgumentType]
         for entry in entries:
             cited = _mapping(entry)
-            ref = _text(cited, "ref") if cited else ""
-            if ref:
-                refs.append(ref)
+            # An evidence item without a ref is an untraceable citation, so it stays in the list.
+            refs.append(_text(cited, "ref") if cited else "")
     return refs
 
 

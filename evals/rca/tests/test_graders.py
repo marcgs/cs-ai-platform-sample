@@ -74,6 +74,7 @@ def test_evidence_grounded_is_the_share_of_valid_citations() -> None:
         "response": _report("FM-01", refs=("EV-1", "EV-9")),
     }
     assert evidence_grounded(item) == 0.5
+    assert evidence_grounded({**item, "response": _report("FM-01", refs=("EV-1", ""))}) == 0.5
     assert evidence_grounded({**item, "response": _report("FM-01")}) == 0.0
     no_machine = {**item, "category": "missing_machine", "response": _report("unknown")}
     assert evidence_grounded(no_machine) == 1.0
