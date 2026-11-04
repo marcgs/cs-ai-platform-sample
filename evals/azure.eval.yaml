@@ -1,0 +1,30 @@
+evals:
+  - name: rca-quality
+    description: Basic quality evaluation for rca-agent
+    # A local source sends the rows with each run instead of publishing a dataset: dataset upload
+    # fails behind the project's private storage (docs/foundry-findings.md).
+    source:
+      type: local
+      file: ./rca/queries.jsonl
+    evaluationLevel: turn
+    # The judges get the final answer without the tool calls: they reject the hosted agent's
+    # tool-call arguments, which are strings. azd requires a tool_calls binding, so it points at
+    # the rows' null tool_calls column (docs/foundry-findings.md).
+    evaluators:
+      - evaluator: builtin.intent_resolution
+        initializationParameters:
+          model: gpt-5.4-mini
+        dataMapping:
+          query: "{{item.query}}"
+          response: "{{sample.output_text}}"
+          tool_calls: "{{item.tool_calls}}"
+      - evaluator: builtin.task_adherence
+        initializationParameters:
+          model: gpt-5.4-mini
+        dataMapping:
+          query: "{{item.query}}"
+          response: "{{sample.output_text}}"
+          tool_calls: "{{item.tool_calls}}"
+    target:
+      type: agent
+      name: rca-agent

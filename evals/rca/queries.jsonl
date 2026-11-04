@@ -1,0 +1,5 @@
+{"query": "M-0001: Recurring stage temperature errors and overlay correction warnings since yesterday.", "tool_calls": null}
+{"query": "M-0024: Focus out of tolerance on high-throughput recipes.", "tool_calls": null}
+{"query": "M-0027: Intermittent diagnostic alarm; please establish whether a physical fault exists.", "tool_calls": null}
+{"query": "An alarm was reported at shift handover, but the machine identifier and incident timestamp were not recorded. Can you identify the cause?", "tool_calls": null}
+{"query": "M-0037: Pump-down takes much longer than usual and we saw a pump-down timeout.", "tool_calls": null}

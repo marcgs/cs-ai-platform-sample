@@ -11,7 +11,7 @@ A reference sample that shows the path from **an agent prototype** to **an agent
 - Adding an agent: [`docs/onboarding-an-agent.md`](docs/onboarding-an-agent.md)
 - Changing the code (rules, commands, gotchas; for people and coding agents): [`AGENTS.md`](AGENTS.md)
 
-> **Evaluation is being rebuilt** the way Foundry documents it (`azd ai eval`, built-in and custom evaluators). Until then the sample has test cases but no evaluation. The earlier, self-built evaluation harness and the project's history are in the `before-cleanup` tag.
+> **Evaluation is being rebuilt** the way Foundry documents it (`azd ai eval`, built-in and custom evaluators). So far, two built-in judges score five test cases ([Evaluate](#evaluate)); nothing checks the answers against the answer key yet. The earlier, self-built evaluation harness and the project's history are in the `before-cleanup` tag.
 
 ## What runs where
 
@@ -59,6 +59,17 @@ uv run csai episodes show <episode-id>
 ```
 
 The agent answers with ranked hypotheses and their evidence, and the platform records the run as an episode. [`docs/walkthrough.md`](docs/walkthrough.md) takes it from there: questioning the answer in the playground, reviewing the episode and recording an expert verdict with `csai feedback`.
+
+### Evaluate
+
+```bash
+azd extension install azure.ai.evaluations   # once
+azd ai eval create rca-quality               # once per environment, and after changing evals/azure.eval.yaml
+
+azd ai eval run start --no-wait --name "rca-agent-$(azd env get-value AGENT_RCA_AGENT_VERSION)-$(date +%F)"
+```
+
+Foundry sends five test cases ([`evals/rca`](evals/rca/README.md#evaluation)) to the deployed agent and scores the answers with the intent resolution and task adherence judges. Results are in the Foundry portal under the project's evaluations, `rca-quality`; a run takes about five minutes and 150–350k tokens. `--no-wait` is needed: azd can't read this evaluation's runs back yet, and each `create` adds another evaluation with the same name ([findings](docs/foundry-findings.md#evaluation)).
 
 ### Clean up
 

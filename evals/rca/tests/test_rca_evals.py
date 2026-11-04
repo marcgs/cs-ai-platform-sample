@@ -1,4 +1,6 @@
+import json
 from collections import Counter
+from pathlib import Path
 
 from diagnostics_domain.dataset import load_seed
 from rca_evals import load_cases
@@ -16,6 +18,14 @@ def test_every_case_has_an_answer_key_and_a_split() -> None:
     assert len({case.id for case in cases}) == len(cases)
     assert all(case.truth is not None and case.split is not None for case in cases)
     assert Counter(case.split for case in cases)["test"] > 0
+
+
+def test_evaluation_queries_are_case_inputs() -> None:
+    queries = Path(__file__).parents[1] / "queries.jsonl"
+    rows = [json.loads(line) for line in queries.read_text(encoding="utf-8").splitlines()]
+    inputs = {case.input for case in load_cases()}
+    assert rows
+    assert all(row["query"] in inputs for row in rows)
 
 
 def test_manifest_preserves_persisted_machine_splits_on_extension() -> None:

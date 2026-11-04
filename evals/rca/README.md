@@ -23,4 +23,8 @@ uv run python -m rca_evals.manifest
 
 A test checks that the committed file matches the generator, and regeneration keeps existing train/test assignments.
 
-Evaluation itself is being rebuilt the way Foundry documents it. The earlier, self-built harness and its metrics are in the `before-cleanup` tag.
+## Evaluation
+
+Evaluation is being rebuilt the way Foundry documents it ([plan](../../docs/plan-evaluation.md)). So far, `../azure.eval.yaml` defines the `rca-quality` evaluation for `azd ai eval`: Foundry sends the five queries in `queries.jsonl` (SC-001, SC-022, SC-025, SC-033 and SC-035; a test checks they're case inputs) to the deployed agent and scores the answers with two built-in judges, intent resolution and task adherence. They don't know the answer key yet. The commands are in the [README](../../README.md#evaluate). The rows' `tool_calls` column is null on purpose: see the comment in `azure.eval.yaml`.
+
+The earlier, self-built harness and its metrics are in the `before-cleanup` tag.
