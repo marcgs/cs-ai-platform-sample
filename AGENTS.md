@@ -31,7 +31,7 @@ azd ai agent invoke "M-0007: ..."      # the deployed agent
 uv run csai episodes list              # recorded runs; csai feedback records an expert verdict
 ```
 
-Every change must leave ruff, pyright and pytest green. After changing agent instructions, schemas, tools or platform capture, try a few cases against the agent (`azd ai agent run` with the start command above, then `invoke --local`); it needs a deployed environment and costs tokens, so mention it when you skip it. Evaluation is being rebuilt the way Foundry documents it ([`docs/plan-evaluation.md`](docs/plan-evaluation.md)); until then there's no quality gate.
+Every change must leave ruff, pyright and pytest green. After changing agent instructions, schemas, tools or platform capture, try a few cases against the agent (`azd ai agent run` with the start command above, then `invoke --local`); it needs a deployed environment and costs tokens, so mention it when you skip it. Evaluation is being rebuilt the way Foundry documents it ([`docs/plan-evaluation.md`](docs/plan-evaluation.md)); `uv run python -m rca_evals.gate` checks a saved run against provisional criteria, pending step 4's measurement.
 
 Regenerated files are checked by tests. Regenerate them rather than editing by hand:
 

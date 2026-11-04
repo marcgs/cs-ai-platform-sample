@@ -189,15 +189,15 @@ Add a finding when you hit one, and update its status when you check it again. I
   - The concurrent session quota, delegated subnet addresses and model rate limits: the [limits page](https://learn.microsoft.com/azure/foundry/agents/concepts/limits-quotas-regions#limit-error-reference) gives them HTTP 429 with their own error codes, not 403. The run used 4 sandboxes and one request at a time.
 - **Not reproduced:** the same 50-case run on the same agent, started later that day (16:03 UTC, a new `rca-quality` evaluation with the republished evaluators), ran all 50 rows through one sandbox in 21 minutes without a single failed call. So it isn't a fixed limit such as a credential that expires 15 minutes into every run, which the first analysis suggested. The cause is unknown: most likely a transient failure on the service side around 14:31 UTC.
 - **Matters because:** a run can silently lose the rest of its rows. The run's status is `completed` with `errored: 0`; the judges mark the failed rows as errors, but the code evaluators score the empty answer 0, so a broken call looks like a wrong answer in the scores and the pass counts.
-- **Got past it:** reran the failed cases in a second run (queries file cut to those rows, then restored). Check the output items for `sample.error` before reading the scores. Batching isn't needed while it doesn't recur. Whatever turns scores into pass or fail must treat a row with `sample.error` as a failed run, never as a wrong answer.
+- **Got past it:** reran the failed cases in a second run (queries file cut to those rows, then restored). Check the output items for `sample.error` before reading the scores. Batching isn't needed while it doesn't recur. Whatever turns scores into pass or fail must treat a row with `sample.error` as a failed run, never as a wrong answer; `rca_evals.gate` does.
 - **Status:** seen once, not reproduced. Checked 2026-11-04.
 
 ### A code evaluator that fails in the sandbox scores 0
 
-- **Hit:** in the 50-case run, `decisive_evidence_recall` on one row recorded score 0 with status `completed` and `sample.error`: "An error occurred during grading". The same code on the same answer gives 0.67 locally on Python 3.9, and the other five code evaluators scored that row; 449 other code scores across four runs matched local scoring.
+- **Hit:** in the 50-case run, `decisive_evidence_recall` on one row recorded score 0 with status `completed` and `sample.error`: "An error occurred during grading". The same code on the same answer gives 0.67 locally on Python 3.9, and the other five code evaluators scored that row; 449 other code scores across four runs matched local scoring. The later 50-case repro has the same sandbox error on SC-005 in `hit_at_1`; all four gate metrics scored every applicable case.
 - **Matters because:** an evaluator failure looks like a wrong answer, and the run reports `errored: 0`.
-- **Got past it:** compare remote code scores with local scoring, or look for `sample.error` in the results. Not rerun.
-- **Status:** open, seen once. Checked 2026-11-04.
+- **Got past it:** inspect each evaluator's nested `sample.error`, not just its status or zero score. `rca_evals.gate` treats errors in its four gate metrics as fatal, excluding the affected scores. Errors in the other evaluators are reported as non-gating diagnostics, an explicit gate-policy choice; no results are repaired or rescored.
+- **Status:** open, seen in two runs. Checked 2026-11-04.
 
 ### azd reads a code evaluator's data schema differently from the docs
 
@@ -275,6 +275,13 @@ Add a finding when you hit one, and update its status when you check it again. I
 - **Matters because:** a reviewed `azure.yaml` loses its explanations, and repeated creates (or, with the service, every `azd up`) leave several evals with the same name in the project.
 - **Got past it:** restored `azure.yaml` and left the service out; the `azd ai eval` commands don't need it. Run `create` once per environment and after configuration changes, and delete stale evals.
 - **Status:** open (`azure.ai.evaluations` 1.0.0-beta.2). Checked 2026-11-04.
+
+### azd's pass-rate gate cannot express the RCA gate
+
+- **Hit:** [Test a hosted agent](https://learn.microsoft.com/azure/foundry/agents/how-to/test-hosted-agent#run-structured-evaluations) points to the optional evaluations extension's [CI gate](https://learn.microsoft.com/azure/foundry/agents/how-to/set-up-ci-cd-cli#verify-with-eval-in-ci). Installed `run start --help` and `run show --help` offer `--fail-on any-failure` or `--fail-on pass-rate=<0..1>`: passed cases divided by all cases, with errored, skipped and unpassed cases counting against the rate. Neither expresses separate per-metric minimum means over `applicable_metrics`, a hard injection check, and errors reported independently of wrong answers. Reading the existing repro with `run show --fail-on pass-rate=0.8` also reproduced the local-source JSON parsing failure above; no run was started.
+- **Matters because:** a headline pass rate both includes placeholder scores on non-applicable cases and confuses broken calls with quality failures. Requiring every evaluator to pass also prevents keeping some evaluators diagnostic-only.
+- **Got past it:** the read-only `uv run python -m rca_evals.gate` uses the project's OpenAI client, paginates saved results and applies the four criteria in `evals/rca/gate.json`. Agent errors and gate-evaluator errors fail separately from quality; other evaluator errors remain visible diagnostics. No CI pipeline, retries or extra evaluation runs.
+- **Status:** by design for pass-rate semantics; readback bug remains open. Checked 2026-11-04.
 
 ## Deployment and tooling
 

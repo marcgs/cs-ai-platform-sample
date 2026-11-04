@@ -64,7 +64,7 @@ flowchart LR
 | **C4** Knowledge grounding | AI Search index `diagnostics-cases` (historical cases), keyword + semantic + vector search with a Foundry vectorizer, exposed through the same toolbox. Seeded by `scripts/setup_platform.py seed-search`. |
 | **C5** Episode store | `cs_platform.capture` middleware records every run (input, tool calls with arguments, results and durations, structured output, tokens, trace ID) in Cosmos DB; feedback is attached through the platform API. |
 | **C6** Observability | OpenTelemetry via the Microsoft OpenTelemetry distro to Application Insights; Foundry's trace views read from the connected workspace. |
-| **C7** Evaluation | Being rebuilt with Foundry evaluation (`azd ai eval`, built-in and custom evaluators). Today: the 50 test cases with answer keys in `evals/rca`, the project capability host and the evaluation storage ([ADR 0008](adr/0008-evaluation-storage-network-exception.md)). |
+| **C7** Evaluation | Foundry evaluation (`azd ai eval`, two judges and six answer-key code evaluators) on 50 test cases in `evals/rca`. `rca_evals.gate` checks saved results against provisional applicability-aware criteria. The project capability host and evaluation storage enable evaluation in this network ([ADR 0008](adr/0008-evaluation-storage-network-exception.md)). Measurement and threshold calibration remain. |
 | **C8** Identity and security | Entra everywhere, `disableLocalAuth` on Foundry, Cosmos DB and Search; no shared keys on storage; data stores private (ADR 0003). The one secret, the MCP function key, never leaves Azure. |
 | **C9** Delivery path | Bicep + azd (`azd up` from an empty subscription), pre-commit gates, documented pipeline (`docs/ci-cd.md`). |
 
