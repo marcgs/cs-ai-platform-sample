@@ -29,7 +29,7 @@ Everything else goes under [Later](#later) as one line, or is left out. Items re
 
 ## Q. Evaluation you can trust
 
-The gate and its rules are [ADR 0009](adr/0009-evaluation-system-design.md): four outcome metrics, judges report only, and more cases rather than more metrics. Where it runs is [ADR 0010](adr/0010-evaluation-runs-in-foundry.md): in Foundry, platform first. Q21–Q27 are iteration 5's candidate scope, in order.
+The gate and its rules are [ADR 0009](adr/0009-evaluation-system-design.md): four outcome metrics, judges report only, and more cases rather than more metrics. Where it runs is [ADR 0010](adr/0010-evaluation-runs-in-foundry.md): in Foundry, platform first. Iteration 5 takes Q21–Q25 and Q27 ([plan](plan-iteration-5.md)).
 
 | ID | Item | Why | Explores | Size | Target |
 |---|---|---|---|---|---|
@@ -39,13 +39,13 @@ The gate and its rules are [ADR 0009](adr/0009-evaluation-system-design.md): fou
 | Q18 | **Judges checked against expert labels** | A model judge can only join the gate once its agreement with experts is measured on the same cases. | Foundry evaluators | S | |
 | Q19 | **Grow thin cohorts** | Four injection cases and twelve missing-machine cases give intervals too wide to act on; the gate and the learner need more cases, not more metrics. | | M | |
 | Q20 | **Foundry-run agent evaluation** | Foundry's own flow calls the hosted agent and scores it; we've only sent Foundry our results. Shows what a team gets from Foundry alone, compared with our harness. | Foundry agent-target evaluation, `azd ai agent eval` | M | done, spike ([#34](https://github.com/marcgs/cs-ai-platform-sample/pull/34), [#37](https://github.com/marcgs/cs-ai-platform-sample/pull/37)) |
-| Q21 | **Fix the hosting adapter's tool-call arguments and usage** | The hosted agent's Responses output duplicates tool-call arguments and over-reports tokens about 2.8 times, which breaks tool judges and cost tracking. | Agent Framework hosting | S | |
-| Q22 | **One evaluation recipe, one command** | Evaluation should be an `eval.yaml` and one `azd` command, as in Microsoft's quickstart, not our scripts. First try a single run (agent plus all evaluators), timeboxed; otherwise two steps. | `azd ai eval`, Foundry agent-target evaluation, code evaluators | M | |
-| Q23 | **Gate from Foundry results** | Foundry reports pass counts per evaluator; the gate needs means and a hard check, computed from the run's results. | Foundry evaluation API | S | |
-| Q24 | **Smaller judge inputs and datasets** | Tool judges get every tool result (about 22k tokens per case for four judges), and wide dataset rows bury the scores in the portal. | Foundry evaluator data mapping | S | |
-| Q25 | **Baseline in Foundry** | Thresholds are provisional until a three-repeat baseline is measured in the setup we keep; repeats and comparison are untested. | Foundry run comparison | M | |
+| Q21 | **Fix the hosting adapter's tool-call arguments and usage** | The hosted agent's Responses output duplicates tool-call arguments and over-reports tokens about 2.8 times, which breaks tool judges and cost tracking. | Agent Framework hosting | S | it5 |
+| Q22 | **One evaluation recipe, one command** | Evaluation should be an `eval.yaml` and one `azd` command, as in Microsoft's quickstart, not our scripts. First try a single run (agent plus all evaluators), timeboxed; otherwise two steps. | `azd ai eval`, Foundry agent-target evaluation, code evaluators | M | it5 |
+| Q23 | **Gate from Foundry results** | Foundry reports pass counts per evaluator; the gate needs means and a hard check, computed from the run's results. | Foundry evaluation API | S | it5 |
+| Q24 | **Smaller judge inputs and datasets** | Tool judges get every tool result (about 22k tokens per case for four judges), and wide dataset rows bury the scores in the portal. | Foundry evaluator data mapping | S | it5 |
+| Q25 | **Baseline in Foundry** | Thresholds are provisional until a three-repeat baseline is measured in the setup we keep; repeats and comparison are untested. | Foundry run comparison | M | it5 |
 | Q26 | **Agent Framework evaluation locally** | Development runs should use Agent Framework's `evaluate_agent` with the same evaluators, instead of our harness. | Agent Framework evaluation | M | |
-| Q27 | **Retire our evaluation harness** | Once Q22 and Q25 work, our local runner, publisher and spike scripts duplicate the platform. | | M | |
+| Q27 | **Retire our evaluation harness** | Once Q22 and Q25 work, our local runner, publisher and spike scripts duplicate the platform. | | M | it5 |
 | Q5 | **Cost and latency per diagnosis** | Time to diagnosis is the main outcome, and cost decides the model. | Foundry tracing | S | |
 | Q6 | **Ask instead of guess** | Given a symptom without a machine, the agent picks one and diagnoses it; the report can't ask a question. | | S | |
 
