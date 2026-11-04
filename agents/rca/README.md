@@ -32,10 +32,10 @@ The toolbox's search entry has a diagnostic-specific `description` (the [AzureAI
 
 ## Run locally
 
-With a deployed environment, run the agent on your machine against the deployed models and toolbox:
+With a deployed environment, run the agent on your machine against the deployed models and toolbox. azd can't detect the entry point of a module in a uv workspace, so pass it as the start command (not as `startupCommand` in `azure.yaml`, which would also change how the deployed container starts):
 
 ```bash
-azd ai agent run                                                              # terminal 1
+azd ai agent run rca-agent --start-command "uv run python -m rca_agent.main"   # terminal 1
 azd ai agent invoke --local "M-0001: overlay getting worse, stage temperature alarm this morning"  # terminal 2
 ```
 

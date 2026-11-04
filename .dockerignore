@@ -4,6 +4,9 @@
 .claude
 .azure
 .eval-results
+# Private reports from the removed analysis tooling may still exist in old checkouts.
+analysis-output
+analysis/episodes/output
 **/.venv
 **/__pycache__
 **/.pytest_cache

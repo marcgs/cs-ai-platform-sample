@@ -45,7 +45,7 @@ To show the agent's reports readably in `csai episodes show`, add its output typ
 Add an `azure.ai.agent` service to `azure.yaml`, copying `rca-agent`: the `prepackage` export hook, `docker` settings (context `../..`), `env` (`AZURE_AI_MODEL_DEPLOYMENT_NAME`, `TOOLBOX_ENDPOINT`, `COSMOS_*`, `PYTHONNOUSERSITE`) and the `postdeploy` hook that grants its identity the Cosmos DB role (`AZD_AGENT_SERVICE=<service> ... grant-agent`; azd records the identity as `AGENT_<SERVICE>_INSTANCE_IDENTITY_PRINCIPAL_ID`).
 
 ```bash
-azd ai agent run                                   # try it locally first
+azd ai agent run maintenance-planner --start-command "uv run python -m maintenance_planner.main"   # try it locally first
 azd ai agent invoke --local "…"
 azd deploy maintenance-planner
 azd ai agent invoke maintenance-planner "…"         # check what's live
@@ -56,5 +56,5 @@ azd ai agent invoke maintenance-planner "…"         # check what's live
 - [ ] Spec, instructions and output schema; offline tests pass
 - [ ] Tools reachable through a toolbox; no secrets in code or settings
 - [ ] Test cases with answer keys, generated and reviewed like code
-- [ ] Runs locally with `azd ai agent run`
+- [ ] Runs locally with `azd ai agent run … --start-command …`
 - [ ] Deployed with azd; `azd ai agent invoke` works; episodes visible with `csai episodes list`

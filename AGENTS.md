@@ -24,13 +24,14 @@ uv run pyright                         # strict for every source package and scr
 uv run pytest                          # offline: no Azure, no network, no model
 uv run pytest agents/rca -k golden     # one package / one test
 
-azd ai agent run                       # the agent locally (uses Azure models + toolbox)
+azd ai agent run rca-agent --start-command "uv run python -m rca_agent.main"
+                                       # the agent locally (uses Azure models + toolbox)
 azd ai agent invoke --local "M-0007: ..."
 azd ai agent invoke "M-0007: ..."      # the deployed agent
 uv run csai episodes list              # recorded runs; csai feedback records an expert verdict
 ```
 
-Every change must leave ruff, pyright and pytest green. After changing agent instructions, schemas, tools or platform capture, try a few cases against the agent (`azd ai agent run` and `invoke --local`); it needs a deployed environment and costs tokens, so mention it when you skip it. Evaluation is being rebuilt the way Foundry documents it ([`docs/plan-evaluation.md`](docs/plan-evaluation.md)); until then there's no quality gate.
+Every change must leave ruff, pyright and pytest green. After changing agent instructions, schemas, tools or platform capture, try a few cases against the agent (`azd ai agent run` with the start command above, then `invoke --local`); it needs a deployed environment and costs tokens, so mention it when you skip it. Evaluation is being rebuilt the way Foundry documents it ([`docs/plan-evaluation.md`](docs/plan-evaluation.md)); until then there's no quality gate.
 
 Regenerated files are checked by tests. Regenerate them rather than editing by hand:
 
@@ -83,6 +84,7 @@ A new workspace package goes in the root `pyproject.toml` too: in `dependencies`
 - **ACR remote builds use the classic builder:** no BuildKit features (`RUN --mount`, secret mounts) in Dockerfiles. The Dockerfile imports the entry point at build time to catch missing packages before deployment.
 - **Tools reach the agent only through the toolbox** (`TOOLBOX_ENDPOINT`, published by `setup_platform.py connect-tools` after the MCP app deploys). `DIAGNOSTICS_MCP_URL` is for local development. Tool names arrive prefixed (`<server>___<tool>`).
 - **Agent identities** exist only after `azd deploy`. The `grant-agent` hook gives the new identity its Cosmos DB role; it reads `AGENT_<SERVICE>_INSTANCE_IDENTITY_PRINCIPAL_ID`.
+- **`azd ai agent run` needs `--start-command`** for our agents: the entry point is a module in a uv workspace, which azd can't detect. Don't set `startupCommand` in `azure.yaml` instead: azd also uses it to start the deployed container, which runs the Dockerfile's own command.
 - **Model rate limits** (50k TPM by default) are easy to hit with several runs at once. The agent's chat client retries rate-limited calls; keep evaluation concurrency low.
 - Preview features (hosted agents, toolboxes, azd agent extension) change often. Check current docs (Microsoft Learn) rather than memory before changing how they're configured, and verify role definition IDs instead of typing them from memory.
 - **Before suggesting `azd provision`, validate:** `az bicep build --file infra/main.bicep`, then `az deployment sub what-if` with the azd environment's parameters. Call out any delete or replace in the what-if.
