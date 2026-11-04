@@ -135,16 +135,16 @@ Add a finding when you hit one, and update its status when you check it again. I
 
 ### Code evaluators can't say "doesn't apply"
 
-- **Hit:** a code evaluator's `grade(sample, item)` must return a float. Metrics that apply only to some cases, such as injection resistance, have no valid score on the others.
-- **Matters because:** a 0 or 1 on non-applicable cases distorts the result, so one suite ends up split across several evaluations.
-- **Got past it:** one evaluation per such metric, each over its applicable cases only. Endpoint evaluators can return `skipped`, but need a hosted endpoint (not tried).
+- **Hit:** a code evaluator's `grade(sample, item)` must return a float. Metrics that apply only to some cases, such as injection resistance, have no valid score on the others. Returning `None` doesn't skip the row: Foundry records it as an error with score 0, "An error occurred during grading", although run results do have a `skipped` count. The docs don't describe a way to skip.
+- **Matters because:** a 0 or 1 on non-applicable cases distorts the result, and an error should mean the evaluator failed.
+- **Got past it:** `decisive_evidence_recall` and `injection_resisted` score 1.0 on cases they don't apply to, and each dataset row lists its `applicable_metrics` so means can be taken over the cases that count. The portal's pass counts for those two still include the other cases. Endpoint evaluators can return `skipped`, but need a hosted endpoint (backlog Q29).
 - **Status:** open (preview). Checked 2026-11-04.
 
 ### The code evaluator sandbox restricts Python
 
 - **Hit:** the first code evaluator failed before scoring because the sandbox disallows `globals()`, which our Pydantic setup used. Code evaluators also have no network access and 2 minutes per call.
 - **Matters because:** existing scoring code may need changes to run in Foundry.
-- **Got past it:** plain, definition-order annotations. With that, 532 of 532 scores on 50 cases matched our local evaluators exactly.
+- **Got past it:** plain, definition-order annotations. With that, 532 of 532 scores on 50 cases matched our local evaluators exactly. The sandbox's Python version isn't documented, so `rca_evals.graders` uses only the standard library and runs on Python 3.9 too (`from __future__ import annotations`).
 - **Status:** by design. Checked 2026-11-04.
 
 ### The portal shows pass counts, not means
@@ -172,8 +172,53 @@ Add a finding when you hit one, and update its status when you check it again. I
 
 - **Hit:** combining an agent target with our code evaluators in one SDK-created run failed three times with zero rows and no detail: "All examples failed due to invalid user input; please check the individual sample outputs for details."
 - **Matters because:** the simplest setup (Foundry calls the agent and scores it with our metrics in one run) isn't proven.
-- **Got past it:** two runs: one where Foundry calls the agent, one that scores the saved outputs.
-- **Status:** open, cause unknown. Checked 2026-11-04.
+- **Got past it:** two runs at first: one where Foundry calls the agent, one that scores the saved outputs. With `azd ai eval` and the evaluators' `data_schema` flat (see [the next finding](#azd-reads-a-code-evaluators-data-schema-differently-from-the-docs)), one run works: the agent, two judges and six code evaluators scored every row. Whether the item envelope caused the SDK failures isn't proven.
+- **Status:** works with `azd ai eval`; the SDK failure's cause is unknown. Checked 2026-11-04.
+
+### An evaluation run's agent calls stop working after about 14 minutes
+
+- **Hit:** in a 50-case run (agent target, `azd ai eval run start`), the first 32 rows in dataset order worked and the last 18 (six categories) all failed with `TARGET_INVOCATION_FAILED`: "(UserError) Error code: 424 - {'error': 'CustomerManagedDownstreamError', 'message': 'Data proxy returned 424 because the customer-managed downstream service responded with 403. …', 'innerStatusCode': 403}". The evaluation service's telemetry shows agent calls from 14:17:20 to 14:31:22 UTC: 32 succeeded, the 33rd failed after 33 seconds although the agent finished its work, and the rest never reached the agent. The agent's own telemetry has no errors. Three of the failed cases then worked in a run of their own, and the 18 in one more run. The [limits](https://learn.microsoft.com/azure/foundry/concepts/evaluation-regions-limits-virtual-network#rate-limits) list only row size and row count, and the [troubleshooting](https://learn.microsoft.com/azure/foundry/observability/how-to/cloud-evaluation-results#troubleshoot-cloud-evaluation) 403 advice is about the caller's own credentials.
+- **What the agent's telemetry adds** (Log Analytics, by episode span):
+  - The service sends rows one at a time, never in parallel.
+  - The 33rd row (SC-033) reached the agent 14.2 minutes after the run started, and the agent stored its answer at 14.5 minutes. Foundry still recorded that row as failed: it couldn't collect an answer that existed. From then on, every call failed at once.
+  - Every row took about 17 or 33 seconds, even when the agent finished in 7. The service appears to check for the answer about every 16.5 seconds, which roughly doubles a run's duration.
+- **Ruled out:**
+  - The cases: all 18 succeeded when rerun, and SC-033 was answered.
+  - The agent: it answered row 33 normally and logged no errors.
+  - The session idle timeout (15 minutes by default): requests arrived continuously.
+  - The concurrent session quota, delegated subnet addresses and model rate limits: the [limits page](https://learn.microsoft.com/azure/foundry/agents/concepts/limits-quotas-regions#limit-error-reference) gives them HTTP 429 with their own error codes, not 403. The run used 4 sandboxes and one request at a time.
+- **Most likely cause:** in a network-injected project, the evaluation service reaches the hosted agent through the project's data proxy. A permission error (403) that starts at a fixed point about 14.5 minutes after the run starts fits a credential obtained at run start, valid for about 15 minutes and not refreshed. That's inferred from the outside, not confirmed; only Microsoft can confirm it.
+- **Matters because:** a run longer than about 14 minutes silently loses the rest of its rows. The run's status is `completed` with `errored: 0`; the judges mark the failed rows as errors, but the code evaluators score the empty answer 0, so a broken call looks like a wrong answer in the scores and the pass counts. With the polling delay, that's about 30 cases.
+- **Got past it:** reran the failed cases in a second run (queries file cut to those rows, then restored). Check the output items for `sample.error` before reading the scores. Until it's fixed, split the cases into batches that each finish well within 14 minutes (25 cases take about 11).
+- **Status:** open; likely cause identified, not confirmed. Checked 2026-11-04.
+
+### A code evaluator that fails in the sandbox scores 0
+
+- **Hit:** in the 50-case run, `decisive_evidence_recall` on one row recorded score 0 with status `completed` and `sample.error`: "An error occurred during grading". The same code on the same answer gives 0.67 locally on Python 3.9, and the other five code evaluators scored that row; 449 other code scores across four runs matched local scoring.
+- **Matters because:** an evaluator failure looks like a wrong answer, and the run reports `errored: 0`.
+- **Got past it:** compare remote code scores with local scoring, or look for `sample.error` in the results. Not rerun.
+- **Status:** open, seen once. Checked 2026-11-04.
+
+### azd reads a code evaluator's data schema differently from the docs
+
+- **Hit:** the [custom evaluators](https://learn.microsoft.com/azure/foundry/concepts/evaluation-evaluators/custom-evaluators) docs declare a code evaluator's inputs inside an `item` envelope (`data_schema.required: ["item"]`). `azd ai eval create` reads that as one input named `item`: "evaluator "hit_at_1" requires mapped inputs "item" that the selected source does not provide". The extension's README only describes rubric evaluators, but a code evaluator file in `evaluators: [{source: …}]` is accepted.
+- **Matters because:** the documented code evaluator definition can't be used as written with azd.
+- **Got past it:** followed azd: a flat `data_schema` listing the mapped inputs, as the docs' prompt evaluator example does (`rca_evals.assets`). azd also adds its default `query`, `tool_calls` and `tool_definitions` bindings to every evaluator; the code evaluators ignore them.
+- **Status:** open (`azure.ai.evaluations` 1.0.0-beta.2). Checked 2026-11-04.
+
+### An evaluation's evaluators can't be changed
+
+- **Hit:** updating an evaluation (`POST /openai/v1/evals/{id}`) with new `testing_criteria` returns 200 but keeps the old ones; the API reference lists only the name and metadata as updatable.
+- **Matters because:** adding an evaluator means a new evaluation, and the runs of the old one stay with it.
+- **Got past it:** `azd ai eval create rca-quality` after changing `evals/azure.eval.yaml`, then delete the previous evaluation.
+- **Status:** by design. Checked 2026-11-04.
+
+### `azure.eval.yaml` doesn't expand environment variables
+
+- **Hit:** `model: ${FOUNDRY_MODEL_DEPLOYMENT_NAME}` reached the service as written: "Model '${FOUNDRY_MODEL_DEPLOYMENT_NAME}' was not found". The extension's README doesn't mention substitution.
+- **Matters because:** the judge model's deployment name is written in the file instead of coming from the azd environment, and has to be changed by hand with the deployment.
+- **Got past it:** wrote out the environment's deployment name (`gpt-5.4-mini`), with a comment saying where it comes from.
+- **Status:** open (`azure.ai.evaluations` 1.0.0-beta.2). Checked 2026-11-04.
 
 ### Dataset upload fails behind private storage
 
@@ -186,7 +231,7 @@ Add a finding when you hit one, and update its status when you check it again. I
 
 - **Hit:** with long agent outputs, `sample.output` is empty and `_raisvc_content_omission` says `size_limit`.
 - **Matters because:** evaluators mapped to `sample.output` get nothing.
-- **Got past it:** map `{{sample.output_text}}` for the answer and `{{sample.output_items}}` for tool calls.
+- **Got past it:** map `{{sample.output_text}}` for the answer and `{{sample.output_items}}` for tool calls. Evaluators still get the answer when the stored item's `sample.output` is empty; to read an answer back, use a judge's recorded input.
 - **Status:** by design. Checked 2026-11-04.
 
 ### Judge usage is reported twice
