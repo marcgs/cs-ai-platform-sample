@@ -126,13 +126,7 @@ Do not treat reviews or their first embedded copy as authoritative labels.
 For real local runs, use `cs_platform.episode_io.export_episodes` into
 `generated/real-episodes/`, never the synthetic destination. Import requires an
 explicit matching source label on every episode. These helpers never write to an
-episode store or combine populations; synthetic data is not a real eval gate.
-
-The local `csai diagnose` / `csai eval` episode-export flags are a cross-topic
-dependency supplied by Q2; this branch is stacked on that implementation.
-They are not part of the L2 diff. Library export and synthetic generation work
-without that CLI dependency.
-See [L2 validation and publication dependencies](../../docs/iteration-3/l2.md).
+episode store or combine populations; synthetic feedback is never treated as real.
 
 The domain package depends on the platform's episode boundary models. The platform
 does not depend on this domain or import its generator.

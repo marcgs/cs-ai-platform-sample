@@ -1,14 +1,14 @@
-# Architecture (iteration 1)
+# Architecture
 
-The sample is a minimal CS AI platform with one agent on it. The platform provides the cross-cutting parts once (model access, tools, knowledge, episodes, telemetry, evaluation, deployment); the RCA agent is a spec, instructions, an output schema and an eval suite.
+The sample is a minimal CS AI platform with one agent on it. The platform provides the cross-cutting parts once (model access, tools, knowledge, episodes, telemetry, deployment); the RCA agent is a spec, instructions, an output schema and its test cases.
 
 ## Components
 
 ```mermaid
 flowchart LR
     subgraph dev["Developer / SME machine"]
-        csai["csai CLI<br/>diagnose · eval · episodes · feedback"]
-        local["rca-local / csai --target local<br/>(agent in-process)"]
+        azdcli["azd<br/>provision · deploy · agent run / invoke / monitor"]
+        csai["csai CLI<br/>episodes · feedback"]
     end
 
     subgraph foundry["Microsoft Foundry (account + project, public, Entra only)"]
@@ -32,10 +32,8 @@ flowchart LR
     acr["Container registry<br/>(remote builds)"]
     appi["Application Insights<br/>Log Analytics"]
 
-    csai -- "Responses API (Entra)" --> agent
+    azdcli -- "Responses API (Entra)" --> agent
     csai -- "function key via Azure RBAC" --> api
-    local --> model
-    local --> toolbox
     agent --> model
     agent -- MCP --> toolbox
     toolbox -- "x-functions-key" --> mcp
@@ -66,18 +64,18 @@ flowchart LR
 | **C4** Knowledge grounding | AI Search index `diagnostics-cases` (historical cases), keyword + semantic + vector search with a Foundry vectorizer, exposed through the same toolbox. Seeded by `scripts/setup_platform.py seed-search`. |
 | **C5** Episode store | `cs_platform.capture` middleware records every run (input, tool calls with arguments, results and durations, structured output, tokens, trace ID) in Cosmos DB; feedback is attached through the platform API. |
 | **C6** Observability | OpenTelemetry via the Microsoft OpenTelemetry distro to Application Insights; Foundry's trace views read from the connected workspace. |
-| **C7** Evaluation | `cs_platform.evals` harness + `evals/rca` suite; local/hosted `csai eval` gates minimum means for lenient correctness, decisive evidence recall and grounded evidence, plus a hard injection-resistance check across every applicable original/challenge case. Invalid reports score zero and are counted; only true plumbing is excluded. Feedback stays report-only until a measured baseline. Exit 1 means a failed gate or incomplete run. The local gate stays the reference/fallback during the [Foundry-native spike](spike-foundry-native-eval.md); saved-run publication never changes it ([ADR 0009](adr/0009-evaluation-system-design.md)). |
+| **C7** Evaluation | Being rebuilt with Foundry evaluation (`azd ai eval`, built-in and custom evaluators). Today: the 50 test cases with answer keys in `evals/rca`, the project capability host and the evaluation storage ([ADR 0008](adr/0008-evaluation-storage-network-exception.md)). |
 | **C8** Identity and security | Entra everywhere, `disableLocalAuth` on Foundry, Cosmos DB and Search; no shared keys on storage; data stores private (ADR 0003). The one secret, the MCP function key, never leaves Azure. |
 | **C9** Delivery path | Bicep + azd (`azd up` from an empty subscription), pre-commit gates, documented pipeline (`docs/ci-cd.md`). |
 
 ## A diagnosis, end to end
 
-1. `csai diagnose "M-0001: ..."` sends the incident to the hosted agent's Responses endpoint with the user's Entra token.
+1. `azd ai agent invoke "M-0001: ..."` (or the playground, or any Responses client) sends the incident to the hosted agent's Responses endpoint with the user's Entra token.
 2. Foundry starts (or reuses) a session of the `rca-agent` container in the agent subnet.
 3. The harness opens an episode, then Agent Framework runs the model loop: the model calls `get_machine_context`, `get_error_events`, `lookup_error_code`, `get_telemetry_window`, `get_logbook` (and optionally `azure_ai_search`) through the toolbox; the capture middleware records every call.
 4. The model returns an `RcaReport` (strict structured output): ranked hypotheses, each with cited refs.
 5. The harness completes the episode and writes it to Cosmos DB over its private endpoint, as the agent's identity.
-6. `csai` prints the report and derives the episode's point-read key from the host-issued Responses ID. It uses bounded polling through the platform API and verifies the stored `hosted_response_id`; it never selects an episode by incident text, time or session. An expert attaches a verdict with `csai feedback`.
+6. The caller gets the report. The episode stores the host-issued Responses ID (`hosted_response_id`), so a response can be matched to its episode exactly. `csai episodes` reads episodes through the platform API, and an expert attaches a verdict with `csai feedback`.
 
 ## Identities and access
 
@@ -121,31 +119,7 @@ RAI/upgrade policies explicitly, so reprovisioning does not reset them.
 
 ### Provision and deploy
 
-Evaluation storage uses a separate Standard LRS account,
-not the Functions account. It disables public networking, shared keys and
-anonymous blobs. One blob private endpoint reuses the existing subnet and DNS
-zone. A separately approved `AzureServices` trusted-service exception admits
-eligible authenticated traffic over the public service endpoint despite public
-access Disabled; this is not a private-link-only design. The narrower account
-resource-instance rule is retained. See [ADR 0008](adr/0008-evaluation-storage-network-exception.md).
-The Foundry project identity receives Blob Data Contributor only on this
-dedicated account, and an `AzureStorageAccount` connection uses Entra (`AAD`).
-No developer or account-wide storage role is added.
-
-Its names, ID, endpoint and connection name are Bicep outputs named
-`EVALUATION_STORAGE_*`, retained in the azd environment rather than tracked
-configuration. Provision, hosted/API smoke checks and one 50-row evaluation
-completed. The user confirmed the rows, code/judge scores and version labels in
-the portal. The publisher now derives higher-is-better `calibration_score`
-from the raw Brier loss, without changing saved observations or local gates.
-Common-score parity passes at absolute tolerance `1e-12`; the new definition
-has not been published and sparse parity remains a retained limitation.
-Judges-only publication (#29) is closed/unmerged, superseded by the
-[#31 spike](spike-foundry-native-eval.md). Main retains the existing publisher;
-no migration or republication is part of close-out. The three-repeat baseline,
-its publication and Q17 follow the spike decision.
-See [Q9 acceptance evidence](iteration-4/q9.md) and the
-[close-out record](iteration-4/close-out.md).
+Evaluation storage is a separate account with public networking, shared keys and anonymous blobs disabled, a blob private endpoint, and Blob Data Contributor for the Foundry project only, connected to the project with Entra. Its firewall allows trusted Azure services, because Foundry's evaluation service doesn't reach it through the private endpoint ([ADR 0008](adr/0008-evaluation-storage-network-exception.md)). Its names, ID and endpoint are Bicep outputs named `EVALUATION_STORAGE_*`.
 
 `azd up` runs, in order:
 

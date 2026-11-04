@@ -26,7 +26,7 @@ Preview features (hosted agents, toolboxes) move around in the portals. If a men
 ## The map
 
 ```text
-                      you: csai, or the Foundry playground
+                      you: azd, csai, or the Foundry playground
                                    │ Entra
              ┌─────────────────────▼──────────────────────┐
              │ Foundry project                            │
@@ -81,7 +81,7 @@ Some settings weren't produced by Bicep. `TOOLBOX_ENDPOINT` was written by a dep
 **Look.** In the Foundry portal, open your project's **Models** or **Deployments** page.
 
 - The chat model serves the agent. The embedding model turns text into vectors for AI Search.
-- Open the chat deployment and find its **rate limit** in tokens per minute. A diagnosis uses about 10–15k tokens, so a few parallel runs reach the default limit. That's why `csai eval` runs only three cases at a time and retries.
+- Open the chat deployment and find its **rate limit** in tokens per minute. A diagnosis uses about 10–15k tokens, so a few parallel runs reach the default limit. That's why the agent's chat client retries rate-limited calls.
 
 **Try.**
 
@@ -101,7 +101,7 @@ az cognitiveservices account deployment list -g $RG -n $AZURE_AI_ACCOUNT_NAME \
 - In the Foundry portal, open **Agents → rca-agent**:
   - **Versions:** one per deployment.
   - The **container** settings: image, CPU and memory, environment variables. `TOOLBOX_ENDPOINT` and `COSMOS_*` are how the agent finds its tools and its store.
-  - The **playground**: paste an input from [`cases.jsonl`](../evals/rca/src/rca_evals/cases.jsonl) and watch the tool calls.
+  - The **playground**: paste an input from the [test cases](../evals/rca/README.md) and watch the tool calls.
 - In the Azure portal, open the container registry's **Repositories**. There's one tag per deployment, and each image was built in Azure from the repository, not on your machine.
 
 **Try.**
@@ -138,7 +138,7 @@ Run a diagnosis ([walkthrough step 2](walkthrough.md#2-diagnose-it)), then read 
 sed -n '/^def toolbox_definition/,/^def /p' scripts/setup_platform.py
 ```
 
-Then open an episode ([walkthrough step 4](walkthrough.md#4-review-the-episode)). Tool names arrive prefixed with the server label, and every call's duration is recorded. The durations show the cost of the toolbox hop: each call takes several seconds through the toolbox, against about 50 ms when the agent calls the MCP server directly. Iteration 2 measured it ([A6](iteration-2/a6-latency.md)); no supported remedy was found.
+Then open an episode ([walkthrough step 4](walkthrough.md#4-review-the-episode)). Tool names arrive prefixed with the server label, and every call's duration is recorded. The durations show the cost of the toolbox hop: each call takes several seconds through the toolbox, against about 50 ms when the agent calls the MCP server directly. Part of it is queueing: the calls run one at a time ([Foundry findings](foundry-findings.md#toolbox-mcp-calls-run-one-at-a-time)).
 
 To work with the tools themselves, run the MCP server locally and open it in the MCP Inspector ([`services/diagnostics-mcp/README.md`](../services/diagnostics-mcp/README.md#run-locally)). Call `get_telemetry_window` for `M-0007` and `purge_gas_flow_slm`, and look for the trend and the first out-of-tolerance reading.
 
@@ -172,7 +172,7 @@ az rest --method post --resource https://search.azure.com \
   --query "value[].[failure_mode_id,title]" -o tsv
 ```
 
-Then check how often the agent actually searches. `csai eval` reports `used_knowledge`. Before iteration 2 it was close to 0: the tool worked, but the model rarely chose to call it. Iteration 2 made historical search required when the tool is available ([A2](plan-iteration-2.md#a2-knowledge-search)).
+Then check in a few episodes how often the agent actually searches. Early on it rarely did: the tool worked, but the model seldom chose to call it, so the instructions now require a historical search when the tool is available.
 
 **Check yourself.** (5) The search service needs a role on the Foundry account, and the Foundry project needs roles on the search service. What is each one for?
 
@@ -254,21 +254,19 @@ dependencies
 
 **Check yourself.** (8) Why does the episode store the trace ID, when Application Insights already has the traces?
 
-### Stop 9: Evaluation as a quality gate
+### Stop 9: Evaluation
 
-**The idea.** Quality is measured, not assumed. A versioned **case manifest** ([`cases.jsonl`](../evals/rca/src/rca_evals/cases.jsonl), 18 synthetic incidents with the expected root cause) is scored by plain-code evaluators ([`evaluators.py`](../evals/rca/src/rca_evals/evaluators.py)), run by the platform's harness (`cs_platform/evals.py`). Each gated metric has a minimum in [`thresholds.yaml`](../evals/rca/src/rca_evals/thresholds.yaml), and `csai eval` exits 1 below any of them, so any pipeline can enforce it ([`docs/ci-cd.md`](ci-cd.md)). The same suite runs against the agent in-process (`--target local`) or the deployed one (`--target hosted`). The harness runs three cases at a time and retries cases that fail on rate limits.
+**The idea.** Quality should be measured, not assumed. The agent has 50 [test cases](../evals/rca/README.md) with known answers: 18 clean incidents and 32 harder ones. Evaluation is being rebuilt with Foundry evaluation: Foundry calls the hosted agent on the cases and scores the answers with built-in judges and custom evaluators that compare each diagnosis with its answer key.
 
-**Look.** Nothing to see in the portal yet. Publishing eval runs to Foundry's evaluation view (`csai eval --publish`) is parked: it needs capability hosts, which this network-injected project doesn't have (backlog item [Q9](backlog.md#q-evaluation-you-can-trust)).
+**Look.** In the portal, your project → **Evaluations**. The project already has what evaluation needs in this private network: a capability host and a dedicated evaluation storage account ([ADR 0008](adr/0008-evaluation-storage-network-exception.md)).
 
-**Try.** Run the gate and the experiment that breaks it ([walkthrough steps 6 and 7](walkthrough.md#6-check-quality-with-the-eval-gate)). Then compare `--output results.jsonl` from a good run and a broken one: the per-case scores and tool calls show which cases failed and why.
-
-**Check yourself.** (9) Why are thresholds set from a measured baseline rather than at 1.0 across the board, and why isn't a passing suite proof that the agent is good?
+**Check yourself.** (9) Foundry's built-in judges rate whether an answer is on task and coherent. Why isn't that enough for a diagnosis agent?
 
 ---
 
 ## Where to go next
 
-- **Change something and follow it through** ([walkthrough step 7](walkthrough.md#7-change-the-agent-and-check-it-again)), then compare episodes and traces before and after.
+- **Change something and follow it through** ([walkthrough step 6](walkthrough.md#6-change-the-agent-and-try-it)), then compare episodes and traces before and after.
 - **Add an agent:** [`docs/onboarding-an-agent.md`](onboarding-an-agent.md).
 - **See what's missing, and the ideas for next:** [`docs/backlog.md`](backlog.md).
 - **Clean up** when you're done: `azd down --purge` (and set `AZURE_LOCATION` again before the next `azd up`).
@@ -276,11 +274,11 @@ dependencies
 ## Answers
 
 1. **Toolbox from a script.** It needs the MCP server's function key, which exists only after the function app is deployed. Bicep runs before deployment, so a `postdeploy` hook registers the connection and publishes the toolbox ([ADR 0005](adr/0005-infrastructure-as-code.md)).
-2. **Another model.** Change the `chatModel` parameters and run `azd provision`. Then run `csai eval rca --target hosted` (or `--target local` first): the gate decides whether the new model is good enough. No code changes.
+2. **Another model.** Change the `chatModel` parameters and run `azd provision`. Then try it with `azd ai agent invoke`, and once evaluation is rebuilt, compare the runs. No code changes.
 3. **Agent identity.** It needs the Cosmos DB data contributor role to write episodes. The `postdeploy` hook of `rca-agent` in `azure.yaml` grants it (`setup_platform.py grant-agent`), reading the identity's principal ID that azd recorded.
-4. **Refs.** They let the report cite exactly which record supports each claim. `evidence_grounded` checks that every cited ref exists in the data and belongs to the machine, and the episode keeps the tool results the refs came from.
+4. **Refs.** They let the report cite exactly which record supports each claim. An evaluator can check that every cited ref exists in the data and belongs to the machine, and the episode keeps the tool results the refs came from.
 5. **Search roles.** The search service calls the embedding model to vectorize queries, so it needs Cognitive Services OpenAI User on the Foundry account. The project and account identities call the search service when the toolbox's `azure_ai_search` tool runs, so they need Search Service Contributor and Search Index Data Contributor on it.
 6. **Store outage.** The user gets the diagnosis as usual: saving the episode is best effort and never fails the request. The agent logs "Could not save episode …" to Application Insights, and the episode is missing from `csai episodes list`.
 7. **Keys.** The MCP server's function key, held only by the Foundry connection `diagnostics-mcp`. And the platform API's function key, which `csai` fetches at run time with your Azure sign-in, so access follows Azure RBAC. Both are in the backlog to replace with Entra ([S1](backlog.md#s-security-and-operations)).
 8. **Trace ID.** Traces are telemetry: they can be sampled, and they're kept only for the workspace's retention period. Episodes are the durable, reviewable record. The trace ID connects the two, so from an expert's verdict you can go straight to the full trace while it's still kept.
-9. **Thresholds.** Thresholds sit just below what a known-good agent achieves, so normal model variation doesn't fail the gate but a real regression does. A passing suite only shows that the agent handles these 18 cases. All of them are solved at baseline, so the suite catches regressions but can't show improvement; harder cases are backlog item [Q3](backlog.md#q-evaluation-you-can-trust).
+9. **Judges.** A judge can tell that an answer reads well and follows the task, but not whether the root cause is right: it doesn't know the answer. Correctness needs the answer key, so it's checked by custom evaluators that compare the diagnosis and its evidence with the case's known cause.

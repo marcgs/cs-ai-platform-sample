@@ -22,6 +22,6 @@ The platform needs to run agents written in code (the RCA agent has a strict out
 
 - Each agent version gets its own Entra agent identity; access to platform data (Cosmos DB) is granted after deployment (`grant-agent` hook), because the identity doesn't exist before.
 - Hosted agents, toolboxes and the azd extensions are in preview; versions are pinned (`requiredVersions` in `azure.yaml`, minimum versions in `pyproject.toml`).
-- Deploy-time-only failures exist that local runs can't show (signature inspection at startup, packages only the hosted path imports). The Dockerfile imports the entry point at build time, and `csai eval --target hosted` checks what's live.
+- Deploy-time-only failures exist that local runs can't show (signature inspection at startup, packages only the hosted path imports). The Dockerfile imports the entry point at build time, and `azd ai agent invoke` checks what's live.
 - Cloud evaluations published to Foundry need capability hosts in a network-injected project; the code-based gate doesn't depend on them.
 - The agent endpoint stays public (Entra-protected) in this preview, even with network injection.

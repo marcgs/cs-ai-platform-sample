@@ -28,4 +28,4 @@ Making every service private (Foundry, the registry, AI Search, Application Insi
 - Agent network injection can only be set when the Foundry account is created. An environment created before this decision has to be recreated (`azd down --purge`, then `azd up`).
 - With a hosted agent deployed, the agent subnet holds a service association link. Tear down by deleting and purging the Foundry account before the network; `azd down --purge` deletes the whole resource group.
 - Four private endpoints and the private DNS zones add a small fixed monthly cost.
-- Going fully private later means adding private endpoints for the remaining services and running deployments from inside the network (see the iteration 2 backlog).
+- Going fully private later means adding private endpoints for the remaining services and running deployments from inside the network (see the [backlog](../backlog.md#later)).

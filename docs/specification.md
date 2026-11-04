@@ -1,9 +1,9 @@
 # Specification: CS AI Platform, validated with AI-assisted diagnostics
 
-- **Status:** Living document, iteration 1
-- **Related:** [Implementation plan](plan-iteration-1.md) · [Candidate Azure services](azure-services-candidates.md) · [Decisions (ADRs)](adr/)
+- **Status:** Living document
+- **Related:** [Architecture](architecture.md) · [Decisions (ADRs)](adr/) · [Foundry findings](foundry-findings.md)
 
-This document describes **what** the sample is and **why**. The implementation plan describes **how** and **in what order**. The scenario is generic: a fictional customer-support organization, fictional equipment and synthetic data.
+This document describes **what** the sample is and **why**. The [architecture](architecture.md) describes **how**. The scenario is generic: a fictional customer-support organization, fictional equipment and synthetic data.
 
 ---
 
@@ -116,7 +116,7 @@ Learning from the field must be **fast but controlled**: no change reaches the a
 3. **SME gate.** A subject-matter expert approves or rejects every proposal. Nothing changes agent behavior without that approval.
 4. **Replay validation.** Approved changes are replayed against comparable past cases, and the evaluation suite must show improvement without regressions before release.
 
-Iteration 1 implements the **inner loop** (capture and feedback). Proposals, the SME gate and replay are planned for iteration 2.
+The sample implements the **inner loop** (capture and feedback). Proposals, the SME gate and replay come later.
 
 ## 7. Requirements
 
@@ -165,17 +165,18 @@ The sample demonstrates the **mechanisms** for measuring success. The targets be
 
 ## 9. Scope
 
-### Iteration 1 (this repository)
+### In this repository
 
 - Platform harness, telemetry, episode store and feedback (C1–C9 in minimal form)
-- One RCA agent over a **synthetic fleet**: 20 machines, 8 failure modes, 18 incident scenarios
-- MCP tool server, search-backed knowledge, evaluation gate, CLI, IaC; CI/CD documented but not active
+- One RCA agent over a **synthetic fleet**, with 50 test cases: 18 clean incidents and 32 challenge cases
+- MCP tool server, search-backed knowledge, IaC with azd, a small CLI for episodes and feedback; CI/CD documented but not active
+- Evaluation (C7) is being rebuilt with Foundry evaluation; until then there's no evaluation gate
 
-### Later iterations
+### Later
 
 - Outer learning loop: proposals, SME approval workflow, replay validation
 - AI gateway (API Management) in front of models and tools
-- Full private networking (iteration 1 makes the data stores private; Foundry, registry and search stay public)
+- Full private networking (today the data stores are private; Foundry, registry and search stay public)
 - Ingestion of unstructured documents (PDFs, emails) with content extraction
 - Real-time telemetry analytics store
 - Additional channels (e.g. Teams), additional agents and multi-agent workflows (e.g. action planning, repair and recovery)

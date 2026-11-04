@@ -1,6 +1,6 @@
 # Onboarding an agent
 
-How to put a new agent on the platform, using the RCA agent as the template. An agent brings its behavior (instructions, output schema, tools it needs, eval cases); the platform brings everything else (model access, toolbox, episode capture, telemetry, evaluation, hosting, deployment).
+How to put a new agent on the platform, using the RCA agent as the template. An agent brings its behavior (instructions, output schema, tools it needs, test cases); the platform brings everything else (model access, toolbox, episode capture, telemetry, hosting, deployment).
 
 The example below adds a fictional `maintenance-planner` agent that turns a confirmed root cause into a repair plan.
 
@@ -11,7 +11,7 @@ agents/maintenance-planner/
   pyproject.toml                       # depends on cs-platform; workspace source
   Dockerfile                           # copy agents/rca/Dockerfile, change the package names
   src/maintenance_planner/
-    agent.spec.yaml                    # name, version, description, instructions, tools, eval suite
+    agent.spec.yaml                    # name, version, description, instructions, tools, test cases
     instructions.md                    # how to work and the rules for the answer
     plan.py                            # Pydantic output schema (extra="forbid", all fields required)
     agent.py                           # create_agent(): build_agent(spec, client, store, tools, response_format)
@@ -19,8 +19,8 @@ agents/maintenance-planner/
   tests/
 ```
 
-- **Spec and instructions.** Keep the investigation procedure explicit and name the tools; the eval's tool-coverage metric checks that the agent actually uses them.
-- **Output schema.** Use the shared `cs_platform.evidence.Evidence` for anything the agent claims from data, so evaluators can verify refs.
+- **Spec and instructions.** Keep the investigation procedure explicit and name the tools, so you can check in its episodes that the agent actually uses them.
+- **Output schema.** Use the shared `cs_platform.evidence.Evidence` for anything the agent claims from data, so its references can be checked against tool results.
 - **Hosted entry point.** Copy `agents/rca/src/rca_agent/main.py`. Import the types used in `agent_factory`'s signature at runtime: the hosting server evaluates them (Python 3.14).
 - **Offline test.** Use `cs_platform.testing.ScriptedChatClient` to run the real tool loop with scripted model turns, as in `agents/rca/tests/test_agent.py`.
 
@@ -34,36 +34,27 @@ Add the package to the root `pyproject.toml` (dependencies and `[tool.uv.sources
 
 Agents get tools only through a toolbox (`TOOLBOX_ENDPOINT`); a direct `DIAGNOSTICS_MCP_URL` is for local development.
 
-## 3. Write the eval suite
+## 3. Write its test cases
 
-```text
-evals/maintenance-planner/
-  pyproject.toml
-  src/maintenance_planner_evals/
-    __init__.py         # load_suite() -> EvalSuite.from_files(...)
-    cases.jsonl         # {"id", "input", "expected": {...}} per line, reviewed like code
-    thresholds.yaml     # minimums per metric
-    evaluators.py       # plain functions: (EvalCase, RunOutput) -> {metric: 0..1}
-```
+Give the agent a set of test cases with known answers, generated from synthetic data like `evals/rca` (see its [README](../evals/rca/README.md)): one line per case with the input and an answer key, reviewed like code. Evaluation itself is being rebuilt with Foundry evaluation; until then, try the cases by hand with `azd ai agent invoke`.
 
-Start with schema validity, the task outcome, evidence grounding and tool coverage. Set thresholds from a measured baseline, then check that a deliberately broken instruction fails the gate.
-
-Register the agent in `cli/src/csai/targets.py` (`AGENTS`) with its azd service name, `create_agent`, output type, suite loader and a terminal renderer. `csai eval`, `csai diagnose` and `csai episodes show` then work for it.
+To show the agent's reports readably in `csai episodes show`, add its output type and a renderer to `render_output()` in `cli/src/csai/app.py`.
 
 ## 4. Deploy it
 
 Add an `azure.ai.agent` service to `azure.yaml`, copying `rca-agent`: the `prepackage` export hook, `docker` settings (context `../..`), `env` (`AZURE_AI_MODEL_DEPLOYMENT_NAME`, `TOOLBOX_ENDPOINT`, `COSMOS_*`, `PYTHONNOUSERSITE`) and the `postdeploy` hook that grants its identity the Cosmos DB role (`AZD_AGENT_SERVICE=<service> ... grant-agent`; azd records the identity as `AGENT_<SERVICE>_INSTANCE_IDENTITY_PRINCIPAL_ID`).
 
 ```bash
-uv run csai eval maintenance-planner --target local    # gate before deploying
+azd ai agent run                                   # try it locally first
+azd ai agent invoke --local "…"
 azd deploy maintenance-planner
-uv run csai eval maintenance-planner --target hosted   # gate what's live
+azd ai agent invoke maintenance-planner "…"         # check what's live
 ```
 
 ## Checklist
 
 - [ ] Spec, instructions and output schema; offline tests pass
 - [ ] Tools reachable through a toolbox; no secrets in code or settings
-- [ ] Eval suite with thresholds from a baseline; a broken instruction fails it
-- [ ] Registered in `csai`; `csai diagnose` works locally
-- [ ] Deployed with azd; hosted eval passes; episodes visible with `csai episodes list`
+- [ ] Test cases with answer keys, generated and reviewed like code
+- [ ] Runs locally with `azd ai agent run`
+- [ ] Deployed with azd; `azd ai agent invoke` works; episodes visible with `csai episodes list`
