@@ -158,7 +158,7 @@ Add a finding when you hit one, and update its status when you check it again. I
 
 - **Hit:** with Foundry calling the hosted agent, task adherence and tool call accuracy failed on every row: "The 'arguments' field must be a dictionary in tool_call content items."
 - **Matters because:** two of the four agent judges don't work when Foundry calls a hosted agent. The Responses protocol carries arguments as JSON strings, so fixing the [adapter bug](#the-hosting-adapter-corrupts-tool-call-arguments-and-over-reports-tokens) alone won't help: Foundry's own agent target and its judges disagree on the format.
-- **Got past it:** two steps. Run the agent, convert the saved arguments to dictionaries, then judge the saved outputs in a second run. All four judges then scored every row.
+- **Got past it:** two steps. Run the agent, convert the saved arguments to dictionaries, then judge the saved outputs in a second run. All four judges then scored every row. With `azd ai eval`, whose default mapping passes `{{sample.output_items}}` and `{{sample.tool_calls}}` (as the quickstart does), intent resolution failed the same way. Now: map `response` to `{{sample.output_text}}` and `tool_calls` to a null column in the rows (`evals/azure.eval.yaml`). azd requires a `tool_calls` binding and rejects an empty one. Both judges then scored every row, but they no longer see the tool calls.
 - **Status:** open. Checked 2026-11-04.
 
 ### A completed run can hide failed judges
@@ -177,9 +177,9 @@ Add a finding when you hit one, and update its status when you check it again. I
 
 ### Dataset upload fails behind private storage
 
-- **Hit:** uploading an evaluation dataset with `datasets.upload_file` failed with `AuthorizationFailure` against the project's private storage, even with the trusted-services bypass that lets evaluation runs write results.
+- **Hit:** uploading an evaluation dataset with `datasets.upload_file` failed with `AuthorizationFailure` against the project's private storage, even with the trusted-services bypass that lets evaluation runs write results. `azd ai eval create` fails the same way: `uploading blob: blob upload failed with status 403`.
 - **Matters because:** the documented way to register a dataset doesn't work in a private-network project.
-- **Got past it:** upload the JSONL through the project's Files API (`purpose=evals`) and reference it as `source.type=file_id`. These are files, not versioned dataset assets.
+- **Got past it:** with `azd ai eval`, an eval with `source: {type: local, file: …}` sends the rows with each run and publishes no dataset (`evals/azure.eval.yaml`). Earlier, with the SDK: upload the JSONL through the project's Files API (`purpose=evals`) and reference it as `source.type=file_id`. Neither gives versioned dataset assets.
 - **Status:** open. Checked 2026-11-04.
 
 ### Large outputs are dropped from `sample.output`
@@ -193,7 +193,7 @@ Add a finding when you hit one, and update its status when you check it again. I
 
 - **Hit:** each judge's token usage appears twice, under the judge model and under `azure_ai_evaluation`, with identical counts. The model's own meters suggest it's charged once.
 - **Matters because:** budgets based on reported usage double the judge cost.
-- **Got past it:** count one of the two.
+- **Got past it:** count one of the two. Seen again with `azd ai eval` (29,426 tokens under each name for 10 judge calls).
 - **Status:** open. Checked 2026-11-04.
 
 ### Judges are expensive with tool-heavy agents
@@ -212,10 +212,24 @@ Add a finding when you hit one, and update its status when you check it again. I
 
 ### The azd evaluation commands are moving
 
-- **Hit:** the [hosted agent evaluation quickstart](https://learn.microsoft.com/azure/foundry/observability/quickstarts/quickstart-evaluate-hosted-agent) uses `azd ai agent eval run` (extension 0.1.40-preview or later). Our installed tooling said that flow was removed and replaced by `azd ai eval` (`azure.ai.evaluations` 1.0.0-beta.2), which rejects a target `version`, so it evaluates the latest agent version.
-- **Matters because:** following the docs may not work with the installed extension, and you can't pin the evaluated agent version from the CLI.
-- **Got past it:** `azd ai eval` with an `eval.yaml`, selecting the agent by name.
+- **Hit:** the [hosted agent evaluation quickstart](https://learn.microsoft.com/azure/foundry/observability/quickstarts/quickstart-evaluate-hosted-agent) (updated 2026-10-21) uses `azd ai agent eval run --config eval.yaml` (extension 0.1.40-preview or later). In `azure.ai.agents` 1.0.0-beta.23, `azd ai agent eval` only prints "The legacy agent evaluation workflow has been removed" and points to `azd ai eval` (`azure.ai.evaluations` 1.0.0-beta.2), which uses `evals/azure.eval.yaml` in a different format and rejects a target `version`, so it evaluates the latest agent version. [Test a hosted agent](https://learn.microsoft.com/azure/foundry/agents/how-to/test-hosted-agent) and the CI page describe both flows.
+- **Matters because:** following the quickstart doesn't work with the current extension, and you can't pin the evaluated agent version from the CLI.
+- **Got past it:** followed the installed tool: `azd ai eval init`, `create` and `run start` with the quickstart's content (queries file, the two judges, the agent as target). See the README's Evaluate section.
 - **Status:** open. Check `azd ext list` against the quickstart. Checked 2026-11-04.
+
+### azd can't read back runs of a local-source eval
+
+- **Hit:** `azd ai eval run start` submits the run, then fails while waiting: `failed to parse response: json: cannot unmarshal string into Go struct field EvalRunDataSource.data_source.source.content of type map[string]interface {}`. `run show` and `run list` fail the same way. The service returns the local rows as JSON strings, and the extension expects objects.
+- **Matters because:** the run's results and `--fail-on` gates aren't available from azd for an eval that has to use a local source (see [dataset upload](#dataset-upload-fails-behind-private-storage)).
+- **Got past it:** `run start --no-wait`, and read results in the portal (or the project's `/openai/v1/evals/…/runs` API).
+- **Status:** open (`azure.ai.evaluations` 1.0.0-beta.2). Checked 2026-11-04.
+
+### `azd ai eval` init and create do more than they say
+
+- **Hit:** `azd ai eval init` rewrote `azure.yaml` to add an `azure.ai.eval` service, dropping every comment and re-sorting all keys. `azd ai eval create` creates a new eval on every call, with the same name, even when the configuration hasn't changed.
+- **Matters because:** a reviewed `azure.yaml` loses its explanations, and repeated creates (or, with the service, every `azd up`) leave several evals with the same name in the project.
+- **Got past it:** restored `azure.yaml` and left the service out; the `azd ai eval` commands don't need it. Run `create` once per environment and after configuration changes, and delete stale evals.
+- **Status:** open (`azure.ai.evaluations` 1.0.0-beta.2). Checked 2026-11-04.
 
 ## Deployment and tooling
 

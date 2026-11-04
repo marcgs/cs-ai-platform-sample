@@ -7,6 +7,7 @@
 - **50 test cases** with answer keys in [`evals/rca`](../evals/rca/README.md), generated from the seed scenarios.
 - **The infrastructure Foundry evaluation needs in this private network:** a project capability host and a dedicated evaluation storage account ([ADR 0008](adr/0008-evaluation-storage-network-exception.md)).
 - **What we learned the first time**, in the findings' [evaluation section](foundry-findings.md#evaluation). Read it before starting; most of it will come up again.
+- **Step 1 is done:** `evals/azure.eval.yaml` and the README's Evaluate section. It uses `azd ai eval` instead of the quickstart's removed `azd ai agent eval`, a local source instead of a dataset, and judges that see the final answer but not the tool calls; the findings say why.
 
 ## Steps
 

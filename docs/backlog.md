@@ -33,7 +33,7 @@ Evaluation is being rebuilt the way Foundry documents it ([plan](plan-evaluation
 | ID | Item | Why | Explores | Size |
 |---|---|---|---|---|
 | Q5 | **Cost and latency per diagnosis** | Time to diagnosis is the main outcome, and cost decides the model. | Foundry tracing | S |
-| Q6 | **Ask instead of guess** | Given a symptom without a machine, the agent picks one and diagnoses it; the report can't ask a question. | | S |
+| Q6 | **Ask instead of guess** | Given a symptom without a machine, the agent picks one and diagnoses it; the report can't ask a question. In one evaluation run, SC-033 used 214k reported tokens doing so, against 7.5k in the run before. | | S |
 | Q18 | **Judges checked against expert labels** | A model judge should only gate once its agreement with experts is measured on the same cases. | Foundry evaluators | S |
 | Q19 | **Grow thin cohorts** | Four injection cases and twelve missing-machine cases are too few to act on; more cases beat more metrics. | | M |
 | Q28 | **Continuous evaluation of live traffic** | Judges on a sample of real runs show drift that a fixed case set misses. | Foundry continuous evaluation | S |
