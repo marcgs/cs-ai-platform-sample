@@ -6,7 +6,7 @@ The reusable agent harness. An agent is declared by a spec and built by the plat
 |---|---|
 | `spec.py` | `AgentSpec` and `load_spec()`: name, version, description, instructions file, tool sources, eval suite |
 | `settings.py` | `PlatformSettings.from_env()`: Foundry project and model deployment, toolbox/MCP endpoint, Cosmos DB, Application Insights |
-| `factory.py` | `build_agent()`, plus `foundry_client()` and `episode_store()` for the Azure-backed defaults |
+| `factory.py` | `build_agent()` (optional extra agent middleware runs inside episode capture), plus `foundry_client()` and `episode_store()` for the Azure-backed defaults |
 | `retry.py` | A bounded, asynchronous 429-only retry policy for one Foundry model turn |
 | `capture.py` | Middleware that records every run as an episode: input, tool calls (arguments, result, duration, errors), structured output, token usage, trace ID |
 | `episodes.py` | `Episode`, `ToolCall`, `Feedback`; the `EpisodeStore` protocol with in-memory and Cosmos DB implementations |

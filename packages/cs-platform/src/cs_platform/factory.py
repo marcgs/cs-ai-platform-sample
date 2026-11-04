@@ -11,7 +11,7 @@ from cs_platform.settings import SettingsError
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from agent_framework import SupportsChatGetResponse, ToolTypes
+    from agent_framework import AgentMiddleware, SupportsChatGetResponse, ToolTypes
     from agent_framework.foundry import FoundryChatClient
     from azure.core.credentials_async import AsyncTokenCredential
     from pydantic import BaseModel
@@ -28,12 +28,14 @@ def build_agent(
     tools: Sequence[ToolTypes] = (),
     response_format: type[BaseModel] | None = None,
     options: Mapping[str, Any] | None = None,
+    middleware: Sequence[AgentMiddleware] = (),
 ) -> Agent[Any]:
     """Create an agent with the platform's cross-cutting capabilities.
 
     Every agent built here records each run as an episode, including its tool calls and
     structured output. Telemetry comes from Agent Framework's instrumentation layers.
     ``options`` are default chat options for every run (e.g. ``{"store": False}``).
+    ``middleware`` runs inside episode capture, e.g. what a hosting entry point needs.
     """
     default_options = dict(options or {})
     if response_format is not None:
@@ -44,7 +46,11 @@ def build_agent(
         name=spec.name,
         description=spec.description,
         tools=list(tools),
-        middleware=[EpisodeCaptureAgentMiddleware(spec, store), EpisodeCaptureFunctionMiddleware()],
+        middleware=[
+            EpisodeCaptureAgentMiddleware(spec, store),
+            EpisodeCaptureFunctionMiddleware(),
+            *middleware,
+        ],
         default_options=cast("Any", default_options or None),
     )
 

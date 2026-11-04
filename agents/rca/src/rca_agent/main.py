@@ -15,6 +15,7 @@ from azure.identity.aio import DefaultAzureCredential
 from cs_platform.hosting import prepare_episode_options
 from cs_platform.settings import PlatformSettings
 from rca_agent.agent import create_agent
+from rca_agent.hosted_stream import HostedStreamMiddleware
 
 _agent: Agent[Any] | None = None
 
@@ -24,7 +25,10 @@ async def agent_factory() -> Agent[Any]:
     global _agent
     if _agent is None:
         _agent = create_agent(
-            PlatformSettings.from_env(), DefaultAzureCredential(), options={"store": False}
+            PlatformSettings.from_env(),
+            DefaultAzureCredential(),
+            options={"store": False},
+            middleware=[HostedStreamMiddleware()],
         )
     return _agent
 

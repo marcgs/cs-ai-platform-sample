@@ -13,6 +13,7 @@ It's built entirely from platform parts (`cs-platform`): the spec and instructio
 | `src/rca_agent/report.py` | `RcaReport` schema (strict structured outputs) |
 | `src/rca_agent/agent.py` | `create_agent()`: Azure-backed defaults, swappable for tests |
 | `src/rca_agent/main.py` | Foundry hosted agent entry point (Responses protocol, port 8088) |
+| `src/rca_agent/hosted_stream.py` | Workaround for the hosting adapter: turns argument and usage snapshots into the increments it expects ([finding](../../docs/foundry-findings.md#the-hosting-adapter-corrupts-tool-call-arguments-and-over-reports-tokens)) |
 | `src/rca_agent/local.py` | `rca-local`: run on your machine against the toolbox or a local MCP server |
 | `Dockerfile` | Image for the hosted agent (build context: repository root) |
 

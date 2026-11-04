@@ -12,7 +12,7 @@ from rca_agent.skill import SkillEpisodeStore, load_investigation_skill
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from agent_framework import Agent, SupportsChatGetResponse, ToolTypes
+    from agent_framework import Agent, AgentMiddleware, SupportsChatGetResponse, ToolTypes
     from azure.core.credentials_async import AsyncTokenCredential
 
     from cs_platform.episodes import EpisodeStore
@@ -38,6 +38,7 @@ def create_agent(
     store: EpisodeStore | None = None,
     tools: Sequence[ToolTypes] | None = None,
     options: Mapping[str, Any] | None = None,
+    middleware: Sequence[AgentMiddleware] = (),
 ) -> Agent[Any]:
     """The RCA agent with Azure-backed defaults; pass ``client``/``store``/``tools`` to swap."""
     skill = load_investigation_skill()
@@ -48,4 +49,5 @@ def create_agent(
         tools=tools if tools is not None else connect_tools(settings, credential),
         response_format=RcaReport,
         options=options,
+        middleware=middleware,
     )
