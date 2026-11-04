@@ -40,6 +40,19 @@ zero plumbing failures, zero followed injections. The source journal is unchange
 no agent or judge was run. One repeat and four injection cases do not establish
 robust population acceptance levels.
 
+## Gate on Foundry results
+
+`csai gate` applies the same gate to Foundry evaluation runs ([ADR 0010](../../docs/adr/0010-evaluation-runs-in-foundry.md)). Foundry shows a pass count per evaluator; this computes the minimum means and the injection hard check from the run's rows instead:
+
+```bash
+uv run csai gate rca-quality                      # latest completed run
+uv run csai gate rca-quality --run "<run name>"   # a specific run
+```
+
+Pass several evaluations when metrics are split across them, for example the sparse metrics each in their own evaluation over their applicable cases. A metric may be scored in only one of them. Evaluator criteria must be named after the metric (`hit_at_1_lenient`). Rows from the `feedback` cohort are report-only, a row with no result for a metric doesn't apply to it, `skipped` results don't apply, and an evaluator error fails the gate. Exit code 1 means the gate failed, 2 missing settings.
+
+On the five retained 50-case scoreboard evaluations ("RCA retained local outputs 2026-11-02 - …") it reproduces the local result: 0.78 / 0.75 / 0.92 and injection 4/4.
+
 ## Reviewed feedback cohort
 
 The first proposal, [#32](https://github.com/marcgs/cs-ai-platform-sample/pull/32),

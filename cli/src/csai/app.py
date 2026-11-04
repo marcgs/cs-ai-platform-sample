@@ -39,6 +39,7 @@ from csai import foundry
 from csai.cases import app as cases_app
 from csai.environment import load_environment
 from csai.eval_cli import DurableEpisodes, EvalEnvironment, eval_app, publish_record
+from csai.gate import gate_command
 from csai.platform import PlatformApiError, PlatformClient
 from csai.targets import AGENTS, hosted_target, local_target
 from platform_api.api import FeedbackRequest
@@ -53,6 +54,7 @@ if TYPE_CHECKING:
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 app.add_typer(eval_app, name="eval")
 app.add_typer(cases_app, name="cases")
+app.command(name="gate")(gate_command)
 
 
 @app.callback()
