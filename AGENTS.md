@@ -19,17 +19,17 @@ Microsoft's documentation is the main source for how this sample uses Foundry an
 
 Write our own code only where the documented way doesn't work for us or doesn't cover what we need. Then record the gap in [`docs/foundry-findings.md`](docs/foundry-findings.md) with a link to the page, what failed, and what we did instead. Say in the pull request which pages you followed.
 
-Starting points:
+Where to look: the Foundry documentation's **Agents → Hosted agents** section (concepts, quickstarts, develop, run and debug, deploy and operate, ship to production, reference), its **Evaluation** section (evaluators, datasets, running evaluations, results, CI/CD) and its **Observability** section (tracing, feedback, monitoring). Start from these pages and follow their links:
 
-| Topic | Pages |
+| Topic | Entry page |
 |---|---|
-| Hosted agents | [Overview](https://learn.microsoft.com/azure/foundry/agents/concepts/hosted-agents) · [Permissions](https://learn.microsoft.com/azure/foundry/agents/concepts/hosted-agent-permissions) · [Virtual networks](https://learn.microsoft.com/azure/foundry/agents/how-to/virtual-networks) · [Samples](https://github.com/microsoft-foundry/foundry-samples/tree/main/samples/python/hosted-agents) |
-| Tools | [Toolbox](https://learn.microsoft.com/azure/foundry/agents/how-to/tools/toolbox) |
-| Evaluation | [Evaluate a hosted agent (quickstart)](https://learn.microsoft.com/azure/foundry/observability/quickstarts/quickstart-evaluate-hosted-agent) · [Agent targets](https://learn.microsoft.com/azure/foundry/observability/how-to/cloud-evaluation-targets) · [Evaluation with azd](https://learn.microsoft.com/azure/foundry/observability/how-to/azure-developer-cli-evaluation) · [Custom evaluators](https://learn.microsoft.com/azure/foundry/concepts/evaluation-evaluators/custom-evaluators) · [Compare results](https://learn.microsoft.com/azure/foundry/how-to/evaluate-results) · [Permissions](https://learn.microsoft.com/azure/foundry/observability/how-to/evaluation-permissions) · [Virtual networks](https://learn.microsoft.com/azure/foundry/concepts/evaluation-virtual-network) |
+| Hosted agents | [Overview](https://learn.microsoft.com/azure/foundry/agents/concepts/hosted-agents) · [Host Agent Framework agents](https://learn.microsoft.com/azure/foundry/how-to/develop/framework-hosted-agents) · [Runtime contract](https://learn.microsoft.com/azure/foundry/agents/concepts/hosted-agent-contract) · [Permissions](https://learn.microsoft.com/azure/foundry/agents/concepts/hosted-agent-permissions) · [Virtual networks](https://learn.microsoft.com/azure/foundry/agents/how-to/virtual-networks) · [Samples](https://github.com/microsoft-foundry/foundry-samples/tree/main/samples/python/hosted-agents) |
+| Tools | [Use a toolbox with a hosted agent](https://learn.microsoft.com/azure/foundry/agents/how-to/tools/use-toolbox-hosted-agent) |
+| Evaluation | [Overview](https://learn.microsoft.com/azure/foundry/concepts/evaluation-overview) · [Evaluate a hosted agent (quickstart)](https://learn.microsoft.com/azure/foundry/observability/quickstarts/quickstart-evaluate-hosted-agent) · [Datasets](https://learn.microsoft.com/azure/foundry/observability/how-to/evaluation-datasets) · [Custom evaluators](https://learn.microsoft.com/azure/foundry/concepts/evaluation-evaluators/custom-evaluators) · [Get results](https://learn.microsoft.com/azure/foundry/observability/how-to/cloud-evaluation-results) · [Virtual networks](https://learn.microsoft.com/azure/foundry/concepts/evaluation-virtual-network) |
+| Observability | [Tracing](https://learn.microsoft.com/azure/foundry/observability/concepts/trace-agent-concept) · [Annotate traces with human feedback](https://learn.microsoft.com/azure/foundry/observability/how-to/trace-annotations) |
 | Agent Framework | [Evaluation](https://learn.microsoft.com/agent-framework/agents/evaluation) |
-| Observability | [Tracing](https://learn.microsoft.com/azure/foundry/observability/concepts/trace-agent-concept) |
 
-Microsoft also publishes a [Foundry skill for coding agents](https://learn.microsoft.com/azure/foundry/how-to/develop/use-microsoft-foundry-skill) that maps these concepts to implementation tasks.
+Each iteration plan lists the pages for its stage. Microsoft also publishes a [Foundry skill for coding agents](https://learn.microsoft.com/azure/foundry/how-to/develop/use-microsoft-foundry-skill) that maps these concepts to implementation tasks.
 
 ## Commands
 
