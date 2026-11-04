@@ -44,6 +44,10 @@ def main() -> None:
     parser.add_argument("--receipts", type=Path, required=True)
     parser.add_argument("--scope", choices=("dense", "sparse"), required=True)
     parser.add_argument("--metric", choices=SPARSE)
+    parser.add_argument("--label", default="retained agent-target outputs")
+    parser.add_argument(
+        "--dataset-name", help="Upload named JSONL datasets through the project Files API"
+    )
     args = parser.parse_args()
     if args.metric and args.scope != "sparse":
         parser.error("--metric requires --scope sparse")
@@ -68,6 +72,14 @@ def main() -> None:
             if receipt.exists():
                 print(f"{group}: existing receipt; inspect rather than resubmit")
                 continue
+            dataset_id: str | None = None
+            if args.dataset_name:
+                subset = args.receipts / f"{args.dataset_name}-{group}.jsonl"
+                subset.write_text(
+                    "".join(json.dumps({"item": row}, sort_keys=True) + "\n" for row in selected)
+                )
+                with subset.open("rb") as stream:
+                    dataset_id = client.files.create(file=stream, purpose="evals").id
             criteria: list[Any] = []
             for metric in metrics:
                 source = code(metric)
@@ -120,7 +132,7 @@ def main() -> None:
             properties = dict(FIELDS)
             properties.update({"case_id": {"type": "string"}, "query": {"type": "string"}})
             evaluation = client.evals.create(
-                name=f"rca-native-retained-{group}",
+                name=f"RCA {args.label} - {group}",
                 data_source_config={
                     "type": "custom",
                     "item_schema": {
@@ -131,13 +143,14 @@ def main() -> None:
                     "include_sample_schema": False,
                 },
                 testing_criteria=criteria,
-                metadata={"source": "synthetic", "workflow": "retained-agent-target-output"},
+                metadata={"source": "synthetic", "workflow": args.label},
             )
             receipt.write_text(
                 json.dumps(
                     {
                         "eval_id": evaluation.id,
                         "status": "submission_pending",
+                        "dataset_id": dataset_id,
                         "dataset_sha256": hashlib.sha256(args.dataset.read_bytes()).hexdigest(),
                     },
                     indent=2,
@@ -145,10 +158,12 @@ def main() -> None:
             )
             run = client.evals.runs.create(
                 eval_id=evaluation.id,
-                name=f"rca-native-retained-{group}",
+                name=f"RCA {args.label} - {group}",
                 data_source={
                     "type": "jsonl",
-                    "source": {
+                    "source": {"type": "file_id", "id": dataset_id}
+                    if dataset_id
+                    else {
                         "type": "file_content",
                         "content": [{"item": row} for row in selected],
                     },
@@ -161,6 +176,7 @@ def main() -> None:
                         "run_id": run.id,
                         "cases": len(selected),
                         "metrics": list(metrics),
+                        "dataset_id": dataset_id,
                         "dataset_sha256": hashlib.sha256(args.dataset.read_bytes()).hexdigest(),
                     },
                     indent=2,

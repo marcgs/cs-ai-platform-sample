@@ -26,6 +26,11 @@ def main() -> None:
     parser.add_argument("--results", type=Path, required=True)
     parser.add_argument("--dataset", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--retained-scores",
+        type=Path,
+        help="Also report immutable historical scores, without rewriting them",
+    )
     args = parser.parse_args()
     dataset = {
         row["case_id"]: row for row in map(json.loads, args.dataset.read_text().splitlines())
@@ -33,6 +38,7 @@ def main() -> None:
     suite = load_suite()
     cases = {case.id: case for case in suite.cases}
     comparisons: list[dict[str, JsonValue]] = []
+    retained = json.loads(args.retained_scores.read_text()) if args.retained_scores else None
     for raw in json.loads(args.results.read_text()):
         row = ScoredItem.model_validate(raw)
         source = row.datasource_item.get("item", row.datasource_item)
@@ -68,6 +74,18 @@ def main() -> None:
                     "absolute_difference": difference,
                 }
             )
+            if retained is not None:
+                original = (
+                    1 - retained[case_id]["calibration"]
+                    if result.name == "calibration_score"
+                    else retained[case_id][result.name]
+                )
+                comparisons[-1].update(
+                    {
+                        "retained_local": original,
+                        "retained_absolute_difference": abs(original - result.score),
+                    }
+                )
             if difference > 1e-12:
                 raise ValueError(f"Parity mismatch: {comparisons[-1]}")
     if not comparisons:
