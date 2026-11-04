@@ -1,7 +1,8 @@
 # Foundry-native evaluation results
 
-Status: four judges and all 13 code metrics verified; full-suite scale awaits budget,
-3 November 2026.
+Status: four judges and all 13 code metrics verified; the retained local 50-case
+scoreboard is complete with zero new model tokens. Fresh full-suite agent runs
+await a deployment decision and separately approved budget, 4 November 2026.
 The [spike](spike-foundry-native-eval.md) is now an execution task.
 Model usage is authorized up to 1.5M tokens cumulatively; project evaluation
 data-plane writes are approved. Infrastructure, network, roles and deployments
@@ -161,16 +162,12 @@ The [sanitized per-case evidence](../evals/rca/foundry/parity.json) contains onl
 case IDs, metric names, scores and differences. Raw outputs, service IDs and
 portal links remain in private receipts.
 
-## Step 4: budget decision before scaling
+## Step 4: fresh agent runs remain on hold
 
-No 50-case run or repeat has been submitted. On the first five-case prototype,
-agent generation used 351,507 tokens and the successful four-judge second pass
-used 221,936 conservatively counted tokens. At that observed rate, 150 case
-generations plus four-judge scoring would need about **17.2M additional tokens**,
-before any extra startup-judge overhead. The two new cases cost less, so this is
-a planning estimate, not a ceiling or a measured full-suite cost.
-It cannot fit the remaining 798,572-token allowance. Increase the budget or
-revise the scope before submission; do not start an intentionally partial run.
+No fresh 50-case agent-target run or repeat has been submitted. The initial
+**17.2M-token** three-run estimate summed inflated protocol usage and both judge
+usage aliases. The read-only diagnosis below supersedes that estimate, not the
+1.5M allowance or the requirement for approval before any new target/judge run.
 
 Full-suite repeats, combined judge/code evaluation and portal/API comparison
 remain unproven. The approved two-pass workflow is proven; single-pass tool-aware
@@ -187,4 +184,194 @@ injection resistance, data-quality disclosure and ruled-out correctness as
 separate applicable-case evaluations, without endpoints; step 4 scales to
 50 cases and three measurements with portal/API comparison. None is claimed
 complete merely because the first agent-target probe finished. Steps 1–3 now
-have the evidence above; step 4 remains blocked on the budget decision.
+have the evidence above; fresh step-4 measurements remain on hold.
+
+## Retained local outputs: full 50-case scoreboard
+
+The immutable 2 November single-repeat measurement supplies **18 original and
+32 challenge cases**, with no feedback cases and no plumbing exclusions.
+Export preserved its report text, answer keys and actual tool traces. Original
+scores were kept separately for comparison, never supplied as grader inputs.
+SHA256 checks of the manifest, events, episodes and completion certificate are
+unchanged after export and scoring.
+
+Five runs named **RCA retained local outputs 2026-11-02 - [metric group]**
+completed in Foundry: nine dense metrics on all 50 rows, then four separate
+applicable-only evaluations. They are static code-only evaluations of local
+answers, **not hosted-agent generations, fresh measurements or a three-repeat
+baseline**. All runs are visible in the portal; their IDs, links and uploaded
+file receipts remain private.
+
+Direct `datasets.upload_file` failed with `AuthorizationFailure` at the private
+storage boundary. The approved project Files API accepted uploaded JSONL
+evaluation datasets (`purpose=evals`, `source.type=file_id`). These are project
+files, not newly registered DatasetVersion assets. No storage, network or role
+configuration changed.
+
+| Metric | Applicable rows | Foundry mean | Current-local parity |
+|---|---:|---:|---:|
+| hit_at_1 | 50 | 0.78 | 50/50 |
+| hit_at_1_lenient | 50 | 0.78 | 50/50 |
+| hit_at_3 | 50 | 0.90 | 50/50 |
+| evidence_grounded | 50 | 0.92 | 50/50 |
+| schema_valid | 50 | 0.92 | 50/50 |
+| tool_coverage | 50 | 0.896 | 50/50 |
+| knowledge_search_called | 50 | 0.88 | 50/50 |
+| used_knowledge | 50 | 0.74 | 50/50 |
+| calibration_score (1 - Brier) | 50 | 0.857294 | 50/50 |
+| decisive_evidence_recall | 46 | 0.75 | 46/46 |
+| injection_resisted | 4 | 1.00 | 4/4 |
+| data_quality_disclosed | 8 | 1.00 | 8/8 |
+| ruled_out_correctly | 24 | 0.916667 | 24/24 |
+
+**532/532 exact service/current-local comparisons**, maximum difference zero;
+zero evaluator errors and **zero model tokens**. The aggregate local reference
+gate passes at **0.78 / 0.75 / 0.92**, with injection **4/4**, against provisional
+floors 0.70 / 0.65 / 0.85 and the injection hard check. Foundry's individual row
+pass thresholds are not this aggregate gate.
+
+Comparison with the frozen historical scores is **530/532**. SC-031 and SC-033
+originally scored grounding 1.0; ADR 0009's invalid-report rule makes both 0.0.
+The historical grounding mean is therefore 0.96 versus current-rule 0.92.
+These are the two already-known rule changes, not new service/local mismatches.
+Four invalid reports remain failed case-runs rather than plumbing exclusions.
+No threshold change is proposed. The
+[per-case CSV](../evals/rca/foundry/retained-parity.csv) preserves both comparisons.
+
+## Read-only cost and tool-argument diagnosis
+
+Retrieved the five original stored Responses and their exact, untruncated hosted
+episodes. Compared those with matching cases in the retained local journal.
+This did not generate any new responses.
+
+| Case | Local tools | Hosted tools | Local tokens | Hosted episode tokens | Responses-reported tokens |
+|---|---:|---:|---:|---:|---:|
+| SC-001 | 8 | 9 | 14,921 | 18,268 | 36,550 |
+| SC-002 | 8 | 8 | 24,520 | 35,972 | 117,124 |
+| SC-019 | 7 | 8 | 10,185 | 20,144 | 47,558 |
+| SC-031 | 2 | 7 | 5,610 | 29,561 | 86,768 |
+| SC-035 | 8 | 8 | 21,394 | 22,969 | 63,507 |
+| Total | **33** | **40** | **76,630** | **126,914** | **351,507** |
+
+The matched local mean is **15,326**, not a universal 14k cost. Hosted captured
+usage averages **25,383**, about **1.66x** local, while the protocol reports
+**70,301**, about **2.77x** the captured hosted usage. This is primarily an
+accounting defect, with a smaller real investigation/context difference.
+It is not evidence that the agent actually spent 70k tokens per case.
+
+### Proven snapshot defect, not repeated tool execution
+
+All **40/40** serialized calls contain two identical complete argument objects.
+After lossless normalization each matches exactly one captured tool execution,
+including its name and arguments. There are **zero repeated identical
+name/argument executions**. Repeated lookup and telemetry tool names address
+different error codes or signals.
+
+The deployed image's SDK source was read directly from its immutable registry
+layers, without running a container. Its hosting adapter, core tool loop and
+Responses client source match the locally inspected files byte-for-byte:
+`agent-framework-foundry-hosting` 1.0.0b261015, core 1.22.0 and
+`agent-framework-openai` 1.17.0.
+
+The OpenAI client emits argument deltas with `merge_mode="append"`, followed by
+the complete argument snapshot with `merge_mode="replace"`. The core tool loop
+also projects cumulative usage with `merge_mode="replace"`.
+Hosting `_OutputItemTracker.handle` ignores that distinction for calls and usage:
+it appends every argument string and adds every usage snapshot. The final
+framework response used by episode capture correctly honors replacement.
+
+The [offline reproduction](../evals/rca/foundry/stream_repro.py) feeds identical
+updates into the real hosting tracker and final-response aggregator:
+
+| Input updates | Hosting result | Correct final-response result |
+|---|---|---|
+| Arguments delta, then identical replacement snapshot | Two concatenated JSON objects | One JSON object |
+| Usage snapshots 100/10, then 250/25 input/output | 350/35 (385 total) | 250/25 (275 total) |
+
+This reproduces both observed defects with **zero model calls**, without
+patching site-packages or changing the deployed agent.
+
+### Search, instructions, model and real trajectory differences
+
+`azure_ai_search` is already present in the retained local tool definitions and
+four of the five local traces. It is not a newly added Foundry evaluation tool.
+Hosted invoked search on all five cases; SC-019 accounts for the extra search.
+SC-001 adds one telemetry window. SC-031 adds five tools: the hosted missing-ID
+trajectory explores context, errors, logbook and three code lookups, while the
+local trajectory uses only context and search.
+
+The deployed instruction file, full investigation skill, agent construction and
+entry point are byte-identical to the retained revision. Both use
+`gpt-5.4-mini`; read-only deployment metadata and token-meter dimensions identify
+model version `2026-03-17`. No changed model or instruction body explains the
+five-case gap. Hosted runs stream internally even when their Responses caller
+does not; local runs are non-streaming. Five saved trajectories cannot establish
+how much of the remaining 1.66x difference is sampling versus streaming/context
+behavior. No speculative instruction or search-tool removal was made.
+
+### Judge aliases and independent model meters
+
+The named-model and `azure_ai_evaluation` usage entries have identical token and
+invocation counts. Read-only deployment meters provide independent evidence
+against treating them as two separately charged judge batches:
+
+| UTC window, 3 November | Metered prompt | Metered generated | Interpretation |
+|---|---:|---:|---|
+| 20:40-21:18, original target run | 147,099 | 7,278 | Agent plus initial judges; 154,377 total, not the 406,257 summed service entries |
+| 21:18-21:24, static four-judge replay | 100,305 | 4,092 | One judge batch; not the 221,936 summed aliases |
+
+The first window agrees closely with captured agent usage plus one named judge
+entry: 154,289 versus 154,377, an **88-token** residual. The replay's named entry
+is 110,968 versus metered 104,397, a **6,571-token** residual. Its request meter
+shows 21 HTTP-200 requests and seven HTTP-429 requests, not two sets of 20
+successful judge invocations. These are deployment-level operational meters,
+not an invoice or per-request billing export; the residuals are not explained.
+The evidence supports duplicate reporting aliases, not double model charging.
+Do not sum a named-model breakdown and its evaluation roll-up for cost planning.
+
+The allowance ledger remains conservatively **701,428 / 1,500,000**, with
+**798,572** remaining. This work adds **zero** model tokens. No budget is
+automatically reclaimed from these findings.
+
+### Exact proposed fix and deployment implications
+
+Fix the hosting adapter, not the local evaluators:
+
+1. Honor `merge_mode` for function/MCP arguments. Append true deltas; replace
+   accumulated state for snapshots. When a snapshot extends the already emitted
+   prefix, emit only the new suffix; a non-prefix replacement must not be
+   serialized as an append. The completed item must contain exactly the final
+   arguments, or fail explicitly if the stream cannot represent the correction.
+2. Replace cumulative usage snapshots instead of summing them. At completion,
+   use the finalized `AgentResponse.usage_details` as authoritative for both
+   stored and streamed Responses, matching episode capture.
+3. Keep valid Responses function-call arguments as JSON **strings**, as the
+   protocol requires. The built-in judges require dictionaries: retain the
+   approved second-pass dictionary conversion until Foundry's target-to-judge
+   bridge supports this correctly. Fixing duplicate strings alone does not
+   prove single-pass judging works.
+4. Report named judge model usage once, with the aggregate alias labeled rather
+   than added. Preserve raw counters and reconcile against model meters.
+
+Prefer a verified fixed hosting SDK version; otherwise use a small, tested
+hosting-boundary adapter implementing the above semantics. Neither has been
+installed or deployed by this PR. Regression tests must cover fragmented deltas,
+replacement snapshots, multiple tool rounds/calls, final usage agreement and
+unrepresentable replacements before selecting a deployable fix.
+
+Deploying the agent-side correction requires changing/pinning the owning runtime
+dependency or adapter, regenerating the ignored lock export, rebuilding the
+agent image and deploying a new hosted-agent version. It requires **separate
+deployment approval**, but no identified infrastructure, network or role change.
+The existing dataset-side argument normalizer needs no agent deployment.
+
+This fixes reported cost and corrupted arguments; it does **not** promise lower
+actual model consumption. For planning only, 25,383 captured agent tokens plus
+22,194 unaliased replay judge tokens per case implies roughly **2.4M per 50-case
+measurement, 7.1M for three**, before retries and cohort variance. Even that
+corrected estimate exceeds the current allowance. Further real-cost tuning
+requires evidence after the approved runtime correction, not deleting search or
+guessing at instruction changes.
+
+No new judges, agent-target runs, deployments or Azure configuration writes
+were performed. No 50-case judging or model-budget approval request is included.
