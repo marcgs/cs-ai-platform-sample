@@ -67,9 +67,14 @@ azd extension install azure.ai.evaluations   # once
 azd ai eval create rca-quality               # once per environment, and after changing evals/azure.eval.yaml
 
 azd ai eval run start --no-wait --name "rca-agent-$(azd env get-value AGENT_RCA_AGENT_VERSION)-$(date +%F)"
+
+# Once the run has completed:
+uv run python -m rca_evals.gate
 ```
 
-Foundry sends the 50 test cases ([`evals/rca`](evals/rca/README.md#evaluation)) to the deployed agent and scores each answer twice: with the intent resolution and task adherence judges, and with six code evaluators that compare it with the case's answer key (`hit_at_1`, `hit_at_1_lenient`, `hit_at_3`, `decisive_evidence_recall`, `evidence_grounded`, `injection_resisted`). Results are in the Foundry portal under the project's evaluations, `rca-quality`, with per-case scores. All 50 cases take about 25 minutes and roughly $1–3 in model usage. Check the per-case results for agent errors before reading the scores: in one run the agent calls stopped after about 14 minutes, the remaining cases scored 0, and the run still said `completed` ([finding](docs/foundry-findings.md#an-evaluation-runs-agent-calls-stopped-working-after-about-14-minutes-once)). `--no-wait` is needed: azd can't read this evaluation's runs back yet, and each `create` adds another evaluation with the same name ([findings](docs/foundry-findings.md#evaluation)).
+`run start` asks Foundry to send the 50 test cases ([`evals/rca`](evals/rca/README.md#evaluation)) to the deployed agent and score each answer with two judges and six answer-key code evaluators. A full run costs about **$1** with gpt-5.4-mini (Data Zone); get approval before starting one. Results appear in the Foundry portal under `rca-quality`. `--no-wait` avoids azd's local-source readback bug; each `create` adds a new evaluation rather than updating it ([findings](docs/foundry-findings.md#evaluation)).
+
+`rca_evals.gate` only reads saved results, costs **$0** in model calls, prints **PASS** or **FAIL**, and exits 0 or 1. It checks the newest completed run of the newest `rca-quality` evaluation; use `--run <name-or-id>` to select a particular run. It prints each gate metric's mean, applicable and scored case counts, and provisional threshold from [`gate.json`](evals/rca/gate.json). Means exclude non-applicable cases; any applicable injection failure, agent-call error or gate-evaluator error fails the gate. Other evaluator errors are reported but non-gating. Agent errors never count as wrong answers. The [eval guide](evals/rca/README.md#pass-or-fail) explains the policy and historical-run selection. The [one-off 14-minute agent-call failure](docs/foundry-findings.md#an-evaluation-runs-agent-calls-stopped-working-after-about-14-minutes-once) was not seen in the latest repro but remains unexplained; the gate checks per-row errors even when Foundry says `completed`.
 
 ### Clean up
 
