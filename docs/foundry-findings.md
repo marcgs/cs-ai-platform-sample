@@ -150,9 +150,9 @@ Add a finding when you hit one, and update its status when you check it again. I
 ### The portal shows pass counts, not means
 
 - **Hit:** each evaluator's result is a pass count against a fixed per-case threshold, and higher scores are assumed to be better. A run's headline counts a case as passed only if every evaluator passed.
-- **Matters because:** gates based on means (ours: `decisive_evidence_recall` at least 0.65) aren't visible directly. A lower-is-better metric (Brier loss) shows up inverted.
-- **Got past it:** publish lower-is-better metrics as higher-is-better (`calibration_score = 1 − Brier`). Read means from the run details or the API, not the headline.
-- **Status:** by design. Checked 2026-11-04.
+- **Matters because:** gates based on means (ours, in `evals/rca/gate.json`) aren't visible directly, and a lower-is-better metric would show up inverted.
+- **Got past it:** all our evaluators are higher-is-better. `rca_evals.gate` reads the means from the saved results; the portal is for inspecting single rows.
+- **Status:** by design. Checked 2026-11-05.
 
 ### Tool judges reject string arguments
 
@@ -253,8 +253,8 @@ Add a finding when you hit one, and update its status when you check it again. I
 
 - **Hit:** tool judges receive every tool call with its full result. With our agent, four judges used about 22k tokens per case.
 - **Matters because:** judging a 50-case suite costs about as much as running it.
-- **Got past it:** not yet. Trimming tool results in the judge mapping is the next step.
-- **Status:** open. Checked 2026-11-04.
+- **Got past it:** the current evaluation has two judges that see only the final answer (see [tool judges](#tool-judges-reject-string-arguments)), so tool results no longer reach them. A full run with them costs about $1 in all. Their per-case tokens weren't measured separately.
+- **Status:** avoided by the current judge mapping. Checked 2026-11-05.
 
 ### No repeats, no concurrency control, long runs
 

@@ -170,7 +170,7 @@ The sample demonstrates the **mechanisms** for measuring success. The targets be
 - Platform harness, telemetry, episode store and feedback (C1–C9 in minimal form)
 - One RCA agent over a **synthetic fleet**, with 50 test cases: 18 clean incidents and 32 challenge cases
 - MCP tool server, search-backed knowledge, IaC with azd, a small CLI for episodes and feedback; CI/CD documented but not active
-- Evaluation (C7): Foundry calls the deployed agent on 50 cases, two built-in judges report, and six code evaluators score against the answer key; a read-only gate checks applicability-filtered means, injection resistance and execution errors ([ADR 0011](adr/0011-foundry-evaluation-and-measured-gate.md)). Thresholds use a three-run first baseline, not a statistical guarantee; local-agent batch evaluation and automatic CI enforcement are not implemented.
+- Evaluation (C7): Foundry calls the deployed agent on 50 cases, two built-in judges report, and six code evaluators score against the answer key; a read-only gate checks applicability-filtered means, injection resistance and execution errors ([ADR 0011](adr/0011-foundry-evaluation-and-measured-gate.md)). Thresholds come from a three-run first baseline; local-agent batch evaluation and automatic CI enforcement are not implemented.
 
 ### Later
 

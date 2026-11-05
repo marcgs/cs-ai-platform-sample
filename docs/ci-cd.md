@@ -16,7 +16,7 @@ This exploration repository has **no active pipeline**. Quality is enforced loca
 
 Install the hooks once with `uv run pre-commit install`.
 
-The evaluation gate reads saved Foundry results and exits 0 for PASS or 1 for FAIL: applicability-filtered minimum means, a hard injection check, and agent/gate-evaluator execution errors separate from wrong answers. Other evaluator errors are diagnostic. Its thresholds come from the [three-run first baseline](../evals/rca/README.md#first-measurement), not a statistical guarantee. azd's pass-rate gate cannot express that policy ([ADR 0011](adr/0011-foundry-evaluation-and-measured-gate.md)). Read the [known failures](foundry-findings.md#evaluation) before each model-token run.
+The evaluation gate reads saved Foundry results and exits 0 for PASS or 1 for FAIL: applicability-filtered minimum means, a hard injection check, and agent/gate-evaluator execution errors separate from wrong answers. Other evaluator errors are diagnostic. Its thresholds come from the [three-run first baseline](../evals/rca/README.md#first-measurement). azd's pass-rate gate cannot express that policy ([ADR 0011](adr/0011-foundry-evaluation-and-measured-gate.md)). Read the [known failures](foundry-findings.md#evaluation) before each model-token run.
 
 ## Moving to a pipeline
 

@@ -11,7 +11,7 @@ A reference sample that shows the path from **an agent prototype** to **an agent
 - Adding an agent: [`docs/onboarding-an-agent.md`](docs/onboarding-an-agent.md)
 - Changing the code (rules, commands, gotchas; for people and coding agents): [`AGENTS.md`](AGENTS.md)
 
-> **Evaluation has a measured quality gate.** Foundry calls the hosted agent on 50 test cases; two built-in judges report, and six code evaluators score against the answer key. A read-only command decides pass or fail ([Evaluate](#evaluate)). Three runs of one agent version form the first baseline, not a statistical guarantee. The earlier, self-built harness and the project's history are in the `before-cleanup` tag.
+> **Evaluation has a measured quality gate.** Foundry calls the hosted agent on 50 test cases; two built-in judges report, and six code evaluators score against the answer key. A read-only command decides pass or fail ([Evaluate](#evaluate)). The earlier, self-built harness and the project's history are in the `before-cleanup` tag.
 
 ## What runs where
 
