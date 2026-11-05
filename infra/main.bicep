@@ -19,6 +19,9 @@ param searchLocation string = ''
 @description('Isolate service data planes and add a jump host. Use a new environment.')
 param privateNetworking bool = false
 
+@description('Required in private mode; discard the private key after generating this provisioning key.')
+param adminPublicKey string = ''
+
 @description('Private-mode fallback for ADR 0006. Public mode always retains the existing exception.')
 param evaluationStorageTrustedServicesBypass bool = false
 
@@ -120,6 +123,7 @@ module jumpHost 'modules/jump-host.bicep' = if (privateNetworking) {
     vmSize: jumpVmSize
     principalId: principalId
     principalType: principalType
+    adminPublicKey: adminPublicKey
   }
 }
 

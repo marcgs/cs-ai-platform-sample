@@ -8,7 +8,7 @@ Add a finding when you hit one, and update its status when you check it again. I
 
 ## At a glance
 
-- **Private networking:** the current deployment still exposes Foundry, the registry, AI Search and monitoring publicly. An opt-in [private mode](private-networking.md) now builds and passes a new-environment what-if, but is not deployed or runtime-tested. Network injection with a public Foundry endpoint [isn't a documented setup](#network-injection-with-a-public-foundry-endpoint-isnt-a-documented-setup). Evaluation still needs a live test without its [storage firewall exception](#evaluation-in-a-private-network-project-needs-more-than-a-capability-host).
+- **Private networking:** the default keeps Foundry, registry, Search and monitoring public. The opt-in [private mode](private-networking.md) builds and passes what-if; runtime and evaluation without the [storage exception](#evaluation-in-a-private-network-project-needs-more-than-a-capability-host) are untested.
 - **Preview in critical paths:** the services are GA, but the gate's [evaluators are preview](#built-in-judges-dont-know-the-right-answer), the agent's hosting adapter is beta and [corrupts tool calls](#the-hosting-adapter-corrupts-tool-call-arguments-and-over-reports-tokens), and azd's Foundry extensions are beta with no GA date ([appendix](#maturity)).
 - **Evaluation reliability:** agent-target runs [lost answers](#agent-target-evaluations-can-lose-responses-mid-run) in 2 of 5 full runs while reporting success, and [run summaries hide errors](#a-completed-run-can-hide-failed-evaluators).
 - **Cost reporting is wrong:** hosted agents over-report tokens 1.6 to 3.3 times, and [judge usage is counted twice](#judge-usage-is-reported-twice).
@@ -24,8 +24,6 @@ Sorted by what matters most for a corporate setup: security and networking first
 | **1. Security and networking** | | | |
 | [Network injection with a public Foundry endpoint isn't a documented setup](#network-injection-with-a-public-foundry-endpoint-isnt-a-documented-setup) | open (our choice) | GA | Entra-only access; full private untested |
 | [Private provisioning needs an access bootstrap and link approval](#private-provisioning-needs-an-access-bootstrap-and-link-approval) | by design | GA | Two phases; run hooks inside the VNet; approve only the Search vectorizer link |
-| [Developer Bastion doesn't support Entra SSH](#developer-bastion-doesnt-support-entra-ssh) | by design | GA | Basic browser SSH, Standard for native clients |
-| [A keyless Entra jump host still needs a live check](#a-keyless-entra-jump-host-still-needs-a-live-check) | unverified | GA | No local credentials; guest provisioning and login checked in step 4 |
 | [Evaluation needs a storage firewall exception](#evaluation-in-a-private-network-project-needs-more-than-a-capability-host) | open | GA | Trusted-services bypass ([ADR 0006](adr/0006-evaluation-storage-network-exception.md)) |
 | [Dataset upload fails behind private storage](#dataset-upload-fails-behind-private-storage) | open | GA | Local source in `azure.eval.yaml` |
 | [Moderation fails on every knowledge search](#content-safety-moderation-fails-on-every-knowledge-search) | open | preview | None yet |
@@ -71,32 +69,20 @@ Sorted by what matters most for a corporate setup: security and networking first
 ### Network injection with a public Foundry endpoint isn't a documented setup
 
 - **Hit:** network injection controls what the agent can reach, not who can reach it. We kept the Foundry account public (Entra only) so developers can deploy from a laptop ([ADR 0003](adr/0003-private-data-stores.md)). Microsoft's [networking options](https://learn.microsoft.com/azure/foundry/agents/concepts/networking-options#networking-options) pair an injected virtual network with a private endpoint for inbound access; a public endpoint with injection isn't one of the documented models. So the public agent endpoint is our choice, not a platform limit, and some failures here (evaluation storage, possibly the lost evaluation answers) may come from running an undocumented combination.
-- **Workaround:** keep the existing public default; `privateNetworking=true` implements the alternative for a **new** environment ([runbook](private-networking.md)). The [networking options](https://learn.microsoft.com/azure/foundry/agents/concepts/networking-options) support BYO VNet with platform-managed conversation storage, which we retain. The [private-link](https://learn.microsoft.com/azure/foundry/how-to/configure-private-link) and [VNet how-to](https://learn.microsoft.com/azure/foundry/agents/how-to/virtual-networks) still describe Standard setup with BYO storage, Search and Cosmos as required. Don't infer from those examples that this hosted-agent sample must migrate all platform-managed state stores. Its custom episodes, knowledge and evaluation assets remain separate.
-- **Status:** open, our choice. Re-checked 2026-11-05: the earlier reading ("the endpoint can't be private") was wrong. Private-mode builds and what-if pass; hosted runtime, tools, tracing and evaluation remain untested.
+- **Workaround:** keep the public default and offer [private mode](private-networking.md) for a new environment. The networking options allow BYO VNet with platform-managed state, which we retain; the [private-link how-to](https://learn.microsoft.com/azure/foundry/how-to/configure-private-link) instead describes Standard BYO stores.
+- **Status:** open, our choice. Checked 2026-11-05: private builds and what-if pass; runtime remains untested. The earlier reading ("the endpoint can't be private") was wrong.
 
 ### Private provisioning needs an access bootstrap and link approval
 
-- **Hit:** making data planes private prevents laptop-side Search seeding and toolbox publication. Search's query-time vectorizer also needs an outbound `openai_account` shared private link to the embedding model; creating that link doesn't approve its target connection. The target endpoint belongs to a Microsoft-managed tenant, so its portal resource link can fail with a tenant/issuer error by design. The existing project capability host already covers private toolbox calls.
-- **Workaround:** `infra/bootstrap.bicep` creates only the shared network and Entra access host; `azd up` then runs on that host with the same environment, region and address space. Hook preflights reject public, loopback and link-local DNS answers. The resource owner manually identifies and approves **only** the Search vectorizer request; the seed hook requires `Approved` and `Succeeded` before model calls. No blanket pending-connection approval or public fallback. In private mode the hooks and `csai` exclude the VM managed identity, which belongs to SSH and otherwise precedes Azure CLI in `DefaultAzureCredential`. Public-mode credential behavior stays unchanged. ARM-only key retrieval and role grants need no data-plane change.
-- **Status:** by design; setup documented, runtime unverified. Checked 2026-11-05 against [Search shared links](https://learn.microsoft.com/azure/search/search-indexer-howto-access-private), [toolbox isolation](https://learn.microsoft.com/azure/foundry/agents/how-to/tools/toolbox-network-isolation) and [credential ordering](https://learn.microsoft.com/python/api/azure-identity/azure.identity.defaultazurecredential). Owner approval and VM tool installation remain manual; see the [runbook](private-networking.md).
-
-### Developer Bastion doesn't support Entra SSH
-
-- **Hit:** the plan's free Developer SKU is incompatible with Entra-only SSH. Basic supports browser SSH with Entra; native `az network bastion ssh --auth-type AAD` needs Standard and tunneling. A Linux terminal session is not a private browser path to the Foundry portal.
-- **Workaround:** user-approved Basic default and optional Standard, no local SSH-key or password fallback. NAT supplies explicit outbound for developer tools and sign-in; neither NAT nor Bastion's public IP is attached to the VM. Basic is enough for `azd up`. Step 5's portal check still needs an approved private browser route, such as Standard/native SSH with DNS-aware browser proxying or an existing VPN-connected workstation.
-- **Status:** by design. Checked 2026-11-05 against [Bastion Entra authentication](https://learn.microsoft.com/azure/bastion/bastion-entra-id-authentication), [SKU comparison](https://learn.microsoft.com/azure/bastion/bastion-sku-comparison) and [explicit outbound](https://learn.microsoft.com/azure/virtual-network/ip-services/default-outbound-access). Basic costs $4.56/day in France Central; Standard adds $2.40/day, before public-IP charges. The plan's free-Bastion and combined-cost assumptions were corrected using the Retail Prices API.
-
-### A keyless Entra jump host still needs a live check
-
-- **Hit:** the [Entra Linux instructions](https://learn.microsoft.com/entra/identity/devices/howto-vm-sign-in-azure-ad-linux) show portal creation with an initial local credential. The [ARM VM schema](https://learn.microsoft.com/azure/templates/microsoft.compute/2024-07-01/virtualmachines) makes `ssh` and `adminPassword` optional, but doesn't explicitly demonstrate provisioning Ubuntu with neither.
-- **Workaround:** per the access requirement, the template disables password authentication, omits passwords and authorized keys, and installs `AADSSHLoginForLinux` on a system-identity Ubuntu 24.04 VM. The image is available and B2s has no listed France Central subscription restriction. What-if accepted this resource shape; it doesn't run the Linux guest provisioning agent or the extension.
-- **Status:** unverified. Checked 2026-11-05. The approved bootstrap must establish that guest provisioning and Entra-only sign-in work. If rejected, stop and record the actual provider error; don't silently generate a local key or password.
+- **Hit:** private data planes need in-network hooks and owner approval of Search's outbound link; Developer Bastion doesn't support Entra SSH.
+- **Workaround:** [bootstrap the host](private-networking.md), then run `azd up` there and approve only `foundry-vectorizer`. Basic supports browser Entra SSH; native clients need Standard ([Learn](https://learn.microsoft.com/azure/bastion/bastion-entra-id-authentication)).
+- **Status:** by design. Checked 2026-11-05: [supported resource types, footnote 6](https://learn.microsoft.com/azure/search/search-indexer-howto-access-private#supported-resource-types) assigns `openai_account` to Azure OpenAI vectorizers, including this AIServices account; `foundry_account` describes hosted-model skills, not this query vectorizer.
 
 ### Evaluation in a private-network project needs more than a capability host
 
 - **Hit:** with the project's storage private, evaluation runs failed first at startup (`EvaluationSessionNotBound: The evaluation session is starting. Retry the relay request.`, zero rows, and a misleading "Azure Storage resource already exists"), then, with a storage connection, at result upload (HTTP 403 `AuthorizationFailure` on `CreateContainer`, although the project identity had Blob Data Contributor). A resource-instance rule for the Foundry account didn't admit the project's requests. The errors point at naming, then permissions.
-- **Workaround:** a project capability host, a project storage connection and the storage firewall's trusted Azure services bypass, as in Microsoft's private-network evaluation template (15a). Storage is then no longer private-link only ([ADR 0006](adr/0006-evaluation-storage-network-exception.md)). Public mode keeps this exact behavior. The new private mode tries `bypass: None` and no resource-instance rules; `AZURE_EVALUATION_TRUSTED_SERVICES_BYPASS=true` is an explicit fallback, not an automatic retry that widens access.
-- **Status:** open. Checked 2026-11-05: bypass-free template and what-if validated only; whether fully private Foundry removes the need for the exception is still a step 5 runtime test. ADR 0006 is not reversed.
+- **Workaround:** capability host, storage connection and trusted-services bypass ([ADR 0006](adr/0006-evaluation-storage-network-exception.md)). Public mode keeps it; private mode tries bypass off, with `AZURE_EVALUATION_TRUSTED_SERVICES_BYPASS=true` as an explicit fallback.
+- **Status:** open. Checked 2026-11-05: evaluation without the bypass remains a step 5 runtime test.
 
 ### Dataset upload fails behind private storage
 
@@ -137,8 +123,8 @@ Sorted by what matters most for a corporate setup: security and networking first
 ### Azure Policy can override templates
 
 - **Hit:** in governed subscriptions, a `modify` policy turns public network access off on storage and Cosmos DB, whatever the template says. The function app then couldn't upload its package (403), and the hosted agent couldn't reach Cosmos DB.
-- **Workaround:** design for private data stores from the start ([ADR 0003](adr/0003-private-data-stores.md)). After access-host bootstrap, inspect policy-added subnet NSGs and preserve their associations in local azd inputs before the main deployment. The template owns the jump-host NSG; external changes to other subnets still need explicit review.
-- **Status:** by design. Re-checked 2026-11-05 with read-only subnet inspection; no policy or network changes applied.
+- **Workaround:** design for private stores ([ADR 0003](adr/0003-private-data-stores.md)) and preserve externally attached subnet NSGs in local azd inputs before reprovisioning.
+- **Status:** by design. Checked 2026-11-05 with read-only subnet inspection.
 
 ### Trusted-service provider spelling
 
@@ -258,9 +244,9 @@ Sorted by what matters most for a corporate setup: security and networking first
 
 ### What-if shows changes that aren't real, and hides some that are
 
-- **Hit:** what-if mixes real drift and reference-expression noise. In step 3 the public template reported 49 modifications, with no resource creates/deletes; an independently compiled untouched baseline reported identical supported-resource results. Both would detach the three live subnet NSGs when the preservation inputs are empty, set evaluation diagnostics' `logAnalyticsDestinationType` to `Dedicated` where the live value is absent, and remove an extra evaluation-storage resource-instance rule while retaining the broad trusted-services bypass. Those changes are not noise. Earlier connection/failover drift is already explicitly declared in Bicep.
-- **Workaround:** preserve NSG IDs in the local azd values and review the evaluation table-mode and extra storage-rule changes separately before any public reprovision. Don't fix unrelated live drift as part of the private option or claim the public result is a clean no-op. The new France Central placeholder environment reported 106 creates, zero modifies/deletes. Both what-ifs leave six dynamic role assignments unsupported; read-only validation cannot prove those assignments or runtime readiness. Full sanitized counts are in the [runbook](private-networking.md#read-only-validation-2026-11-05).
-- **Status:** by design. Checked 2026-11-05; no resource replacement reported and nothing applied.
+- **Hit:** the public what-if reports 49 modifications, identical to the untouched baseline. Three NSG detachments, evaluation logs switching to `Dedicated`, and removal of an extra storage resource-instance rule are real drift, not reference-expression noise.
+- **Workaround:** preserve NSG IDs locally and review the logging/storage changes before reprovisioning. See the [counts](private-networking.md#read-only-validation-2026-11-05); neither mode reports resource deletes or replacements.
+- **Status:** by design. Checked 2026-11-05; six dynamic role assignments remain unsupported. `az deployment sub validate` also accepted a value below a nested parameter's `minLength`. Nothing applied.
 
 ### A provision hook didn't run
 
@@ -332,9 +318,9 @@ Sorted by what matters most for a corporate setup: security and networking first
 
 ### Remote image builds don't support BuildKit
 
-- **Hit:** azd's default remote ACR builder is classic, so Dockerfiles can't use `RUN --mount` or secret mounts. When ACR public access is disabled, that default Tasks pool cannot reach the registry. A VNet-connected dedicated pool is a separate paid/preview setup. Also, azd parses `docker.remoteBuild` as a boolean before environment expansion; `${...}` cannot switch it per environment.
-- **Workaround:** keep public `remoteBuild: true` and the plain Dockerfile. In the private jump-host checkout, manually set the agent's field to `false` and use local Docker build/push over the registry endpoint. This avoids opening the registry or adding a dedicated pool; keep the local configuration change uncommitted. Registry and regional data records share `privatelink.azurecr.io`; don't create a second data DNS zone. The Foundry project must be created after 2026-06-25 for the private registry path.
-- **Status:** by design. Re-checked 2026-11-05 against [ACR private endpoint limitations](https://learn.microsoft.com/azure/container-registry/container-registry-private-endpoints), [Foundry private ACR](https://learn.microsoft.com/azure/foundry/agents/how-to/deploy-hosted-agent-private-azure-container-registry) and the [azd service schema](https://learn.microsoft.com/azure/developer/azure-developer-cli/azd-schema). Local private build/pull still needs step 4 validation.
+- **Hit:** the classic remote builder lacks BuildKit and its default Tasks pool can't reach private ACR ([limitations](https://learn.microsoft.com/azure/container-registry/container-registry-private-endpoints)). `docker.remoteBuild` is a boolean, not an interpolated string ([schema](https://learn.microsoft.com/azure/developer/azure-developer-cli/azd-schema)).
+- **Workaround:** plain Dockerfile; public `remoteBuild: true`, private checkout `false` for local Docker build/push. Keep that local edit uncommitted.
+- **Status:** by design. Checked 2026-11-05; [private hosted-agent registries](https://learn.microsoft.com/azure/foundry/agents/how-to/deploy-hosted-agent-private-azure-container-registry) need projects created after 2026-06-25. Private build/pull remains untested.
 
 ### Flex Consumption can't build workspace packages
 
@@ -346,7 +332,7 @@ Sorted by what matters most for a corporate setup: security and networking first
 
 What a corporate review will ask about that this sample hasn't tried. Treat these as unknowns, not as working.
 
-- **Fully private Foundry:** implemented in Bicep, built and what-if checked on 2026-11-05, but not provisioned. The [runbook](private-networking.md) records access bootstrap, keyless VM/Entra login uncertainty, local image builds, owner approval of Search's vectorizer link, and a separate private browser route. Whether hosted image pull, tools, query-time vectorization, AMPLS ingestion/query, private function deployment (including SCM DNS), evaluation without bypass and portal features work remains unverified. Tracing over a private network is preview.
+- **Fully private Foundry:** Bicep and what-if checked, not provisioned. Image pull, tools/vectorization, AMPLS, function deployment, bypass-free evaluation and portal access still need live tests ([runbook](private-networking.md)). Private tracing is preview.
 - **Data residency end to end:** where traces, conversations, evaluation results and the data proxy's traffic are processed and stored, beyond the models' Data Zone deployment.
 - **Identity governance in practice:** what the docs say about Entra Agent ID is in the [appendix](#preview-terms-support-and-identity); we haven't tried Conditional Access, identity protection, network controls or ownership and access reviews on the agent identities, and the docs don't say which of them work without a license.
 - **The last two keys:** Entra instead of the MCP server's and the platform API's function keys (backlog S1).
@@ -400,17 +386,7 @@ North Europe has batch evaluation but no hosted agents, and network injection ne
 - **Not region-bound:** the private registry for hosted agents (only for projects created after 2026-06-25) and Azure Monitor Private Link Scope (a global resource whose private endpoint goes in the network's region).
 - **Not stated:** trace annotations.
 
-**Private-spike recommendation:** France Central. It has hosted agents, both evaluation
-paths and semantic Search without the current high-demand flag. Read-only model listing
-advertises `gpt-5.4-mini` version `2026-03-17` and `text-embedding-3-large` version `1`
-with DataZoneStandard there; Ubuntu 24.04 is available and B2s has no listed subscription
-restriction. Capacity and quota are still checked again before provisioning.
-Italy North, Poland Central and Spain Central are alternatives for the same hosted/eval
-feature set, subject to model quota and Search capacity. The table above identifies the
-other European hosted/private-capable regions, not a guarantee of colocated Search or
-EU Data Zone models in all of them. North Europe cannot host the whole setup.
-Basic Bastion supports Entra browser SSH in the proposed region; Developer availability
-doesn't affect the choice because it lacks Entra SSH.
+**Private-spike recommendation:** France Central: hosted agents, both evaluation paths and semantic Search without the high-demand flag. Read-only checks advertise both model versions with DataZoneStandard, Ubuntu 24.04 and unrestricted B2s. Italy North, Poland Central and Spain Central are alternatives; recheck capacity and quota before provisioning.
 
 ### Preview terms, support and identity
 

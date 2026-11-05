@@ -39,11 +39,7 @@ azd up                                          # about 20 minutes
 
 `azd up` provisions everything with Bicep, deploys the function apps and the hosted agent, and runs the hooks that seed search, publish the toolbox and grant the agent access ([architecture](docs/architecture.md#deployment)).
 
-This is the default public-development mode. For a new environment with private
-Foundry, registry, Search, monitoring and Functions, follow the
-[private-mode runbook](docs/private-networking.md) instead: bootstrap the access
-host first, then run `azd up` inside the network. The template and what-ifs are
-validated; private runtime behavior still needs the approved spike.
+For private mode, follow the [runbook](docs/private-networking.md): bootstrap the access host, then run `azd up` inside the network.
 
 Try it:
 
@@ -73,9 +69,7 @@ Foundry sends the 50 test cases to the deployed agent and scores the answers; th
 azd down --purge
 ```
 
-The default mode's fixed costs are about $3.86/day; private mode starts at about
-$13.63/day plus usage ([assumptions](docs/plan-corporate-readiness.md#costs)).
-Model usage is about 10–15k tokens per diagnosis.
+Fixed costs are about $4/day (default) or $14/day (private mode), plus usage ([assumptions](docs/plan-corporate-readiness.md#costs)). Model usage is about 10–15k tokens per diagnosis.
 
 ## Development
 

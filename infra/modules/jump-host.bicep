@@ -10,7 +10,10 @@ param bastionSku string = 'Basic'
 param vmSize string = 'Standard_B2s'
 param principalId string = ''
 param principalType string = 'User'
-@description('Provisioning account only: no password or authorized keys are configured.')
+@description('Initial provisioning key; discard its private half and use Entra sign-in.')
+@minLength(1)
+param adminPublicKey string
+@description('Initial provisioning account; password authentication is disabled.')
 param adminUsername string = 'jumpadmin'
 
 var loginRole = '1c0163c0-47e6-4577-8991-ea5c82e286e4'
@@ -59,6 +62,14 @@ resource vm 'Microsoft.Compute/virtualMachines@2024-07-01' = {
       linuxConfiguration: {
         disablePasswordAuthentication: true
         provisionVMAgent: true
+        ssh: {
+          publicKeys: [
+            {
+              path: '/home/${adminUsername}/.ssh/authorized_keys'
+              keyData: adminPublicKey
+            }
+          ]
+        }
       }
     }
     securityProfile: {

@@ -50,9 +50,13 @@ class SetupError(RuntimeError):
     pass
 
 
+def _private_networking() -> bool:
+    return os.environ.get("AZURE_PRIVATE_NETWORKING", "").lower() == "true"
+
+
 def check_private_endpoints(*endpoints: str) -> None:
     """Fail before data-plane work when private DNS isn't available to this process."""
-    if os.environ.get("AZURE_PRIVATE_NETWORKING", "").lower() != "true":
+    if not _private_networking():
         return
     for endpoint in endpoints:
         host = urlsplit(endpoint).hostname
@@ -195,7 +199,7 @@ def index_definition(name: str, openai_endpoint: str, embedding_deployment: str)
 def seed_search(credential: DefaultAzureCredential) -> None:
     search_endpoint = env("AZURE_SEARCH_ENDPOINT")
     check_private_endpoints(search_endpoint, env("AZURE_OPENAI_ENDPOINT"))
-    if os.environ.get("AZURE_PRIVATE_NETWORKING", "").lower() == "true":
+    if _private_networking():
         link = Arm(credential).request(
             "GET", env("AZURE_SEARCH_SHARED_PRIVATE_LINK_ID"), "2025-05-01"
         )
@@ -380,12 +384,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     try:
         # On the jump host, the VM identity is for Entra SSH, not developer deployment rights.
         steps[args.step](
-            DefaultAzureCredential(
-                exclude_managed_identity_credential=os.environ.get(
-                    "AZURE_PRIVATE_NETWORKING", ""
-                ).lower()
-                == "true"
-            )
+            DefaultAzureCredential(exclude_managed_identity_credential=_private_networking())
         )
     except SetupError as error:
         sys.exit(f"{args.step}: {error}")

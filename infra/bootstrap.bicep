@@ -5,6 +5,8 @@ targetScope = 'subscription'
 param environmentName string
 param location string
 param principalId string
+@minLength(1)
+param adminPublicKey string
 @allowed(['User', 'ServicePrincipal'])
 param principalType string = 'User'
 param vnetAddressPrefix string = '10.40.0.0/16'
@@ -53,6 +55,7 @@ module jumpHost 'modules/jump-host.bicep' = {
     vmSize: jumpVmSize
     principalId: principalId
     principalType: principalType
+    adminPublicKey: adminPublicKey
   }
 }
 
