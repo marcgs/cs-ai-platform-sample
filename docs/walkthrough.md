@@ -125,7 +125,7 @@ uv run csai feedback <episode-id> --verdict incorrect --actual-root-cause FM-02 
 1. Edit [`instructions.md`](../agents/rca/src/rca_agent/instructions.md).
 2. Run the edited agent locally against the deployed models and tools. `azd ai agent run rca-agent --start-command "uv run python -m rca_agent.main"` starts it and opens the Agent Inspector, and `azd ai agent invoke --local "M-0007: ..."` sends a request from another terminal. Nothing deployed changes.
 3. Deploy an improvement with `azd deploy rca-agent`, or undo it with `git restore`. Check what's live with `azd ai agent invoke`, and follow its logs with `azd ai agent monitor --follow`.
-4. Measure the deployed version on all 50 cases with the [README's evaluation commands](../README.md#evaluate). This costs about $1, so get approval first and check the [known failures](foundry-findings.md#evaluation) before you start. Compare the gate's means with the [first baseline](../evals/rca/README.md#first-measurement), not the portal's pass counts.
+4. Measure the deployed version on all 50 cases with the [README's evaluation commands](../README.md#evaluate). This costs about $1, so get approval first and check the [known failures](foundry-findings.md#agent-target-evaluations-can-lose-responses-mid-run) before you start. Compare the gate's means with the [first baseline](../evals/rca/README.md#first-measurement), not the portal's pass counts.
 
 **Look.** In the Foundry portal: your project → **Evaluations → rca-quality**, one run per measurement. Inspect each evaluator's errors in a row, not just the headline.
 
