@@ -1,58 +1,83 @@
 # Foundry findings
 
-What we hit while building this sample on Microsoft Foundry, Agent Framework and azd, and how we got past it. This is one of the sample's main results: read it before designing a similar platform.
+What we hit while building this sample on Microsoft Foundry, Agent Framework and azd, and how we got past it. This is one of the sample's main results: read it before designing a similar platform for a corporate setting, where data and endpoints must stay private.
 
-Each finding has a **Hit** (what happened and why it matters), a **Workaround** (where it lives in this repository) and a **Status**: *open* (still a limitation), *by design* (how the service works) or *unverified*, with the date we last checked. Most of these features are in preview, so check the date against the current docs.
+Each finding has a **Hit** (what happened and why it matters), a **Workaround** (where it lives in this repository) and a **Status**: *open* (still a limitation), *by design* (how the service works) or *unverified*, with the date we last checked. Many of these features are preview or beta, so check the date against the current docs.
 
 Add a finding when you hit one, and update its status when you check it again. Ideas go in the [backlog](backlog.md).
 
+## Maturity of what the sample uses
+
+Preview features come without a service-level agreement, and Microsoft [doesn't recommend them for production](https://learn.microsoft.com/azure/foundry/concepts/general-availability#validate-ga-only-usage); organizations can [hide or block them](https://learn.microsoft.com/azure/foundry/how-to/disable-preview-features). Checked 2026-11-05.
+
+| Component | Stage | Used for |
+|---|---|---|
+| Foundry agents (core), toolboxes, tracing for hosted agents, evaluations | GA, per the [GA overview](https://learn.microsoft.com/azure/foundry/concepts/general-availability#feature-readiness-at-ga) (some evaluators are preview) | The hosted agent, its tools, traces and evaluation |
+| Guardrails for agents | Preview | Content safety on tool calls ([moderation fails](#content-safety-moderation-fails-on-every-knowledge-search)) |
+| Tracing over a private network, monitoring | Preview | Not used yet |
+| azd Foundry extensions (`azure.ai.agents` 1.0.0-beta.23, `azure.ai.evaluations` 1.0.0-beta.2, `azure.ai.toolboxes` 1.0.0-beta.13 and five more) | Beta | Deploying and running the agent; evaluation runs ([early beta](#azd-ai-eval-is-an-early-beta)) |
+| `agent-framework-foundry-hosting` 1.0.0b261015 | Beta | The agent's hosting adapter ([corrupts tool calls](#the-hosting-adapter-corrupts-tool-call-arguments-and-over-reports-tokens)) |
+| `agent-framework-core` 1.22.0, `agent-framework-foundry` 1.15.0, `azure-ai-projects` 2.7.0 | GA | The agent and the evaluation gate |
+
 ## Summary
 
-| Finding | Status | Workaround |
-|---|---|---|
-| **Hosted agents** | | |
-| [Network injection only at account creation](#network-injection-can-only-be-set-when-the-account-is-created) | by design | Decide the network before the first deployment |
-| [The agent endpoint stays public](#the-agent-endpoint-stays-public-with-network-injection) | open | Entra-only access |
-| [A new identity per agent version](#each-agent-version-gets-a-new-identity-which-exists-only-after-deployment) | by design | Post-deploy hook grants its role |
-| [Failures only in the hosted runtime](#some-failures-only-appear-in-the-hosted-runtime) | by design | Runtime imports, a test, a build-time import |
-| [The hosting adapter corrupts tool calls and usage](#the-hosting-adapter-corrupts-tool-call-arguments-and-over-reports-tokens) | open | Nothing reads them; a fix is parked |
-| [Hosted runs stream internally](#hosted-runs-stream-internally) | open | Compare hosted with hosted |
-| [Model rate limits](#model-rate-limits-fail-hosted-runs) | by design | Retry 429s; low concurrency |
-| **Tools and the toolbox** | | |
-| [Toolbox MCP calls run one at a time](#toolbox-mcp-calls-run-one-at-a-time) | open | None |
-| [Traces stop at the toolbox](#traces-stop-at-the-toolbox) | open | None |
-| [Moderation fails on every knowledge search](#content-safety-moderation-fails-on-every-knowledge-search) | open | None yet |
-| [Search results contain the service's address](#search-results-contain-the-search-services-address) | by design | Strip URLs before export |
-| [Tool names arrive prefixed](#tool-names-arrive-prefixed) | by design | Match the prefixed name |
-| [Some SDK combinations break the MCP session](#some-sdk-combinations-break-the-mcp-session) | open | Pin `agent-framework-core` 1.22.0 |
-| **Evaluation** | | |
-| [A private-network project needs more than a capability host](#evaluation-in-a-private-network-project-needs-more-than-a-capability-host) | open | Trusted-services bypass on evaluation storage |
-| [Dataset upload fails behind private storage](#dataset-upload-fails-behind-private-storage) | open | Local source in `azure.eval.yaml` |
-| [Agent-target runs can lose answers](#agent-target-evaluations-can-lose-responses-mid-run) | open | Treat any failed call as an invalid run |
-| [Run summaries hide errors](#a-completed-run-can-hide-failed-evaluators) | open | Check every row's `sample.error` |
-| [Built-in judges don't know the right answer](#built-in-judges-dont-know-the-right-answer) | by design | Code evaluators with an answer key |
-| [Tool judges reject string arguments](#tool-judges-reject-string-arguments) | open | Judges see only the final answer |
-| [Code evaluators can't say "doesn't apply"](#code-evaluators-cant-say-doesnt-apply) | open | 1.0 plus `applicable_metrics` per row |
-| [The code evaluator sandbox restricts Python](#the-code-evaluator-sandbox-restricts-python) | by design | Standard library only |
-| [The portal shows pass counts, not means](#the-portal-shows-pass-counts-not-means) | by design | `rca_evals.gate` |
-| [azd's pass-rate gate can't express our gate](#azds-pass-rate-gate-cannot-express-the-rca-gate) | by design | `rca_evals.gate` |
-| [`azd ai eval` is an early beta](#azd-ai-eval-is-an-early-beta) | open | See the entry |
-| [An evaluation's evaluators can't be changed](#an-evaluations-evaluators-cant-be-changed) | by design | `create` a new evaluation |
-| [No retries, no repeats, slow runs](#no-retries-no-repeats-slow-runs) | by design | New runs; several full runs |
-| [Large outputs are dropped from `sample.output`](#large-outputs-are-dropped-from-sampleoutput) | by design | Map `sample.output_text` |
-| [Judge usage is reported twice](#judge-usage-is-reported-twice) | open | Count one |
-| **Deployment and tooling** | | |
-| [`azd ai agent run` can't find a workspace agent](#azd-ai-agent-run-cant-find-a-workspace-agents-entry-point) | by design | `--start-command` |
-| [`azd down` clears the location](#azd-down-clears-the-location) | by design | Set it again |
-| [A provision hook didn't run](#a-provision-hook-didnt-run) | open | Check its output |
-| [What-if is noisy and incomplete](#what-if-shows-changes-that-arent-real-and-hides-some-that-are) | by design | Declare live settings in Bicep |
-| [Remote image builds don't support BuildKit](#remote-image-builds-dont-support-buildkit) | by design | Plain Dockerfile |
-| [Azure Policy can override templates](#azure-policy-can-override-templates) | by design | Private data stores from the start |
-| [Flex Consumption can't build workspace packages](#flex-consumption-cant-build-workspace-packages) | by design | Prebuilt wheels |
-| [The chat model version upgrades itself](#the-chat-model-version-upgrades-automatically) | by design | Record it with every run |
-| **Documentation inconsistencies** | | |
-| [Traffic splitting between agent versions](#traffic-splitting-between-agent-versions) | unverified | Not tried |
-| [Trusted-service provider spelling](#trusted-service-provider-spelling) | unverified | The broader bypass |
+Sorted by what matters most for a corporate setup: security and networking first, then what production needs, then development workarounds.
+
+| Finding | Status | Stage | Workaround |
+|---|---|---|---|
+| **1. Security and networking** | | | |
+| [Network injection with a public Foundry endpoint isn't a documented setup](#network-injection-with-a-public-foundry-endpoint-isnt-a-documented-setup) | open (our choice) | GA | Entra-only access; full private untested |
+| [Evaluation needs a storage firewall exception](#evaluation-in-a-private-network-project-needs-more-than-a-capability-host) | open | GA | Trusted-services bypass ([ADR 0006](adr/0006-evaluation-storage-network-exception.md)) |
+| [Dataset upload fails behind private storage](#dataset-upload-fails-behind-private-storage) | open | GA | Local source in `azure.eval.yaml` |
+| [Moderation fails on every knowledge search](#content-safety-moderation-fails-on-every-knowledge-search) | open | preview | None yet |
+| [Network injection only at account creation](#network-injection-can-only-be-set-when-the-account-is-created) | by design | GA | Decide the network before the first deployment |
+| [Traces stop at the toolbox](#traces-stop-at-the-toolbox) | open | GA | None |
+| [Search results contain the service's address](#search-results-contain-the-search-services-address) | by design | GA | Strip URLs before export |
+| [A new identity per agent version](#each-agent-version-gets-a-new-identity-which-exists-only-after-deployment) | by design | GA | Post-deploy hook grants its role |
+| [Azure Policy can override templates](#azure-policy-can-override-templates) | by design | | Private data stores from the start |
+| [Trusted-service provider spelling](#trusted-service-provider-spelling) | unverified | | The broader bypass |
+| **2. Production readiness** | | | |
+| [Agent-target runs can lose answers](#agent-target-evaluations-can-lose-responses-mid-run) | open | GA | Treat any failed call as an invalid run |
+| [`azd ai eval` is an early beta](#azd-ai-eval-is-an-early-beta) | open | beta | See the entry |
+| [The hosting adapter corrupts tool calls and usage](#the-hosting-adapter-corrupts-tool-call-arguments-and-over-reports-tokens) | open | beta | Nothing reads them; a fix is in closed #43 |
+| [Hosted runs stream internally](#hosted-runs-stream-internally) | open | beta | Compare hosted with hosted |
+| [Judge usage is reported twice](#judge-usage-is-reported-twice) | open | GA | Count one |
+| [Traffic splitting between agent versions](#traffic-splitting-between-agent-versions) | unverified | preview | Not tried |
+| [The chat model version upgrades itself](#the-chat-model-version-upgrades-automatically) | by design | GA | Record it with every run |
+| [Run summaries hide errors](#a-completed-run-can-hide-failed-evaluators) | open | GA | Check every row's `sample.error` |
+| [azd's pass-rate gate can't express our gate](#azds-pass-rate-gate-cannot-express-the-rca-gate) | by design | beta | `rca_evals.gate` |
+| [An evaluation's evaluators can't be changed](#an-evaluations-evaluators-cant-be-changed) | by design | GA | `create` a new evaluation |
+| [No retries, no repeats, slow runs](#no-retries-no-repeats-slow-runs) | by design | GA | New runs; several full runs |
+| [Model rate limits](#model-rate-limits-fail-hosted-runs) | by design | GA | Retry 429s; low concurrency |
+| [Toolbox MCP calls run one at a time](#toolbox-mcp-calls-run-one-at-a-time) | open | GA | None |
+| [Some SDK combinations break the MCP session](#some-sdk-combinations-break-the-mcp-session) | open | GA | Pin `agent-framework-core` 1.22.0 |
+| [What-if is noisy and incomplete](#what-if-shows-changes-that-arent-real-and-hides-some-that-are) | by design | | Declare live settings in Bicep |
+| [A provision hook didn't run](#a-provision-hook-didnt-run) | open | | Check its output |
+| **3. Development workarounds** | | | |
+| [Failures only in the hosted runtime](#some-failures-only-appear-in-the-hosted-runtime) | by design | GA | Runtime imports, a test, a build-time import |
+| [Built-in judges don't know the right answer](#built-in-judges-dont-know-the-right-answer) | by design | GA | Code evaluators with an answer key |
+| [Tool judges reject string arguments](#tool-judges-reject-string-arguments) | open | GA | Judges see only the final answer |
+| [Code evaluators can't say "doesn't apply"](#code-evaluators-cant-say-doesnt-apply) | open | GA | 1.0 plus `applicable_metrics` per row |
+| [The code evaluator sandbox restricts Python](#the-code-evaluator-sandbox-restricts-python) | by design | GA | Standard library only |
+| [The portal shows pass counts, not means](#the-portal-shows-pass-counts-not-means) | by design | GA | `rca_evals.gate` |
+| [Large outputs are dropped from `sample.output`](#large-outputs-are-dropped-from-sampleoutput) | by design | GA | Map `sample.output_text` |
+| [Tool names arrive prefixed](#tool-names-arrive-prefixed) | by design | GA | Match the prefixed name |
+| [`azd ai agent run` can't find a workspace agent](#azd-ai-agent-run-cant-find-a-workspace-agents-entry-point) | by design | beta | `--start-command` |
+| [`azd down` clears the location](#azd-down-clears-the-location) | by design | | Set it again |
+| [Remote image builds don't support BuildKit](#remote-image-builds-dont-support-buildkit) | by design | | Plain Dockerfile |
+| [Flex Consumption can't build workspace packages](#flex-consumption-cant-build-workspace-packages) | by design | | Prebuilt wheels |
+
+The Stage column is the maturity of the component involved, from the table above; blank means the finding isn't about Foundry.
+
+## Not tested yet
+
+What a corporate review will ask about that this sample hasn't tried. Treat these as unknowns, not as working.
+
+- **Fully private Foundry:** the Foundry account, registry, AI Search and Application Insights behind private endpoints, with deployment from inside the network ([networking options](https://learn.microsoft.com/azure/foundry/agents/concepts/networking-options)). Whether hosted agents, the toolbox, evaluation and tracing all work there, and whether the evaluation storage exception is still needed.
+- **Data residency end to end:** where traces, conversations, evaluation results and the data proxy's traffic are processed and stored, beyond the models' Data Zone deployment.
+- **Identity governance:** Entra Agent ID for the per-version agent identities, ownership and access reviews.
+- **The last two keys:** Entra instead of the MCP server's and the platform API's function keys (backlog S1).
+- **Region availability** of each feature used, outside Sweden Central (AI Search runs in North Europe here).
 
 ## Hosted agents
 
@@ -62,11 +87,11 @@ Add a finding when you hit one, and update its status when you check it again. I
 - **Workaround:** decide on the network layout before the first deployment. Here, it's in Bicep from the start ([ADR 0003](adr/0003-private-data-stores.md)).
 - **Status:** by design. Checked 2026-10-27.
 
-### The agent endpoint stays public with network injection
+### Network injection with a public Foundry endpoint isn't a documented setup
 
-- **Hit:** network injection controls what the agent can reach, not who can reach the agent. Its endpoint stays public, protected by Entra, so a fully private platform isn't possible yet.
-- **Workaround:** accepted for the sample: Entra-only access ([ADR 0004](adr/0004-agent-hosting.md)).
-- **Status:** open (preview). Checked 2026-10-28.
+- **Hit:** network injection controls what the agent can reach, not who can reach it. We kept the Foundry account public (Entra only) so developers can deploy from a laptop ([ADR 0003](adr/0003-private-data-stores.md)). Microsoft's [networking options](https://learn.microsoft.com/azure/foundry/agents/concepts/networking-options#networking-options) pair an injected virtual network with a private endpoint for inbound access; a public endpoint with injection isn't one of the documented models. So the public agent endpoint is our choice, not a platform limit, and some failures here (evaluation storage, possibly the lost evaluation answers) may come from running an undocumented combination.
+- **Workaround:** Entra-only access for now. A fully private account, registry and monitoring are [untested](#not-tested-yet); the docs recommend deploying from runners inside the network.
+- **Status:** open, our choice. Re-checked 2026-11-05: the earlier reading ("the endpoint can't be private") was wrong.
 
 ### Each agent version gets a new identity, which exists only after deployment
 
@@ -115,7 +140,7 @@ Add a finding when you hit one, and update its status when you check it again. I
 ### Content-safety moderation fails on every knowledge search
 
 - **Hit:** every `azure_ai_search` tool result carries `raiPreToolAnnotations` and `raiPostToolAnnotations` errors: "Error during input moderation for knowledge tool: azure_ai_search for general harms" (and the same for output). The search still returns results, so the guardrail is silently not running. At least one answer avoided citing search results, saying they were moderated.
-- **Workaround:** none yet; cause not investigated.
+- **Workaround:** none yet; cause not investigated. Guardrails for agents are preview.
 - **Status:** open. Found 2026-11-04.
 
 ### Search results contain the search service's address
@@ -167,6 +192,7 @@ Add a finding when you hit one, and update its status when you check it again. I
   - A fixed time limit: the first 424/403 came at 14.5 minutes in one run and at 74 minutes in the other.
   - The session idle timeout: requests arrived continuously, apart from Foundry's own waits.
   - The session quota, subnet addresses and model rate limits: the [limits page](https://learn.microsoft.com/azure/foundry/agents/concepts/limits-quotas-regions#limit-error-reference) gives them HTTP 429 with their own codes, and the runs used one request at a time. The [evaluation limits](https://learn.microsoft.com/azure/foundry/concepts/evaluation-regions-limits-virtual-network#rate-limits) cover only row size and count, and the [troubleshooting](https://learn.microsoft.com/azure/foundry/observability/how-to/cloud-evaluation-results#troubleshoot-cloud-evaluation) 403 advice is about the caller's credentials.
+- **A lead:** the [evaluation quickstart](https://learn.microsoft.com/azure/foundry/observability/quickstarts/quickstart-evaluate-hosted-agent#step-3-run-the-evaluation) says agent targets work with "synchronous, non-streaming execution", and suggests trace evaluation for long-running or streaming agents. Our hosted agent [streams internally](#hosted-runs-stream-internally), and the 30-minute errors say "long-running agent response". Not tested.
 - **Workaround:** `rca_evals.gate` fails any run with a row's `sample.error` as an agent error, never as a wrong answer. A run with failed calls isn't used for measurement; submit a new full run instead of rerunning a subset.
 - **Status:** open, cause unknown. A support request is drafted but not sent while we watch for more failures. Checked 2026-11-05.
 
@@ -225,7 +251,7 @@ Add a finding when you hit one, and update its status when you check it again. I
   - The evaluators use a flat `data_schema` (`rca_evals.assets`).
   - The judge model's deployment name is written out in `evals/azure.eval.yaml`.
   - `azure.yaml` has no `azure.ai.eval` service.
-- **Status:** open. Compare `azd ext list` with the quickstart. Checked 2026-11-04.
+- **Status:** open. The quickstart still uses `azd ai agent eval run`, while the installed extension (the latest, beta.23) has removed it. Checked 2026-11-05.
 
 ### An evaluation's evaluators can't be changed
 
@@ -305,9 +331,9 @@ Add a finding when you hit one, and update its status when you check it again. I
 
 ### Traffic splitting between agent versions
 
-- **Hit:** "Manage hosted agents" says traffic splitting isn't supported, while "Promote hosted agents to production" shows a 90/10 split. Canary releases depend on it.
-- **Workaround:** not tried.
-- **Status:** unverified. Checked 2026-11-03.
+- **Hit:** [Manage hosted agents](https://learn.microsoft.com/azure/foundry/agents/how-to/manage-hosted-agent) and [What are hosted agents](https://learn.microsoft.com/azure/foundry/agents/concepts/hosted-agents#versioning) say traffic splitting isn't supported, while [Promote hosted agents to production](https://learn.microsoft.com/azure/foundry/agents/how-to/deploy-hosted-agent-production#roll-out-a-production-version-gradually) (marked preview) shows a 90/10 canary. Canary releases depend on it.
+- **Workaround:** not tried. Until it's verified, release by pinning the endpoint to one version and switching it.
+- **Status:** unverified; the docs still disagree. Checked 2026-11-05.
 
 ### Trusted-service provider spelling
 
