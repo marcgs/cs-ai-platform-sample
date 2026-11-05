@@ -4,6 +4,10 @@ The sample is a minimal CS AI platform with one agent on it. The platform provid
 
 ## Components
 
+The diagram shows the default public-development mode. The opt-in
+[private mode](private-networking.md) retains the same agent and data flows but
+places all service data planes behind private endpoints.
+
 ```mermaid
 flowchart LR
     subgraph dev["Developer / SME machine"]
@@ -95,7 +99,21 @@ Cosmos DB data roles are Cosmos DB's own role assignments, not in the portal's I
 
 Storage and Cosmos DB have public access disabled (also enforced by policy in the original subscription) and private endpoints in `snet-private-endpoints` with private DNS zones ([ADR 0003](adr/0003-private-data-stores.md)). The function apps use VNet integration (`snet-functions`). The hosted agent runs in the delegated `snet-agents` through Foundry agent network injection, which is set when the Foundry account is created. Foundry, the registry and AI Search stay public with Entra-only access, so developers can deploy from their machines.
 
+With `AZURE_PRIVATE_NETWORKING=true`, Foundry, Premium ACR, Search and both Functions
+also have public access disabled. AMPLS covers Application Insights and Log Analytics,
+including ingestion and query. Search's query vectorizer gets an outbound shared
+private link to Foundry, with explicit owner approval. Fourteen private DNS zones
+serve eleven VNet endpoints; Search owns a twelfth endpoint in its managed network.
+An Entra-only Linux jump VM has no public IP, with Basic/Standard Bastion access and
+NAT egress. This mode is implemented and what-if checked, not yet deployed or proven
+end to end. Region, Bastion SKU and VM size remain parameters.
+
 Evaluation storage is a separate account: public networking, shared keys and anonymous blobs disabled, a blob private endpoint, and Blob Data Contributor for the Foundry project only. Its firewall allows trusted Azure services, because Foundry's evaluation service doesn't reach it through the private endpoint ([ADR 0006](adr/0006-evaluation-storage-network-exception.md)).
+
+Private mode removes that bypass and the resource-instance rule by default.
+`AZURE_EVALUATION_TRUSTED_SERVICES_BYPASS=true` is an explicit fallback for the
+private spike; it doesn't weaken or change the public mode's existing exception.
+Whether evaluation can run without it remains an open test, not a revision of ADR 0006.
 
 To check it: `az network private-endpoint list -g $RG -o table`, and `az cosmosdb show -g $RG -n $COSMOS_ACCOUNT_NAME --query "{public:publicNetworkAccess, localAuthDisabled:disableLocalAuth}"`.
 
@@ -125,6 +143,14 @@ AppRequests
 1. Bicep (`infra/main.bicep`): network, monitoring, Foundry, registry, Cosmos DB, AI Search, connections, function apps and roles. Its outputs become the azd environment.
 2. `postprovision`: create and seed the search index.
 3. Services: package the function apps (`scripts/package_function.sh`, locked Linux wheels) and deploy them. The MCP app's `postdeploy` stores its key in a Foundry connection and publishes the toolbox, which needs the key and so can't be Bicep ([ADR 0005](adr/0005-infrastructure-as-code.md)). Then export the locked requirements, build the agent image in the registry and create a hosted agent version. The agent's `postdeploy` grants its new identity the Cosmos DB role.
+
+For private mode, first provision `infra/bootstrap.bicep` with approval. Then run the
+same sequence from the jump VM, using local Docker builds (`remoteBuild: false` in
+that checkout only). Search seeding stops until the outbound link is approved.
+The hooks reject nonprivate DNS answers before data-plane calls; ARM-only hooks
+don't move. Hooks and `csai` skip the VM managed identity and use developer
+credentials. See the [runbook](private-networking.md) for all manual steps and
+the separate browser path needed for the private Foundry portal.
 
 **Before reprovisioning an existing environment,** check the subnets' security groups. If any were attached outside this template (for example by policy), keep their IDs in the azd environment, never in tracked files:
 

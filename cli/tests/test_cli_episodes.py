@@ -1,12 +1,13 @@
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+import httpx
 import pytest
 from typer.testing import CliRunner
 
 from cs_platform.episodes import Episode, Feedback, ToolCall
 from csai import app as cli
-from csai.platform import PlatformClient
+from csai.platform import PlatformApiError, PlatformClient
 from platform_api.api import EpisodeSummary
 
 if TYPE_CHECKING:
@@ -92,3 +93,24 @@ def test_feedback_is_attached(fake: FakePlatform) -> None:
     assert fake.episode.feedback.actual_root_cause == "FM-05"
     shown = runner.invoke(cli.app, ["--no-azd", "episodes", "show", "ep-1"])
     assert "incorrect; actual root cause FM-05" in shown.output
+
+
+@pytest.mark.parametrize("private_mode", ["true", "false"])
+@pytest.mark.parametrize("forbidden", [False, True])
+def test_platform_access_error_explains_private_access(
+    monkeypatch: pytest.MonkeyPatch, private_mode: str, *, forbidden: bool
+) -> None:
+    monkeypatch.setenv("AZURE_PRIVATE_NETWORKING", private_mode)
+
+    def failed_request(
+        self: httpx.Client, method: str, url: str, **kwargs: object
+    ) -> httpx.Response:
+        if forbidden:
+            return httpx.Response(403, text="Access denied")
+        raise httpx.ConnectError("unreachable")
+
+    monkeypatch.setattr(httpx.Client, "request", failed_request)
+    client = PlatformClient("https://api.example/api", "synthetic-key")
+    with pytest.raises(PlatformApiError, match="403" if forbidden else "ConnectError") as error:
+        client.list_episodes()
+    assert ("jump host" in str(error.value)) == (private_mode == "true")

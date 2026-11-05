@@ -16,6 +16,19 @@ param location string
 @description('Region for AI Search; defaults to location. Use another region when it lacks capacity.')
 param searchLocation string = ''
 
+@description('Isolate service data planes and add a jump host. Use a new environment.')
+param privateNetworking bool = false
+
+@description('Private-mode fallback for ADR 0006. Public mode always retains the existing exception.')
+param evaluationStorageTrustedServicesBypass bool = false
+
+@description('Basic supports browser Entra SSH; Standard also supports native clients.')
+@allowed(['Basic', 'Standard'])
+param bastionSku string = 'Basic'
+
+@description('Jump host VM size; local Docker builds need sufficient memory.')
+param jumpVmSize string = 'Standard_B2s'
+
 @description('Object ID of the deploying user or service principal; gets data-plane access.')
 param principalId string = ''
 
@@ -75,6 +88,7 @@ module monitoring 'modules/monitoring.bicep' = {
     tags: tags
     logAnalyticsName: '${abbrs.operationalInsightsWorkspaces}${token}'
     appInsightsName: '${abbrs.insightsComponents}${token}'
+    privateNetworking: privateNetworking
   }
 }
 
@@ -89,6 +103,23 @@ module network 'modules/network.bicep' = {
     privateEndpointSubnetNetworkSecurityGroupId: privateEndpointSubnetNetworkSecurityGroupId
     functionsSubnetNetworkSecurityGroupId: functionsSubnetNetworkSecurityGroupId
     agentsSubnetNetworkSecurityGroupId: agentsSubnetNetworkSecurityGroupId
+    privateNetworking: privateNetworking
+  }
+}
+
+module jumpHost 'modules/jump-host.bicep' = if (privateNetworking) {
+  name: 'jump-host'
+  scope: rg
+  params: {
+    location: location
+    tags: tags
+    name: 'vm-jump-${token}'
+    subnetId: network.outputs.jumpSubnetId
+    bastionSubnetId: network.outputs.bastionSubnetId
+    bastionSku: bastionSku
+    vmSize: jumpVmSize
+    principalId: principalId
+    principalType: principalType
   }
 }
 
@@ -115,6 +146,7 @@ module foundry 'modules/foundry.bicep' = {
     ]
     logAnalyticsId: monitoring.outputs.logAnalyticsId
     agentSubnetId: network.outputs.agentsSubnetId
+    privateNetworking: privateNetworking
   }
 }
 
@@ -146,6 +178,7 @@ module search 'modules/search.bicep' = {
     contributorPrincipalType: principalType
     toolPrincipalIds: [foundry.outputs.accountPrincipalId, foundry.outputs.projectPrincipalId]
     foundryAccountName: foundry.outputs.accountName
+    privateNetworking: privateNetworking
   }
 }
 
@@ -159,6 +192,7 @@ module evaluationStorage 'modules/evaluation-storage.bicep' = {
     projectPrincipalId: foundry.outputs.projectPrincipalId
     foundryAccountId: foundry.outputs.accountId
     logAnalyticsId: monitoring.outputs.logAnalyticsId
+    trustedServicesBypass: !privateNetworking || evaluationStorageTrustedServicesBypass
   }
 }
 
@@ -220,6 +254,7 @@ module mcpApp 'modules/function-app.bicep' = {
     deploymentContainer: 'app-package'
     appInsightsName: monitoring.outputs.appInsightsName
     subnetId: network.outputs.functionsSubnetId
+    privateNetworking: privateNetworking
   }
 }
 
@@ -238,6 +273,7 @@ module apiApp 'modules/function-app.bicep' = {
     deploymentContainer: 'app-package-api'
     appInsightsName: monitoring.outputs.appInsightsName
     subnetId: network.outputs.functionsSubnetId
+    privateNetworking: privateNetworking
     settings: {
       COSMOS_ENDPOINT: cosmosEndpoint
       COSMOS_DATABASE: cosmosDatabase
@@ -252,6 +288,65 @@ var privateEndpoints = [
   { service: 'storage', groupId: 'queue', dnsZone: 'queue' }
   { service: 'storage', groupId: 'table', dnsZone: 'table' }
   { service: 'cosmos', groupId: 'Sql', dnsZone: 'cosmosSql' }
+]
+
+var isolatedServiceIds = {
+  foundry: foundry.outputs.accountId
+  registry: foundry.outputs.registryId
+  search: search.outputs.id
+  monitor: monitoring.outputs.privateLinkScopeId
+  mcp: mcpApp.outputs.id
+  api: apiApp.outputs.id
+}
+
+var isolatedEndpoints = [
+  {
+    name: 'foundry'
+    groupId: 'account'
+    zones: ['cognitive', 'openai', 'foundry']
+  }
+  {
+    name: 'registry'
+    groupId: 'registry'
+    zones: ['registry']
+  }
+  {
+    name: 'search'
+    groupId: 'searchService'
+    zones: ['search']
+  }
+  {
+    name: 'monitor'
+    groupId: 'azuremonitor'
+    zones: ['monitor', 'oms', 'ods', 'agentService', 'blob']
+  }
+  {
+    name: 'mcp'
+    groupId: 'sites'
+    zones: ['web']
+  }
+  {
+    name: 'api'
+    groupId: 'sites'
+    zones: ['web']
+  }
+]
+
+module isolatedEndpointsModule 'modules/private-endpoint.bicep' = [
+  for pe in isolatedEndpoints: if (privateNetworking) {
+    name: 'pe-${pe.name}'
+    scope: rg
+    params: {
+      location: location
+      tags: tags
+      name: '${abbrs.networkPrivateEndpoints}${pe.name}-${token}'
+      subnetId: network.outputs.privateEndpointSubnetId
+      serviceId: isolatedServiceIds[pe.name]
+      groupId: pe.groupId
+      dnsZoneId: network.outputs.dnsZoneIds[pe.zones[0]]
+      additionalDnsZoneIds: map(skip(pe.zones, 1), zone => network.outputs.dnsZoneIds[zone])
+    }
+  }
 ]
 
 module endpoints 'modules/private-endpoint.bicep' = [
@@ -284,6 +379,12 @@ module developerAccess 'modules/developer-access.bicep' = if (hasPrincipal) {
 // Outputs become azd environment values (and the agent's settings).
 output AZURE_RESOURCE_GROUP string = rg.name
 output AZURE_LOCATION string = location
+output AZURE_PRIVATE_NETWORKING bool = privateNetworking
+output AZURE_BASTION_SKU string = bastionSku
+output JUMP_VM_NAME string = privateNetworking ? jumpHost!.outputs.vmName : ''
+output BASTION_NAME string = privateNetworking ? jumpHost!.outputs.bastionName : ''
+output AZURE_AI_ACCOUNT_ID string = foundry.outputs.accountId
+output AZURE_SEARCH_SHARED_PRIVATE_LINK_ID string = search.outputs.sharedPrivateLinkId
 output FOUNDRY_PROJECT_ENDPOINT string = foundry.outputs.projectEndpoint
 output FOUNDRY_MODEL_DEPLOYMENT_NAME string = chatModel.name
 output FOUNDRY_EMBEDDING_DEPLOYMENT_NAME string = embeddingModel.name

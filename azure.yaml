@@ -10,7 +10,8 @@ infra:
   path: infra
 
 hooks:
-  # Create and seed the AI Search index of historical cases.
+  # In private mode, run azd on the jump host. The hook checks private DNS and requires
+  # the owner's manual approval of Search's outbound link before seeding.
   postprovision:
     posix:
       shell: sh
@@ -56,6 +57,8 @@ services:
     docker:
       path: Dockerfile
       context: ../..
+      # On the private jump-host checkout, set this literal to false before azd up.
+      # azd doesn't interpolate booleans; private ACR cannot use the default Tasks pool.
       remoteBuild: true
     kind: hosted
     name: rca-agent

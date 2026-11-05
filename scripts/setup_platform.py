@@ -10,12 +10,15 @@ hooks as environment variables). Authentication uses the developer's azd/Azure C
 
 import argparse
 import hashlib
+import ipaddress
 import json
 import os
+import socket
 import subprocess
 import sys
 import uuid
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlsplit
 
 import httpx
 from azure.ai.projects import AIProjectClient
@@ -45,6 +48,33 @@ CASE_URL = "https://cases.diagnostics.example/{id}"
 
 class SetupError(RuntimeError):
     pass
+
+
+def check_private_endpoints(*endpoints: str) -> None:
+    """Fail before data-plane work when private DNS isn't available to this process."""
+    if os.environ.get("AZURE_PRIVATE_NETWORKING", "").lower() != "true":
+        return
+    for endpoint in endpoints:
+        host = urlsplit(endpoint).hostname
+        if not host:
+            raise SetupError("Invalid private endpoint URL")
+        try:
+            addresses = {
+                ipaddress.ip_address(result[4][0])
+                for result in socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
+            }
+        except OSError as error:
+            raise SetupError(
+                "Private DNS lookup failed; run this hook on the jump host and check VNet DNS"
+            ) from error
+        if not addresses or any(
+            not address.is_private or address.is_loopback or address.is_link_local
+            for address in addresses
+        ):
+            raise SetupError(
+                "A data-plane name resolves outside the private network; "
+                "run this hook on the jump host and check the private DNS zone links"
+            )
 
 
 def env(name: str) -> str:
@@ -164,6 +194,21 @@ def index_definition(name: str, openai_endpoint: str, embedding_deployment: str)
 
 def seed_search(credential: DefaultAzureCredential) -> None:
     search_endpoint = env("AZURE_SEARCH_ENDPOINT")
+    check_private_endpoints(search_endpoint, env("AZURE_OPENAI_ENDPOINT"))
+    if os.environ.get("AZURE_PRIVATE_NETWORKING", "").lower() == "true":
+        link = Arm(credential).request(
+            "GET", env("AZURE_SEARCH_SHARED_PRIVATE_LINK_ID"), "2025-05-01"
+        )
+        properties = link.get("properties", {})
+        if (
+            properties.get("status") != "Approved"
+            or properties.get("provisioningState") != "Succeeded"
+        ):
+            raise SetupError(
+                "Approve Search's foundry-vectorizer shared private link on the Foundry account, "
+                "wait for Approved/Succeeded on Search, then rerun `azd up`. "
+                "See docs/private-networking.md; no other pending connection should be approved."
+            )
     index_name = env("AZURE_SEARCH_INDEX_NAME")
     embedding_deployment = env("FOUNDRY_EMBEDDING_DEPLOYMENT_NAME")
 
@@ -287,6 +332,7 @@ def publish_toolbox(project: AIProjectClient) -> str:
 
 
 def connect_tools(credential: DefaultAzureCredential) -> None:
+    check_private_endpoints(env("FOUNDRY_PROJECT_ENDPOINT"), env("DIAGNOSTICS_MCP_ENDPOINT"))
     connect_mcp_server(Arm(credential))
     project_endpoint = env("FOUNDRY_PROJECT_ENDPOINT")
     version = publish_toolbox(AIProjectClient(project_endpoint, credential))
@@ -332,7 +378,15 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("step", choices=steps)
     args = parser.parse_args(argv)
     try:
-        steps[args.step](DefaultAzureCredential())
+        # On the jump host, the VM identity is for Entra SSH, not developer deployment rights.
+        steps[args.step](
+            DefaultAzureCredential(
+                exclude_managed_identity_credential=os.environ.get(
+                    "AZURE_PRIVATE_NETWORKING", ""
+                ).lower()
+                == "true"
+            )
+        )
     except SetupError as error:
         sys.exit(f"{args.step}: {error}")
 

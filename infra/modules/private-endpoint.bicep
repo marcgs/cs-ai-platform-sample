@@ -8,6 +8,7 @@ param serviceId string
 @description('Private link group, e.g. blob, queue, table or Sql.')
 param groupId string
 param dnsZoneId string
+param additionalDnsZoneIds string[] = []
 
 resource endpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = {
   name: name
@@ -30,9 +31,9 @@ resource endpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = {
     name: 'default'
     properties: {
       privateDnsZoneConfigs: [
-        {
-          name: groupId
-          properties: { privateDnsZoneId: dnsZoneId }
+        for (zone, i) in concat([dnsZoneId], additionalDnsZoneIds): {
+          name: i == 0 ? groupId : '${groupId}-${i}'
+          properties: { privateDnsZoneId: zone }
         }
       ]
     }

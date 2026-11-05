@@ -86,6 +86,6 @@ exclude = ["**/.venv", "**/__pycache__", "**/node_modules"]
 # --- Pytest -------------------------------------------------------------------
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib", "-ra"]
-testpaths = ["packages", "services", "agents", "evals", "cli"]
+testpaths = ["packages", "services", "agents", "evals", "cli", "scripts"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
