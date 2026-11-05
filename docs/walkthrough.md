@@ -1,6 +1,6 @@
 # Walkthrough: one case, end to end
 
-Follow one incident through the deployed platform: diagnose it, question it, see the tools and knowledge it used, review the episode and its trace, record an expert verdict, then change the agent and measure it. At each step, **Look** says where to find that part in the portals. Allow about an hour. Everything here only reads Azure, except the verdict you record and the evaluation run in step 7, which needs approval.
+Follow one incident through the deployed platform: diagnose it, question it, see the tools and knowledge it used, review the episode and its trace, record an expert verdict, then change the agent and measure it. At each step, **Look** says where to find that part in the portals. Allow about an hour. Steps 1 to 6 only read Azure, apart from what using the agent does anyway: each request costs model tokens and saves an episode, and step 6 adds a verdict to one. Step 7 changes the shared environment (`azd deploy` creates a new live agent version) and starts a paid evaluation run, so get approval for both, as for `azd down` at the end.
 
 **Before you start:** an environment deployed with `azd up` ([README](../README.md#quickstart)), `azd auth login` and `az login` in the same tenant, and `uv sync --all-packages` run in the repository. Some commands use these shell variables:
 
@@ -124,7 +124,7 @@ uv run csai feedback <episode-id> --verdict incorrect --actual-root-cause FM-02 
 
 1. Edit [`instructions.md`](../agents/rca/src/rca_agent/instructions.md).
 2. Run the edited agent locally against the deployed models and tools. `azd ai agent run rca-agent --start-command "uv run python -m rca_agent.main"` starts it and opens the Agent Inspector, and `azd ai agent invoke --local "M-0007: ..."` sends a request from another terminal. Nothing deployed changes.
-3. Deploy an improvement with `azd deploy rca-agent`, or undo it with `git restore`. Check what's live with `azd ai agent invoke`, and follow its logs with `azd ai agent monitor --follow`.
+3. Deploy an improvement with `azd deploy rca-agent` (with approval: it creates a new live version), or undo the experiment with `git restore agents/rca/src/rca_agent/instructions.md`. Check what's live with `azd ai agent invoke`, and follow its logs with `azd ai agent monitor --follow`.
 4. Measure the deployed version on all 50 cases with the [README's evaluation commands](../README.md#evaluate). This costs about $1, so get approval first and check the [known failures](foundry-findings.md#agent-target-evaluations-can-lose-responses-mid-run) before you start. Compare the gate's means with the [first baseline](../evals/rca/README.md#first-measurement), not the portal's pass counts.
 
 **Look.** In the Foundry portal: your project → **Evaluations → rca-quality**, one run per measurement. Inspect each evaluator's errors in a row, not just the headline.
@@ -132,4 +132,4 @@ uv run csai feedback <episode-id> --verdict incorrect --actual-root-cause FM-02 
 ## Next
 
 - Add your own agent: [onboarding](onboarding-an-agent.md).
-- Remove the environment: `azd down --purge`, then set `AZURE_LOCATION` again before the next `azd up`.
+- Remove the environment, with approval: `azd down --purge` deletes everything, including episodes and evaluation history. Set `AZURE_LOCATION` again before the next `azd up`.
