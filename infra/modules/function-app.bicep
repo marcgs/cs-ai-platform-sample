@@ -18,6 +18,7 @@ param subnetId string
 @description('Additional app settings.')
 param settings object = {}
 param pythonVersion string = '3.14'
+param privateNetworking bool = false
 
 var roles = {
   storageBlobDataOwner: 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
@@ -93,6 +94,7 @@ resource app 'Microsoft.Web/sites@2024-04-01' = {
   properties: {
     serverFarmId: plan.id
     httpsOnly: true
+    ...(privateNetworking ? { publicNetworkAccess: 'Disabled' } : {})
     virtualNetworkSubnetId: subnetId
     siteConfig: {
       minTlsVersion: '1.2'
@@ -141,5 +143,6 @@ resource app 'Microsoft.Web/sites@2024-04-01' = {
 }
 
 output name string = app.name
+output id string = app.id
 output hostName string = app.properties.defaultHostName
 output identityPrincipalId string = identity.properties.principalId

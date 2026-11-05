@@ -3,6 +3,7 @@
 param location string
 param tags object = {}
 param name string
+param privateNetworking bool = false
 @description('Principals that manage indexes and documents (developers, seeding hooks).')
 param contributorPrincipalIds string[] = []
 param contributorPrincipalType string = 'User'
@@ -32,7 +33,17 @@ resource search 'Microsoft.Search/searchServices@2025-05-01' = {
     partitionCount: 1
     disableLocalAuth: true
     semanticSearch: 'free'
-    publicNetworkAccess: 'enabled'
+    publicNetworkAccess: privateNetworking ? 'disabled' : 'enabled'
+  }
+}
+
+resource vectorizerLink 'Microsoft.Search/searchServices/sharedPrivateLinkResources@2025-05-01' = if (privateNetworking) {
+  parent: search
+  name: 'foundry-vectorizer'
+  properties: {
+    groupId: 'openai_account'
+    privateLinkResourceId: foundryAccount.id
+    requestMessage: 'Private query-time embedding vectorizer'
   }
 }
 
@@ -85,3 +96,4 @@ resource vectorizerAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' =
 output name string = search.name
 output id string = search.id
 output endpoint string = 'https://${search.name}.search.windows.net'
+output sharedPrivateLinkId string = privateNetworking ? vectorizerLink!.id : ''

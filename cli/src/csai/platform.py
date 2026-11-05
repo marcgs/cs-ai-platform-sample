@@ -48,9 +48,23 @@ class _FunctionKeyResponse(BaseModel):
     function_keys: _FunctionKeys = Field(alias="functionKeys")
 
 
+def _private_network_hint() -> str:
+    if os.environ.get("AZURE_PRIVATE_NETWORKING", "").lower() == "true":
+        return (
+            ". Private mode requires the jump host (or another VNet-connected client); "
+            "check private DNS and your signed-in user's access"
+        )
+    return ""
+
+
 def function_key(subscription: str, resource_group: str, app: str) -> str:
     try:
-        with DefaultAzureCredential() as credential:
+        with DefaultAzureCredential(
+            exclude_managed_identity_credential=os.environ.get(
+                "AZURE_PRIVATE_NETWORKING", ""
+            ).lower()
+            == "true"
+        ) as credential:
             token = credential.get_token(f"{ARM}/.default").token
     except (AzureError, ValueError) as error:
         raise PlatformApiError(
@@ -122,7 +136,9 @@ class PlatformClient:
                 method, path, params=params, content=json_body, headers=headers
             )
         except (httpx.HTTPError, httpx.InvalidURL) as error:
-            raise PlatformApiError(f"{method} {path}: {type(error).__name__}") from error
+            raise PlatformApiError(
+                f"{method} {path}: {type(error).__name__}{_private_network_hint()}"
+            ) from error
         if response.is_error:
             if response.status_code == 404 and missing_episode_id is not None:
                 try:
@@ -134,7 +150,8 @@ class PlatformClient:
                         f"Episode {missing_episode_id} not found", status_code=404
                     )
             raise PlatformApiError(
-                f"{method} {path}: {response.status_code} {response.text}",
+                f"{method} {path}: {response.status_code} {response.text}"
+                + (_private_network_hint() if response.status_code == 403 else ""),
                 status_code=response.status_code,
             )
         return response

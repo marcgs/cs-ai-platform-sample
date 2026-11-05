@@ -6,10 +6,25 @@
       "value": "${AZURE_ENV_NAME}"
     },
     "location": {
-      "value": "${AZURE_LOCATION=swedencentral}"
+      "value": "${AZURE_LOCATION}"
     },
     "searchLocation": {
       "value": "${AZURE_SEARCH_LOCATION}"
+    },
+    "privateNetworking": {
+      "value": "${AZURE_PRIVATE_NETWORKING=false}"
+    },
+    "evaluationStorageTrustedServicesBypass": {
+      "value": "${AZURE_EVALUATION_TRUSTED_SERVICES_BYPASS=false}"
+    },
+    "bastionSku": {
+      "value": "${AZURE_BASTION_SKU=Basic}"
+    },
+    "jumpVmSize": {
+      "value": "${AZURE_JUMP_VM_SIZE=Standard_B2s}"
+    },
+    "vnetAddressPrefix": {
+      "value": "${AZURE_VNET_ADDRESS_PREFIX=10.40.0.0/16}"
     },
     "principalId": {
       "value": "${AZURE_PRINCIPAL_ID}"

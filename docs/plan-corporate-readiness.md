@@ -44,15 +44,27 @@ Add a parameter (for example `privateNetworking`, default `false`) that, when tr
 - puts Application Insights and Log Analytics behind an Azure Monitor Private Link Scope;
 - gives the MCP function app and the platform API private inbound access;
 - tries evaluation storage **without** the trusted-services bypass of [ADR 0006](adr/0006-evaluation-storage-network-exception.md), keeping the bypass as a fallback;
-- adds a way in for deployment and development: a small jump VM in its own subnet, with Entra sign-in and no public IP, reached through Azure Bastion (Developer SKU if available in the region, otherwise Basic). A self-hosted CI runner would use the same subnet later.
+- adds a way in for deployment and development: a small jump VM in its own subnet, with Entra sign-in and no public IP, reached through Azure Bastion. **Approved adjustment:** Basic by default, Standard optional; Developer doesn't support Entra SSH. Basic's browser SSH is sufficient for `azd up`; native Entra SSH needs Standard. No local keys or passwords on the VM. A self-hosted CI runner would use the same subnet later.
 
 Also check whether `azure.yaml`, the hooks (`scripts/setup_platform.py`) and `csai` need changes when the data planes are private. For example, the toolbox hook and search seeding have to run from inside the network.
 
 - **Done when** `az bicep build` passes, a `what-if` for a new environment with `privateNetworking=true` is reviewed with the user, the public mode's `what-if` shows no changes for the current environment, and the cost estimate below is confirmed with the Azure pricing calculator. Nothing is provisioned in this step.
 
+**Implementation and read-only checks, 2026-11-05:** both templates build without
+new warnings; ruff, pyright and 269 offline tests pass. Retail API prices below replace
+the initial estimate. The new France Central placeholder environment reports
+106 creates, no modifications or deletions, and six unsupported dynamic role assignments.
+The current public environment reports 49 modifications, 13 unchanged, 11 ignored and
+six unsupported, with no creates or deletions. Its supported-resource results match
+the untouched baseline exactly: private mode introduces no public-resource delta.
+The literal no-change criterion is **not met by the baseline**, which still has
+pre-existing NSG-association, storage resource-instance-rule and evaluation-log-table drift. Do not apply that public
+what-if as if it were all noise. See the [runbook and validation details](private-networking.md).
+User review of these results and step 4 approval are still required.
+
 ### 4. Provision the private environment
 
-With approval, the user provisions a new azd environment (for example `cs-platform-private`) with `privateNetworking=true`: first the network and the jump host, then `azd up` from the jump host. Record every manual step and every failure.
+With approval, the user provisions a new azd environment (for example `cs-platform-private`) with `privateNetworking=true`: first the network and the jump host, then `azd up` from the jump host. Follow the [private networking runbook](private-networking.md#step-4-runbook-requires-approval). Proposed region: **France Central**, for hosted agents, both evaluation paths and semantic Search without the current high-demand flag. The region remains a parameter. Record every manual step and every failure.
 
 - **Done when** `azd up` completes from inside the network, or the blocking failure is in the findings with what was tried.
 
@@ -79,18 +91,38 @@ From the jump host, with approval for the tokens (about $1, plus any full runs a
 
 ## Costs
 
-Rough USD estimates for the private environment, on top of the current one while both run. Step 3 confirms them with the Azure pricing calculator.
+Confirmed 2026-11-05 with the [Azure Retail Prices API](https://prices.azure.com/api/retail/prices),
+USD pay-as-you-go, France Central unless the meter is global, no discounts or tax.
+Hourly resources run 24 hours except the VM; monthly disk/DNS prices use 365/12 days.
+The table is the **new private environment alone**, not the combined bill.
 
-| Item | Per day, about |
-|---|---|
-| Fixed costs of a second environment (AI Search Basic, Cosmos DB, Functions, existing private endpoints) | $5 |
-| About eight more private endpoints, private DNS zones | $2 |
-| Container registry Premium instead of Basic | $1.50 |
-| Jump VM (small, deallocated when not in use) | $1 |
-| Azure Bastion Basic (zero if the Developer SKU is available) | $4.50 |
-| **Total while both environments run** | **$10–15** |
+| Item | Confirmed rate | Per day |
+|---|---|---:|
+| AI Search Basic, one unit | $0.101/hour | $2.424 |
+| ACR Premium | $1.6666/day (Basic is $0.1666/day) | $1.667 |
+| 11 VNet endpoints plus Search shared endpoint | $0.01/endpoint-hour | $2.880 |
+| 14 private DNS zones | $0.50/zone-month | $0.230 |
+| Bastion Basic | $0.19/hour | $4.560 |
+| NAT Standard | $0.045/hour | $1.080 |
+| Two Standard static IPv4 public IPs | $0.005/IP-hour | $0.240 |
+| Linux B2s, running 8 hours and deallocated for 16 | $0.0472/hour | $0.378 |
+| E6 64 GB Standard SSD LRS, retained all day | $5.28/month | $0.174 |
+| **Private fixed subtotal, VM 8 hours/day** | | **$13.63/day** |
+| **Private fixed subtotal, VM 24 hours/day** | | **$14.39/day** |
 
-Model tokens: about $0.10 for step 1 and about $1 for step 5. A two-week spike costs roughly $150–200, less if the current environment is deleted early in step 6.
+Bastion Standard adds **$2.40/day**; Developer is not an Entra-sign-in alternative.
+The current public environment's fixed Search, Basic registry, five endpoints and
+four DNS zones add about **$3.86/day**, so both environments' fixed subtotal is
+**$17.49/day** with the private VM running eight hours, or **$18.24/day** with it
+always running. A two-week spike is about **$245 fixed** at eight hours, before usage.
+The earlier $10-15 combined estimate and $150-200 fortnight estimate were too low.
+
+These are fixed subtotals, **not a capped total bill**. Add hosted-agent compute,
+Cosmos serverless, Functions consumption, storage/transactions, Monitor ingestion,
+semantic Search usage, model tokens and transfer. Private Link processing starts
+at $0.01/GB, NAT processing is $0.045/GB, and private DNS queries are $0.40/million.
+Model smoke-test budgets remain about $0.10 for step 1 and $1 for step 5, separately
+approved. Deallocating the VM doesn't stop NAT, Bastion, disk or endpoint charges.
 
 ## Not in this plan
 

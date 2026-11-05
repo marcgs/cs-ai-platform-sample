@@ -6,6 +6,7 @@ param name string
 param projectPrincipalId string
 param foundryAccountId string
 param logAnalyticsId string
+param trustedServicesBypass bool = true
 
 var blobDataContributor = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
 
@@ -24,13 +25,13 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
     publicNetworkAccess: 'Disabled'
     networkAcls: {
       defaultAction: 'Deny'
-      bypass: 'AzureServices'
-      resourceAccessRules: [
+      bypass: trustedServicesBypass ? 'AzureServices' : 'None'
+      resourceAccessRules: trustedServicesBypass ? [
         {
           resourceId: foundryAccountId
           tenantId: subscription().tenantId
         }
-      ]
+      ] : []
     }
   }
 }
