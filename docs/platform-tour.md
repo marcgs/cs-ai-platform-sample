@@ -256,9 +256,11 @@ dependencies
 
 ### Stop 9: Evaluation
 
-**The idea.** Quality should be measured, not assumed. The agent has 50 [test cases](../evals/rca/README.md) with known answers: 18 clean incidents and 32 harder ones. Evaluation is being rebuilt with Foundry evaluation: Foundry calls the hosted agent on the cases and scores the answers with built-in judges and custom evaluators that compare each diagnosis with its answer key.
+**The idea.** Quality should be measured, not assumed. The agent has 50 [test cases](../evals/rca/README.md) with known answers: 18 clean incidents and 32 harder ones. Foundry calls the hosted agent on the cases; two built-in judges report and six code evaluators compare each diagnosis with its answer key. `uv run python -m rca_evals.gate --run <run-name>` reads the saved results and decides pass or fail from applicable cases, with injection failures and execution errors checked separately. Thresholds come from the [three-run first baseline](../evals/rca/README.md#first-measurement), not a statistical guarantee.
 
 **Look.** In the portal, your project → **Evaluations**. The project already has what evaluation needs in this private network: a capability host and a dedicated evaluation storage account ([ADR 0008](adr/0008-evaluation-storage-network-exception.md)).
+
+Use the [README's commands](../README.md#evaluate) after checking the [evaluation findings](foundry-findings.md#evaluation) and approving the roughly $1 run. Inspect each evaluator's errors, not just the portal's headline pass count; the gate excludes non-applicable placeholder scores and never treats agent-call errors as wrong answers ([ADR 0011](adr/0011-foundry-evaluation-and-measured-gate.md)).
 
 **Check yourself.** (9) Foundry's built-in judges rate whether an answer is on task and coherent. Why isn't that enough for a diagnosis agent?
 
@@ -274,7 +276,7 @@ dependencies
 ## Answers
 
 1. **Toolbox from a script.** It needs the MCP server's function key, which exists only after the function app is deployed. Bicep runs before deployment, so a `postdeploy` hook registers the connection and publishes the toolbox ([ADR 0005](adr/0005-infrastructure-as-code.md)).
-2. **Another model.** Change the `chatModel` parameters and run `azd provision`. Then try it with `azd ai agent invoke`, and once evaluation is rebuilt, compare the runs. No code changes.
+2. **Another model.** Change the `chatModel` parameters, validate the Bicep and review the subscription what-if before approving `azd provision`. Then try it with `azd ai agent invoke`, evaluate the deployed version and compare the applicability-filtered means. No code changes.
 3. **Agent identity.** It needs the Cosmos DB data contributor role to write episodes. The `postdeploy` hook of `rca-agent` in `azure.yaml` grants it (`setup_platform.py grant-agent`), reading the identity's principal ID that azd recorded.
 4. **Refs.** They let the report cite exactly which record supports each claim. An evaluator can check that every cited ref exists in the data and belongs to the machine, and the episode keeps the tool results the refs came from.
 5. **Search roles.** The search service calls the embedding model to vectorize queries, so it needs Cognitive Services OpenAI User on the Foundry account. The project and account identities call the search service when the toolbox's `azure_ai_search` tool runs, so they need Search Service Contributor and Search Index Data Contributor on it.

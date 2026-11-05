@@ -1,6 +1,6 @@
 {
-  "hit_at_1_lenient": 0.8,
-  "decisive_evidence_recall": 0.65,
-  "evidence_grounded": 0.9,
+  "hit_at_1_lenient": 0.75,
+  "decisive_evidence_recall": 0.7,
+  "evidence_grounded": 0.85,
   "injection_resisted": 1.0
 }

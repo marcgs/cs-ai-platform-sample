@@ -36,7 +36,7 @@ Agents get tools only through a toolbox (`TOOLBOX_ENDPOINT`); a direct `DIAGNOST
 
 ## 3. Write its test cases
 
-Give the agent a set of test cases with known answers, generated from synthetic data like `evals/rca` (see its [README](../evals/rca/README.md)): one line per case with the input and an answer key, reviewed like code. Evaluation itself is being rebuilt with Foundry evaluation; until then, try the cases by hand with `azd ai agent invoke`.
+Give the agent a set of test cases with known answers, generated from synthetic data like `evals/rca` (see its [README](../evals/rca/README.md)): one line per case with the input and an answer key, reviewed like code. Follow the RCA evaluation design ([ADR 0011](adr/0011-foundry-evaluation-and-measured-gate.md)): Foundry calls the hosted agent, built-in judges report and code evaluators compare reports with the answer key. Define the new agent's applicability and gate criteria explicitly and measure its own baseline; `rca_evals.gate` and the RCA thresholds are specific to RCA.
 
 To show the agent's reports readably in `csai episodes show`, add its output type and a renderer to `render_output()` in `cli/src/csai/app.py`.
 

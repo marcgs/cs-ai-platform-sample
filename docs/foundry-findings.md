@@ -175,7 +175,7 @@ Add a finding when you hit one, and update its status when you check it again. I
 - **Got past it:** two runs at first: one where Foundry calls the agent, one that scores the saved outputs. With `azd ai eval` and the evaluators' `data_schema` flat (see [the next finding](#azd-reads-a-code-evaluators-data-schema-differently-from-the-docs)), one run works: the agent, two judges and six code evaluators scored every row. Whether the item envelope caused the SDK failures isn't proven.
 - **Status:** works with `azd ai eval`; the SDK failure's cause is unknown. Checked 2026-11-04.
 
-### An evaluation run's agent calls stopped working after about 14 minutes, once
+### Agent-target evaluations can lose responses mid-run
 
 - **Hit:** in a 50-case run (agent target, `azd ai eval run start`), the first 32 rows in dataset order worked and the last 18 (six categories) all failed with `TARGET_INVOCATION_FAILED`: "(UserError) Error code: 424 - {'error': 'CustomerManagedDownstreamError', 'message': 'Data proxy returned 424 because the customer-managed downstream service responded with 403. …', 'innerStatusCode': 403}". The evaluation service's telemetry shows agent calls from 14:17:20 to 14:31:22 UTC: 32 succeeded, the 33rd failed after 33 seconds although the agent finished its work, and the rest never reached the agent. The agent's own telemetry has no errors. Three of the failed cases then worked in a run of their own, and the 18 in one more run. The [limits](https://learn.microsoft.com/azure/foundry/concepts/evaluation-regions-limits-virtual-network#rate-limits) list only row size and row count, and the [troubleshooting](https://learn.microsoft.com/azure/foundry/observability/how-to/cloud-evaluation-results#troubleshoot-cloud-evaluation) 403 advice is about the caller's own credentials.
 - **What the agent's telemetry adds** (Log Analytics, by episode span):
@@ -187,17 +187,18 @@ Add a finding when you hit one, and update its status when you check it again. I
   - The agent: it answered row 33 normally and logged no errors.
   - The session idle timeout (15 minutes by default): requests arrived continuously.
   - The concurrent session quota, delegated subnet addresses and model rate limits: the [limits page](https://learn.microsoft.com/azure/foundry/agents/concepts/limits-quotas-regions#limit-error-reference) gives them HTTP 429 with their own error codes, not 403. The run used 4 sandboxes and one request at a time.
-- **Not reproduced:** the same 50-case run on the same agent, started later that day (16:03 UTC, a new `rca-quality` evaluation with the republished evaluators), ran all 50 rows through one sandbox in 21 minutes without a single failed call. So it isn't a fixed limit such as a credential that expires 15 minutes into every run, which the first analysis suggested. The cause is unknown: most likely a transient failure on the service side around 14:31 UTC.
+- **A clean comparison:** the same 50-case run on the same agent, started later that day (16:03 UTC, a new `rca-quality` evaluation with the republished evaluators), ran all 50 rows through one sandbox in 21 minutes without a single failed call. So it isn't a fixed limit such as a credential that expires 15 minutes into every run, which the first analysis suggested. The cause is unknown.
+- **Seen again during the first measurement:** repeat 2 completed all 50 cases without execution errors. Repeat 3 (`rca-agent-8-2026-11-04-r3`) reported `completed`, `errored: 0`, but had eight `TARGET_INVOCATION_FAILED` rows: SC-038 and SC-040 timed out waiting for a long-running agent response after 30 minutes; SC-045 through SC-050 returned the same downstream 424/403 as the earlier failure. SC-039 and SC-041 through SC-044 succeeded, so this is not evidence of a fixed 14-minute cut-off or a single contiguous failure from the first bad row. No telemetry diagnosis of the recurrence has been done. The gate failed, and this run was excluded from threshold calibration. A separately approved full replacement, `rca-agent-8-2026-11-05-r3-retry`, completed all 50 cases with no execution errors and passed.
 - **Matters because:** a run can silently lose the rest of its rows. The run's status is `completed` with `errored: 0`; the judges mark the failed rows as errors, but the code evaluators score the empty answer 0, so a broken call looks like a wrong answer in the scores and the pass counts.
-- **Got past it:** reran the failed cases in a second run (queries file cut to those rows, then restored). Check the output items for `sample.error` before reading the scores. Batching isn't needed while it doesn't recur. Whatever turns scores into pass or fail must treat a row with `sample.error` as a failed run, never as a wrong answer; `rca_evals.gate` does.
-- **Status:** seen once, not reproduced. Checked 2026-11-04.
+- **Got past it:** initially reran the failed cases in a second run (queries file cut to those rows, then restored). For the measurement, exclude the failed full run and get approval before a replacement full run; do not silently retry or calibrate on the successful subset. Check the output items for `sample.error` before reading the scores. Whatever turns scores into pass or fail must treat a row with `sample.error` as a failed run, never as a wrong answer; `rca_evals.gate` does.
+- **Status:** downstream 424/403 recurred, alongside response timeouts; cause and timing remain unresolved. Replacement succeeded. Checked 2026-11-05.
 
 ### A code evaluator that fails in the sandbox scores 0
 
-- **Hit:** in the 50-case run, `decisive_evidence_recall` on one row recorded score 0 with status `completed` and `sample.error`: "An error occurred during grading". The same code on the same answer gives 0.67 locally on Python 3.9, and the other five code evaluators scored that row; 449 other code scores across four runs matched local scoring. The later 50-case repro has the same sandbox error on SC-005 in `hit_at_1`; all four gate metrics scored every applicable case.
+- **Hit:** in the 50-case run, `decisive_evidence_recall` on one row recorded score 0 with status `completed` and `sample.error`: "An error occurred during grading". The same code on the same answer gives 0.67 locally on Python 3.9, and the other five code evaluators scored that row; 449 other code scores across four runs matched local scoring. The later 50-case repro has the same sandbox error on SC-005 in `hit_at_1`; all four gate metrics scored every applicable case. Measurement repeat 2 had no evaluator errors; the failed repeat 3 attempt had two more diagnostic `hit_at_1` sandbox errors, on SC-009 and SC-039. Its approved replacement had no evaluator errors.
 - **Matters because:** an evaluator failure looks like a wrong answer, and the run reports `errored: 0`.
 - **Got past it:** inspect each evaluator's nested `sample.error`, not just its status or zero score. `rca_evals.gate` treats errors in its four gate metrics as fatal, excluding the affected scores. Errors in the other evaluators are reported as non-gating diagnostics, an explicit gate-policy choice; no results are repaired or rescored.
-- **Status:** open, seen in two runs. Checked 2026-11-04.
+- **Status:** open, seen in three runs. Checked 2026-11-05.
 
 ### azd reads a code evaluator's data schema differently from the docs
 
@@ -224,8 +225,15 @@ Add a finding when you hit one, and update its status when you check it again. I
 
 - **Hit:** uploading an evaluation dataset with `datasets.upload_file` failed with `AuthorizationFailure` against the project's private storage, even with the trusted-services bypass that lets evaluation runs write results. `azd ai eval create` fails the same way: `uploading blob: blob upload failed with status 403`.
 - **Matters because:** the documented way to register a dataset doesn't work in a private-network project.
-- **Got past it:** with `azd ai eval`, an eval with `source: {type: local, file: …}` sends the rows with each run and publishes no dataset (`evals/azure.eval.yaml`). Earlier, with the SDK: upload the JSONL through the project's Files API (`purpose=evals`) and reference it as `source.type=file_id`. Neither gives versioned dataset assets.
+- **Got past it:** with `azd ai eval`, an eval with `source: {type: local, file: …}` sends the rows with each run without uploading a named case dataset (`evals/azure.eval.yaml`). The service still leaves generated data assets ([finding](#local-source-runs-still-leave-generated-data-assets)); these aren't a deliberately versioned case manifest. Earlier, with the SDK: upload the JSONL through the project's Files API (`purpose=evals`) and reference it as `source.type=file_id`.
 - **Status:** open. Checked 2026-11-04.
+
+### Local-source runs still leave generated data assets
+
+- **Hit:** the project dataset list contains autogenerated `eval-data-*` assets at version 1 even though `azure.eval.yaml` uses a local source. Starting each of the two approved measurement repeats coincided with one more asset. The Files API list is empty; it is not an inventory of these registered assets.
+- **Matters because:** bypassing dataset upload does not mean a run leaves only an evaluation and its results. Cleanup that lists only evaluations and Files API uploads misses data assets.
+- **Got past it:** inventory datasets and their versions alongside evaluations, runs, evaluator versions and Files API uploads. Keep assets associated with retained runs; treat apparently orphaned assets as deletion candidates only after checking their references. No assets were deleted.
+- **Status:** observed again with the approved replacement; the listing does not establish every asset's consumer. Checked 2026-11-05.
 
 ### Large outputs are dropped from `sample.output`
 
@@ -252,8 +260,8 @@ Add a finding when you hit one, and update its status when you check it again. I
 
 - **Hit:** agent-target runs have no repetition setting, judge scheduling is managed by the service, and a 50-row run with four judges took 19m38s. During one judge run, a quarter of the judge model's requests were rate-limited (HTTP 429); the run still completed.
 - **Matters because:** measuring run-to-run variance needs duplicated rows or several runs. Client tools must wait longer than a typical 15-minute timeout.
-- **Got past it:** wait for the run instead of resubmitting. Repeats: duplicate rows with a repeat index, or several runs (not done yet).
-- **Status:** by design. Checked 2026-11-04.
+- **Got past it:** wait for the run instead of resubmitting. The [first measurement](../evals/rca/README.md#first-measurement) uses three valid full runs of one agent version, submitted one at a time. A failed full attempt was excluded and replaced only after explicit approval.
+- **Status:** by design. Repeated full runs measured. Checked 2026-11-05.
 
 ### The azd evaluation commands are moving
 
