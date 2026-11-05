@@ -327,10 +327,10 @@ What a corporate review will ask about that this sample hasn't tried. Treat thes
 
 - **Fully private Foundry:** the Foundry account, registry, AI Search and Application Insights behind private endpoints, with deployment from inside the network ([networking options](https://learn.microsoft.com/azure/foundry/agents/concepts/networking-options)). Whether hosted agents, the toolbox, evaluation and tracing all work there, and whether the evaluation storage exception is still needed.
 - **Data residency end to end:** where traces, conversations, evaluation results and the data proxy's traffic are processed and stored, beyond the models' Data Zone deployment.
-- **Identity governance in practice:** what the docs say about Entra Agent ID is in the [appendix](#agent-identity-and-licensing); we haven't tried Conditional Access, identity protection, network controls or ownership and access reviews on the agent identities, and the docs don't say which of them work without a license.
+- **Identity governance in practice:** what the docs say about Entra Agent ID is in the [appendix](#preview-terms-support-and-identity); we haven't tried Conditional Access, identity protection, network controls or ownership and access reviews on the agent identities, and the docs don't say which of them work without a license.
 - **The last two keys:** Entra instead of the MCP server's and the platform API's function keys (backlog S1).
 - **Whether the docs match the regions:** the [region table](#region-availability-docs-only) is from the docs only. Nothing in it was provisioned, including the shared private link from AI Search, and creating a new AI Search service in North Europe or Sweden Central may be refused for lack of capacity.
-- **What support does for a GA service with preview parts:** the [terms](#support-terms-for-ga-services-with-preview-parts) say what applies to the preview parts, not what is left of the GA service's commitments. Only a Microsoft support contact can answer that.
+- **What support does for a GA service with preview parts:** the [terms](#preview-terms-support-and-identity) say what applies to the preview parts, not what is left of the GA service's commitments. Only a Microsoft support contact can answer that.
 
 ## Appendix: maturity
 
@@ -348,56 +348,30 @@ Preview features come without a service-level agreement, and Microsoft [doesn't 
 | Agent optimizer | Limited preview | Not yet; learner candidate |
 | Tracing over a private network, monitoring dashboards | Preview | Not yet; needed when fully private |
 | `azure-monitor-opentelemetry-exporter` 1.0.0b58 | Beta | Pulled in by the GA `microsoft-opentelemetry` distro |
-| Private endpoint for Foundry, network injection, private registry | No preview label in the docs ([details](#preview-terms-for-network-isolation)) | Network injection; the rest untested. Private registry only for projects created after 2026-06-25 |
-| Entra Agent ID platform | GA since April 2026 | Agent identities. Extending Entra security features to agents needs Agent 365 licensing; the `AgentBlueprint` endpoint authorization and acting on behalf of a user are preview ([details](#agent-identity-and-licensing)) |
+| Private endpoint for Foundry, network injection, private registry | No preview label in the docs ([details](#preview-terms-support-and-identity)) | Network injection; the rest untested. Private registry only for projects created after 2026-06-25 |
+| Entra Agent ID platform | GA since April 2026 | Agent identities. Extending Entra security features to agents needs Agent 365 licensing; the `AgentBlueprint` endpoint authorization and acting on behalf of a user are preview ([details](#preview-terms-support-and-identity)) |
 | Traffic splitting between agent versions | Unclear | Not yet; [the docs disagree](#traffic-splitting-between-agent-versions) |
 | `agent-framework-core` 1.24.0, `mcp` 2.3.0 | GA | The agent; the [session bug](#some-sdk-combinations-break-the-mcp-session) is fixed in this combination |
 
 ### Region availability (docs only)
 
-Checked 2026-11-05 on Microsoft Learn; nothing was provisioned. The Foundry account and agent are in Sweden Central, AI Search in North Europe. "Not stated" means the page doesn't say.
+From Microsoft Learn, checked 2026-11-05; nothing was provisioned. The Foundry account is in Sweden Central and AI Search in North Europe.
 
-| Capability | Sweden Central | North Europe | Source |
-|---|---|---|---|
-| Foundry projects | Listed | Listed | [Feature availability across regions](https://learn.microsoft.com/azure/foundry/reference/region-support) |
-| Hosted agents | Listed | Not listed | [Hosted agents, region availability](https://learn.microsoft.com/azure/foundry/agents/concepts/hosted-agents#limits-pricing-and-availability) |
-| Hosted-agent network injection | Not stated separately. The page says every Agent Service region supports the private 10.0.0.0/8 range, and the virtual network must be in the Foundry account's region | Not applicable: not a hosted-agent region | [Set up private networking](https://learn.microsoft.com/azure/foundry/agents/how-to/virtual-networks) |
-| Toolboxes | Tool-support table: MCP, Azure AI Search and all other listed tools "yes". The toolbox page requires "a supported region" but its link doesn't lead to a separate list | Not in the Agent Service tool-support table | [Tool support by region and model](https://learn.microsoft.com/azure/foundry/agents/concepts/limits-quotas-regions#tool-support-by-region-and-model), [Toolboxes](https://learn.microsoft.com/azure/foundry/agents/how-to/tools/toolbox) |
-| Cloud evaluation | Listed for both "agent playground evaluations" and "batch evaluations" | Listed for batch evaluations only | [Evaluation regions and limits](https://learn.microsoft.com/azure/foundry/concepts/evaluation-regions-limits-virtual-network) |
-| Trace annotations (preview) | Not stated | Not stated | [Annotate traces](https://learn.microsoft.com/azure/foundry/observability/how-to/trace-annotations) |
-| Private registry for hosted agents | No region condition; the condition is that the project was created after 2026-06-25 | Not applicable | [Set up private networking](https://learn.microsoft.com/azure/foundry/agents/how-to/virtual-networks) |
-| Azure Monitor Private Link Scope | Not stated in the docs. Azure Resource Manager lists the resource type's location as `Global` (`az provider show -n microsoft.insights`); a private endpoint must be in its virtual network's region | Same | [Azure Monitor private link](https://learn.microsoft.com/azure/azure-monitor/fundamentals/private-link-security), [configure](https://learn.microsoft.com/azure/azure-monitor/logs/private-link-configure) |
-| AI Search service | Listed, flagged "in high demand, which prevents the creation of new search services" | Listed, same flag | [Search region support](https://learn.microsoft.com/azure/search/search-region-support) |
-| AI Search shared private link to an Azure OpenAI account | Not region-specific, except that embedding skills (integrated vectorization) need a "high capacity region" and a service created after 2024-04-03; the docs don't say which regions those are | Same | [Shared private link](https://learn.microsoft.com/azure/search/search-indexer-howto-access-private) |
+| Capability | Sweden Central | North Europe |
+|---|---|---|
+| Hosted agents, toolboxes and their tools ([regions](https://learn.microsoft.com/azure/foundry/agents/concepts/limits-quotas-regions#tool-support-by-region-and-model)) | Listed | Not a hosted-agent region |
+| Network injection ([private networking](https://learn.microsoft.com/azure/foundry/agents/how-to/virtual-networks)) | Every Agent Service region; the virtual network must be in the account's region | Not applicable |
+| Cloud evaluation ([evaluation regions](https://learn.microsoft.com/azure/foundry/concepts/evaluation-regions-limits-virtual-network)) | Agent playground and batch | Batch only |
+| Private registry for hosted agents | No region condition; projects created after 2026-06-25 | Not applicable |
+| Azure Monitor Private Link Scope | Global resource; its private endpoint goes in the network's region | Same |
+| **AI Search service** ([regions](https://learn.microsoft.com/azure/search/search-region-support)) | **"In high demand, which prevents the creation of new search services"** | **Same** |
+| AI Search shared private link to the embedding model (`openai_account`, [shared private link](https://learn.microsoft.com/azure/search/search-indexer-howto-access-private)) | From the Basic tier; integrated vectorization needs a "high capacity region", which the docs don't list | Same |
+| Trace annotations | Not stated | Not stated |
 
-Details behind the table:
+### Preview terms, support and identity
 
-- **Shared private link:** the page names the vectorizer: the `Microsoft.CognitiveServices/accounts` link with group ID `openai_account` is "used for vectorizer and indexer connections to Azure OpenAI embedding models". It works from the Basic tier, is billed by usage, and is supported in the public cloud. A separate group ID, `foundry_account`, covers Foundry resource skills. Whether query-time vectorization through the link works against a private Foundry account is untested.
-- **Evaluation in a network:** the page's own virtual network section points at the evaluation-only template (15a), consistent with [ADR 0006](adr/0006-evaluation-storage-network-exception.md). The two lists don't say which one an agent-target run through the API uses.
-- **Tools behind a network:** with network isolation, Web search runs over Microsoft-managed public endpoints, and browser automation and Work IQ aren't supported. The toolbox page says a project-level capability host is required for calls outside Foundry ([toolbox network isolation](https://learn.microsoft.com/azure/foundry/agents/how-to/tools/toolbox-network-isolation), page updated 2026-10-26).
+Checked 2026-11-05.
 
-### Support terms for GA services with preview parts
-
-What Microsoft says, checked 2026-11-05:
-
-- The evaluation pages for custom evaluators, and for the evaluators the sample uses, carry: "Items marked preview in this article are currently in preview. This preview is provided without a service-level agreement, and Microsoft doesn't recommend it for production workloads" ([built-in evaluators](https://learn.microsoft.com/azure/foundry/concepts/built-in-evaluators), [custom evaluators](https://learn.microsoft.com/azure/foundry/concepts/evaluation-evaluators/custom-evaluators)). The preview items are the labelled evaluators and custom evaluators; the evaluation service itself is GA ("some evaluators and features are Preview", [GA overview](https://learn.microsoft.com/azure/foundry/concepts/general-availability#feature-readiness-at-ga)).
-- Under the [Online Subscription Agreement](https://azure.microsoft.com/support/legal/subscription-agreement/), previews are provided "as-is" and "as-available", are "excluded from the SLAs and all limited warranties", "may not be covered by customer support", and Microsoft may change or discontinue them or never release them as GA. The [supplemental preview terms](https://azure.microsoft.com/support/legal/preview-supplemental-terms/) apply unless a preview has its own terms; they list none for these evaluators. Customers on other agreements (for example an Enterprise Agreement) are governed by their own terms for previews, which we haven't seen.
-- Foundry says to keep preview dependencies to non-production use and gives a way to hide or block preview features ([GA overview](https://learn.microsoft.com/azure/foundry/concepts/general-availability#validate-ga-only-usage), [disable preview features](https://learn.microsoft.com/azure/foundry/how-to/disable-preview-features)).
-- The docs don't say what happens to the GA service's SLA or support when a run uses preview parts, or whether a failed run that used a preview evaluator counts against the GA SLA. The sample treats the gate's results as having no support commitment.
-
-### Preview terms for network isolation
-
-Checked 2026-11-05. Neither the networking options page (updated 2026-09-09), the private networking how-to (2026-10-29) nor the hosted agents page (2026-10-19) labels hosted-agent network injection or the private registry as preview. The [GA overview](https://learn.microsoft.com/azure/foundry/concepts/general-availability) lists virtual network integration among the GA enterprise capabilities, adds "some networking experiences remain in preview", and names one: Tracing VNet is preview. Loose ends:
-
-- The how-to's capability-settings example uses ARM API version `2026-07-15-preview`; the page doesn't say whether that makes the feature preview. We haven't checked the template's API versions.
-- The [private link article](https://learn.microsoft.com/azure/foundry/how-to/configure-private-link) still says "hosted (preview) agents", which disagrees with the GA overview and the hosted agents page.
-- The private registry has a creation-date condition (projects created after 2026-06-25) rather than a preview label.
-
-### Agent identity and licensing
-
-Checked 2026-11-05 ([Foundry agent identity](https://learn.microsoft.com/azure/foundry/agents/concepts/agent-identity), updated 2026-10-28; [Entra Agent ID overview](https://learn.microsoft.com/entra/agent-id/what-is-microsoft-entra-agent-id), updated 2026-06-24).
-
-- **What the hosted agents use now:** Foundry creates an Entra agent identity blueprint and an identity for the default instance when the agent is created. It starts with no permissions, and Foundry doesn't assign roles. The sample's `grant-agent` hook gives it a Cosmos DB role, and the identity is used for model calls and tool access. The docs say per agent, not per version; our [finding on new identities per version](#each-agent-version-gets-a-new-identity-which-exists-only-after-deployment) stands on what we observed. These identities appear in the tenant-wide Entra inventory.
-- **What the docs say could be used:** Conditional Access, identity protection, network access control, and governance (expiration, owners and sponsors) for agent identities. The `AgentBlueprint` endpoint authorization scheme (callers get tokens for the blueprint audience) and the agent identity acting on behalf of a user are labelled preview.
-- **Licensing:** "Agent ID is available for all Microsoft Entra customers." "Extending Microsoft Entra security features to agents requires Microsoft Agent 365", which is included in Microsoft 365 E7 and is an add-on to E5/A5/Business Premium, or to Defender Suite plus Purview Suite. A Microsoft 365 Agent 365 license is needed per user for agents that operate across Microsoft 365 services. The Entra page doesn't map each of the four controls to a license; reading it literally, all four need Agent 365. The Foundry page doesn't mention licensing.
-- **Not said:** whether the per-agent identity inventory and role assignments, which the sample already uses, need anything beyond Entra and Azure RBAC. They appear to work without Agent 365 here.
+- **Support for preview parts of a GA service:** previews have no SLA, "may not be covered by customer support", and can change or be discontinued ([subscription agreement](https://azure.microsoft.com/support/legal/subscription-agreement/), [preview terms](https://azure.microsoft.com/support/legal/preview-supplemental-terms/)). The docs don't say what remains of the GA evaluation service's commitments when a run uses preview evaluators; the sample treats the gate's results as having no support commitment. Other agreements, such as an Enterprise Agreement, have their own terms.
+- **Network isolation:** no page labels network injection or the private registry as preview, and the [GA overview](https://learn.microsoft.com/azure/foundry/concepts/general-availability) lists virtual network integration as GA, with Tracing VNet still preview. Loose ends: the how-to's capability-settings example uses ARM API version `2026-07-15-preview`, and the [private link article](https://learn.microsoft.com/azure/foundry/how-to/configure-private-link) still says "hosted (preview) agents".
+- **Agent identity** ([Foundry](https://learn.microsoft.com/azure/foundry/agents/concepts/agent-identity), [Entra Agent ID](https://learn.microsoft.com/entra/agent-id/what-is-microsoft-entra-agent-id)): Foundry creates an agent identity blueprint and identity with no permissions; our `grant-agent` hook adds the Cosmos DB role, which works without extra licensing. Conditional Access, identity protection, network controls and governance for agent identities are documented, but "extending Microsoft Entra security features to agents requires Microsoft Agent 365" (in Microsoft 365 E7, or an add-on), and the page doesn't map controls to licenses. `AgentBlueprint` endpoint authorization and acting on behalf of a user are preview.
