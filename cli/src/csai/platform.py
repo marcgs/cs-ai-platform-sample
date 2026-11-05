@@ -48,8 +48,12 @@ class _FunctionKeyResponse(BaseModel):
     function_keys: _FunctionKeys = Field(alias="functionKeys")
 
 
+def _private_networking() -> bool:
+    return os.environ.get("AZURE_PRIVATE_NETWORKING", "").lower() == "true"
+
+
 def _private_network_hint() -> str:
-    if os.environ.get("AZURE_PRIVATE_NETWORKING", "").lower() == "true":
+    if _private_networking():
         return (
             ". Private mode requires the jump host (or another VNet-connected client); "
             "check private DNS and your signed-in user's access"
@@ -60,10 +64,7 @@ def _private_network_hint() -> str:
 def function_key(subscription: str, resource_group: str, app: str) -> str:
     try:
         with DefaultAzureCredential(
-            exclude_managed_identity_credential=os.environ.get(
-                "AZURE_PRIVATE_NETWORKING", ""
-            ).lower()
-            == "true"
+            exclude_managed_identity_credential=_private_networking()
         ) as credential:
             token = credential.get_token(f"{ARM}/.default").token
     except (AzureError, ValueError) as error:
