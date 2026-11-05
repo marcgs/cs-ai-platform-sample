@@ -8,16 +8,57 @@ Add a finding when you hit one, and update its status when you check it again. I
 
 ## Maturity of what the sample uses
 
-Preview features come without a service-level agreement, and Microsoft [doesn't recommend them for production](https://learn.microsoft.com/azure/foundry/concepts/general-availability#validate-ga-only-usage); organizations can [hide or block them](https://learn.microsoft.com/azure/foundry/how-to/disable-preview-features). Checked 2026-11-05.
+Preview features come without a service-level agreement, and Microsoft [doesn't recommend them for production](https://learn.microsoft.com/azure/foundry/concepts/general-availability#validate-ga-only-usage); organizations can [hide or block them](https://learn.microsoft.com/azure/foundry/how-to/disable-preview-features). A GA service can still be used through preview parts: the evaluation service is GA, but every evaluator our gate uses is preview. Stages are from Microsoft Learn and PyPI, checked 2026-11-05.
 
-| Component | Stage | Used for |
+**Runtime: what serves a diagnosis**
+
+| Capability | Stage | Notes |
 |---|---|---|
-| Foundry agents (core), toolboxes, tracing for hosted agents, evaluations | GA, per the [GA overview](https://learn.microsoft.com/azure/foundry/concepts/general-availability#feature-readiness-at-ga) (some evaluators are preview) | The hosted agent, its tools, traces and evaluation |
-| Guardrails for agents | Preview | Content safety on tool calls ([moderation fails](#content-safety-moderation-fails-on-every-knowledge-search)) |
-| Tracing over a private network, monitoring | Preview | Not used yet |
-| azd Foundry extensions (`azure.ai.agents` 1.0.0-beta.23, `azure.ai.evaluations` 1.0.0-beta.2, `azure.ai.toolboxes` 1.0.0-beta.13 and five more) | Beta | Deploying and running the agent; evaluation runs ([early beta](#azd-ai-eval-is-an-early-beta)) |
-| `agent-framework-foundry-hosting` 1.0.0b261015 | Beta | The agent's hosting adapter ([corrupts tool calls](#the-hosting-adapter-corrupts-tool-call-arguments-and-over-reports-tokens)) |
-| `agent-framework-core` 1.22.0, `agent-framework-foundry` 1.15.0, `azure-ai-projects` 2.7.0 | GA | The agent and the evaluation gate |
+| Hosted agents (the service), agent versions, sessions | GA | |
+| `agent-framework-foundry-hosting` 1.0.0b261015, our hosting adapter | **Beta** | In the request path; has the [tool-call bug](#the-hosting-adapter-corrupts-tool-call-arguments-and-over-reports-tokens). The GA alternative is a handler on `azure-ai-agentserver-responses` |
+| `azure-ai-agentserver-core`, `-responses` (the protocol library) | GA | |
+| `agent-framework-core` 1.22.0, `agent-framework-foundry` 1.15.0 | GA | Newer releases exist (1.24, 1.16) |
+| `mcp` 1.30.0 | GA | 2.x exists; retest the [session bug](#some-sdk-combinations-break-the-mcp-session) on it |
+| Toolboxes; MCP and Azure AI Search tools | GA | Both tools support network isolation |
+| Functions MCP tool trigger, Flex Consumption | GA | The MCP prompt trigger is preview; not used |
+| Models (Data Zone), AI Search (vectors, semantic ranker, vectorizer), Cosmos DB | GA | |
+
+**Evaluation**
+
+| Capability | Stage | Notes |
+|---|---|---|
+| Evaluation service, agent-target runs, results API, `azure-ai-projects` SDK | GA | |
+| Custom evaluators (our six code evaluators) | **Preview** | No GA equivalent for answer-key scoring |
+| Built-in intent resolution and task adherence (our two judges) | **Preview** | Tool call accuracy and the other tool evaluators are GA, but they need tool calls ([below](#tool-judges-reject-string-arguments)) |
+| `azd ai eval`, `azd ai agent eval`, the Azure DevOps evaluation task | **Beta** / preview | No GA date announced. The SDK does the same with GA packages ([early beta](#azd-ai-eval-is-an-early-beta)) |
+| Continuous evaluation, cluster analysis, traces to datasets | Preview | Candidates for the learning loop |
+| Agent optimizer | Limited preview | Candidate for the learner |
+
+**Observability and feedback**
+
+| Capability | Stage | Notes |
+|---|---|---|
+| Tracing for hosted agents | GA | |
+| Tracing over a private network, monitoring dashboards | Preview | Needed for a fully private setup |
+| Trace annotations (human feedback) | Preview | Foundry's own way to record expert verdicts on traces |
+| `microsoft-opentelemetry` distro | GA | Pulls in `azure-monitor-opentelemetry-exporter` 1.0.0b58, which is beta |
+
+**Security, networking and identity**
+
+| Capability | Stage | Notes |
+|---|---|---|
+| Private endpoint for the Foundry account, network injection, private registry | No preview label | Private registry only for projects created after 2026-06-25 |
+| Guardrails for agents | Preview | Where the [moderation failure](#content-safety-moderation-fails-on-every-knowledge-search) is |
+| Entra Agent ID platform | GA since April 2026 | One Entra page still says preview; its governance features need Agent 365 licensing |
+| Agent blueprint endpoint authorization, AI Gateway in Foundry, Operate and compliance views | Preview | Not used |
+
+**Delivery**
+
+| Capability | Stage | Notes |
+|---|---|---|
+| azd core, Bicep | GA | |
+| azd Foundry extensions (`azure.ai.agents` 1.0.0-beta.23, `azure.ai.toolboxes` 1.0.0-beta.13 and six more) | **Beta** | Deploy the agent and toolbox. No GA date announced |
+| Traffic splitting between agent versions | Unclear | [The docs disagree](#traffic-splitting-between-agent-versions) |
 
 ## Summary
 
@@ -55,10 +96,10 @@ Sorted by what matters most for a corporate setup: security and networking first
 | [A provision hook didn't run](#a-provision-hook-didnt-run) | open | | Check its output |
 | **3. Development workarounds** | | | |
 | [Failures only in the hosted runtime](#some-failures-only-appear-in-the-hosted-runtime) | by design | GA | Runtime imports, a test, a build-time import |
-| [Built-in judges don't know the right answer](#built-in-judges-dont-know-the-right-answer) | by design | GA | Code evaluators with an answer key |
-| [Tool judges reject string arguments](#tool-judges-reject-string-arguments) | open | GA | Judges see only the final answer |
-| [Code evaluators can't say "doesn't apply"](#code-evaluators-cant-say-doesnt-apply) | open | GA | 1.0 plus `applicable_metrics` per row |
-| [The code evaluator sandbox restricts Python](#the-code-evaluator-sandbox-restricts-python) | by design | GA | Standard library only |
+| [Built-in judges don't know the right answer](#built-in-judges-dont-know-the-right-answer) | by design | preview | Code evaluators with an answer key |
+| [Tool judges reject string arguments](#tool-judges-reject-string-arguments) | open | preview | Judges see only the final answer |
+| [Code evaluators can't say "doesn't apply"](#code-evaluators-cant-say-doesnt-apply) | open | preview | 1.0 plus `applicable_metrics` per row |
+| [The code evaluator sandbox restricts Python](#the-code-evaluator-sandbox-restricts-python) | by design | preview | Standard library only |
 | [The portal shows pass counts, not means](#the-portal-shows-pass-counts-not-means) | by design | GA | `rca_evals.gate` |
 | [Large outputs are dropped from `sample.output`](#large-outputs-are-dropped-from-sampleoutput) | by design | GA | Map `sample.output_text` |
 | [Tool names arrive prefixed](#tool-names-arrive-prefixed) | by design | GA | Match the prefixed name |
@@ -78,6 +119,8 @@ What a corporate review will ask about that this sample hasn't tried. Treat thes
 - **Identity governance:** Entra Agent ID for the per-version agent identities, ownership and access reviews.
 - **The last two keys:** Entra instead of the MCP server's and the platform API's function keys (backlog S1).
 - **Region availability** of each feature used, outside Sweden Central (AI Search runs in North Europe here).
+- **Support terms when GA services run preview parts,** such as the GA evaluation service with preview evaluators.
+- **Whether newer packages fix our bugs:** `agent-framework-foundry-hosting` builds after 1.0.0b261015, `agent-framework-core` 1.24 and `mcp` 2.x.
 
 ## Hosted agents
 
@@ -205,8 +248,8 @@ What a corporate review will ask about that this sample hasn't tried. Treat thes
 ### Built-in judges don't know the right answer
 
 - **Hit:** the built-in agent judges (task adherence, intent resolution, coherence, tool call accuracy) assess whether an answer looks reasonable and on task, not whether it matches a known correct answer. For a diagnosis agent, correctness and grounding are the main question.
-- **Workaround:** the answer key goes in each row, and code evaluators score correctness ([eval guide](../evals/rca/README.md#evaluation)). The judges report and don't gate.
-- **Status:** by design. Checked 2026-11-03.
+- **Workaround:** the answer key goes in each row, and code evaluators score correctness ([eval guide](../evals/rca/README.md#evaluation)). The judges report and don't gate. Both the judges we use and custom evaluators are preview, so the gate's metrics rest on preview features even though the evaluation service is GA.
+- **Status:** by design. Checked 2026-11-05.
 
 ### Tool judges reject string arguments
 
