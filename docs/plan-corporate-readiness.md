@@ -9,7 +9,7 @@ When this plan is done, its results go into the findings, the architecture, the 
 - **Docs first.** Follow Microsoft's documented setup: [networking options](https://learn.microsoft.com/azure/foundry/agents/concepts/networking-options), [network isolation](https://learn.microsoft.com/azure/foundry/how-to/configure-private-link), [toolbox network isolation](https://learn.microsoft.com/azure/foundry/agents/how-to/tools/toolbox-network-isolation) and the private-network templates (15 and 19 in [foundry-samples](https://github.com/microsoft-foundry/foundry-samples/tree/main/infrastructure/infrastructure-setup-bicep)). Take ideas from the templates; don't copy them in.
 - **Findings for everything.** Every failure, workaround and doc inconsistency goes into [Foundry findings](foundry-findings.md), with the date checked. Update existing entries rather than adding near-duplicates.
 - **Both modes stay.** Private networking is a Bicep parameter, not a replacement. The public mode stays the default until step 6 decides otherwise.
-- **The current environment stays untouched** until step 6. The private one is a new azd environment.
+- **The current environment stays as it is** until step 6, except for step 1's approved agent deployment. The private one is a new azd environment.
 - **Approvals:** the hard rules in [AGENTS.md](../AGENTS.md) apply. Anything that changes Azure (provision, deploy, delete) or spends model tokens needs the user's approval with a USD estimate. Read-only checks (`az bicep build`, `what-if`, `show`/`list`) don't.
 - **One step per pull request.** ruff, pyright and pytest green; staged diff checked for environment details.
 
@@ -58,12 +58,12 @@ With approval, the user provisions a new azd environment (for example `cs-platfo
 
 ### 5. The sample end to end, privately
 
-From the jump host, with approval for the tokens (about $1):
+From the jump host, with approval for the tokens (about $1, plus any full runs approved under item 4):
 
 1. `azd ai agent invoke` with a known case; the agent calls the toolbox's MCP tools and AI Search.
 2. The episode is in Cosmos DB, and `csai episodes list` and `show` work.
 3. The trace is in Application Insights and in the Foundry portal.
-4. A 5-case evaluation run, checked with `rca_evals.gate`. Watch for the [lost answers](foundry-findings.md#agent-target-evaluations-can-lose-responses-mid-run): if they don't occur here, that's evidence they came from the public-endpoint setup.
+4. A 5-case evaluation run as a smoke test, checked with `rca_evals.gate`. It can't say anything about the [lost answers](foundry-findings.md#agent-target-evaluations-can-lose-responses-mid-run), which appeared after 30 or more rows and not in every full run. Comparing the two setups needs full 50-case runs in both, with the same package versions: propose the number of runs and their cost (about $1 each) for approval, or leave the cause open.
 5. One trace annotation (Foundry's [human feedback](https://learn.microsoft.com/azure/foundry/observability/how-to/trace-annotations), preview), as input for stage 3.
 6. Whether content-safety moderation on knowledge searches still [fails](foundry-findings.md#content-safety-moderation-fails-on-every-knowledge-search).
 7. The Foundry portal from the jump host: agents, playground, traces, evaluations.
