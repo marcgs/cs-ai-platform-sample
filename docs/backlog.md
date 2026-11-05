@@ -106,16 +106,14 @@ Notes:
 | S3 | **AI gateway** | Quotas per agent, logging and failover for models and tools. | API Management | L |
 | S4 | **Fleet view and kill switch** | Someone has to see every agent, its cost and errors, and be able to stop one fast. | Foundry Control Plane, Entra Agent ID | M |
 | S5 | **Canary diagnosis and alerts** | Failed runs, store outages and rate limiting should page someone. | Foundry monitoring, Azure Monitor alerts | S |
-| S6 | **SDK dependency compatibility** | A fresh dependency resolution picks Agent Framework core versions that break the real MCP session; the workspace should declare a range that works. | Agent Framework, MCP | S |
 | S7 | **Reproducible offline packaging test** | A freshly recreated environment lacks `hatchling`, so the skill-packaging test fails until it's installed separately. | uv, Hatchling | S |
 | S14 | **Verify provision-hook dispatch** | A provision succeeded without running the search-seeding hook; running it by hand worked. | azd hooks | S |
 | S16 | **Search tool moderation fails** | The content-safety guardrail isn't running on knowledge searches ([findings](foundry-findings.md#content-safety-moderation-fails-on-every-knowledge-search)). | Foundry guardrails, AI Search tool | S |
-| S17 | **Fix the hosted stream's tool calls and usage** | The hosting adapter duplicates tool-call arguments and over-reports usage in the hosted agent's output. A tested workaround is in the closed [#43](https://github.com/marcgs/cs-ai-platform-sample/pull/43); revive it only if something needs those fields. | Agent Framework hosting | S |
+| S17 | **Fix the hosted stream's tool calls and usage** | The hosting adapter duplicates tool-call arguments and over-reports usage in the hosted agent's output. A tested workaround is in the closed [#43](https://github.com/marcgs/cs-ai-platform-sample/pull/43); revive it only if something needs those fields. Still present in `agent-framework-foundry-hosting` 1.0.0b261030 (checked 2026-11-05). | Agent Framework hosting | S |
 
 Notes:
 
 - **S2:** test with the injection test cases, starting in annotate mode.
-- **S6:** `agent-framework-core` 1.23.0 and 1.24.0 with `mcp` 1.30.0 fail `test_real_mcp_session_propagates_episode_context_in_metadata` (`ClientSession.protocol_version` is missing); 1.22.0 passes. Until fixed, sync with `uv sync --all-packages --upgrade-package 'agent-framework-core==1.22.0'`.
 
 ## Later
 
