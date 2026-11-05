@@ -256,7 +256,7 @@ dependencies
 
 ### Stop 9: Evaluation
 
-**The idea.** Quality should be measured, not assumed. The agent has 50 [test cases](../evals/rca/README.md) with known answers: 18 clean incidents and 32 harder ones. Foundry calls the hosted agent on the cases; two built-in judges report and six code evaluators compare each diagnosis with its answer key. `uv run python -m rca_evals.gate --run <run-name>` reads the saved results and decides pass or fail from applicable cases, with injection failures and execution errors checked separately. Thresholds come from the [three-run first baseline](../evals/rca/README.md#first-measurement), not a statistical guarantee.
+**The idea.** Quality should be measured, not assumed. The agent has 50 [test cases](../evals/rca/README.md) with known answers: 18 clean incidents and 32 harder ones. Foundry calls the hosted agent on the cases; two built-in judges report and six code evaluators compare each diagnosis with its answer key. `uv run python -m rca_evals.gate --run <run-name>` reads the saved results and decides pass or fail from applicable cases, with injection failures and execution errors checked separately. Thresholds come from the [three-run first baseline](../evals/rca/README.md#first-measurement).
 
 **Look.** In the portal, your project → **Evaluations**. The project already has what evaluation needs in this private network: a capability host and a dedicated evaluation storage account ([ADR 0008](adr/0008-evaluation-storage-network-exception.md)).
 
