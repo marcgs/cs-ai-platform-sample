@@ -329,7 +329,7 @@ What a corporate review will ask about that this sample hasn't tried. Treat thes
 - **Data residency end to end:** where traces, conversations, evaluation results and the data proxy's traffic are processed and stored, beyond the models' Data Zone deployment.
 - **Identity governance in practice:** what the docs say about Entra Agent ID is in the [appendix](#preview-terms-support-and-identity); we haven't tried Conditional Access, identity protection, network controls or ownership and access reviews on the agent identities, and the docs don't say which of them work without a license.
 - **The last two keys:** Entra instead of the MCP server's and the platform API's function keys (backlog S1).
-- **Whether the docs match the regions:** the [region table](#region-availability) is from the docs only. Nothing in it was provisioned, including the shared private link from AI Search, and creating a new AI Search service in North Europe or Sweden Central may be refused for lack of capacity.
+- **The customer's regions:** not decided. The [region overview](#region-availability) is from the docs only; nothing in it was provisioned, including AI Search's shared private link, and new AI Search services may be refused in high-demand regions.
 - **What support does for a GA service with preview parts:** the [terms](#preview-terms-support-and-identity) say what applies to the preview parts, not what is left of the GA service's commitments. Only a Microsoft support contact can answer that.
 
 ## Appendix
@@ -359,18 +359,25 @@ Preview features come without a service-level agreement, and Microsoft [doesn't 
 
 ### Region availability
 
-From Microsoft Learn, checked 2026-11-05; nothing was provisioned. The Foundry account is in Sweden Central and AI Search in North Europe.
+The real deployment regions aren't decided, probably somewhere in Europe. This sample happens to run in Sweden Central, with AI Search in North Europe. From Microsoft Learn, checked 2026-11-05; nothing was provisioned.
 
-| Capability | Sweden Central | North Europe |
+**European regions with hosted agents**, and whether they run evaluation with an agent target ([hosted agents](https://learn.microsoft.com/azure/foundry/agents/concepts/hosted-agents#region-availability), [evaluation regions](https://learn.microsoft.com/azure/foundry/concepts/evaluation-regions-limits-virtual-network)):
+
+| Region | Batch evaluation | Agent playground evaluation |
 |---|---|---|
-| Hosted agents, toolboxes and their tools ([regions](https://learn.microsoft.com/azure/foundry/agents/concepts/limits-quotas-regions#tool-support-by-region-and-model)) | Listed | Not a hosted-agent region |
-| Network injection ([private networking](https://learn.microsoft.com/azure/foundry/agents/how-to/virtual-networks)) | Every Agent Service region; the virtual network must be in the account's region | Not applicable |
-| Cloud evaluation ([evaluation regions](https://learn.microsoft.com/azure/foundry/concepts/evaluation-regions-limits-virtual-network)) | Agent playground and batch | Batch only |
-| Private registry for hosted agents | No region condition; projects created after 2026-06-25 | Not applicable |
-| Azure Monitor Private Link Scope | Global resource; its private endpoint goes in the network's region | Same |
-| **AI Search service** ([regions](https://learn.microsoft.com/azure/search/search-region-support)) | **"In high demand, which prevents the creation of new search services"** | **Same** |
-| AI Search shared private link to the embedding model (`openai_account`, [shared private link](https://learn.microsoft.com/azure/search/search-indexer-howto-access-private)) | From the Basic tier; integrated vectorization needs a "high capacity region", which the docs don't list | Same |
-| Trace annotations | Not stated | Not stated |
+| France Central, Germany West Central, Italy North, Norway East, Poland Central, Spain Central, Sweden Central | Yes | Yes |
+| Switzerland North, UK South, West Europe | Yes | No |
+| Switzerland West, UK West | No | No |
+
+North Europe has batch evaluation but no hosted agents, and network injection needs the virtual network in the Foundry account's region, so the agent and its network must be in one of the regions above. Other resources (AI Search, Cosmos DB, storage) can be elsewhere, reached through private endpoints.
+
+**Check for any chosen region:**
+
+- **AI Search capacity:** the [region list](https://learn.microsoft.com/azure/search/search-region-support) flags some regions as "in high demand, which prevents the creation of new search services". On 2026-11-05 that included Sweden Central and North Europe.
+- **AI Search's shared private link** to the embedding model (`openai_account`, [shared private link](https://learn.microsoft.com/azure/search/search-indexer-howto-access-private)): available from the Basic tier, but integrated vectorization needs a "high capacity region", which the docs don't list.
+- **Models:** the chat and embedding models in a Data Zone deployment in that region, with enough quota.
+- **Not region-bound:** the private registry for hosted agents (only for projects created after 2026-06-25) and Azure Monitor Private Link Scope (a global resource whose private endpoint goes in the network's region).
+- **Not stated:** trace annotations.
 
 ### Preview terms, support and identity
 
