@@ -1,4 +1,4 @@
-# ADR 0008: A scoped network exception for evaluation storage
+# ADR 0006: A scoped network exception for evaluation storage
 
 - **Status:** Accepted
 - **Date:** 2026-11-02

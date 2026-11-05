@@ -64,7 +64,7 @@ flowchart LR
 | **C4** Knowledge grounding | AI Search index `diagnostics-cases` (historical cases): keyword, semantic and vector search with a Foundry vectorizer, through the same toolbox. Seeded by `scripts/setup_platform.py seed-search`. |
 | **C5** Episode store | `cs_platform.capture` records every run (input, tool calls with arguments, results and durations, structured output, tokens, trace ID) in Cosmos DB. Feedback is patched on through the platform API. |
 | **C6** Observability | OpenTelemetry to Application Insights ([below](#observability)). |
-| **C7** Evaluation | Foundry calls the hosted agent on 50 test cases (`azd ai eval`); two built-in judges report, six code evaluators score against the answer key, and `rca_evals.gate` decides pass or fail ([eval guide](../evals/rca/README.md#evaluation), [ADR 0011](adr/0011-foundry-evaluation-and-measured-gate.md)). |
+| **C7** Evaluation | Foundry calls the hosted agent on 50 test cases (`azd ai eval`); two built-in judges report, six code evaluators score against the answer key, and `rca_evals.gate` decides pass or fail ([eval guide](../evals/rca/README.md#evaluation), [ADR 0007](adr/0007-foundry-evaluation-and-measured-gate.md)). |
 | **C8** Identity and security | Entra everywhere; `disableLocalAuth` on Foundry, Cosmos DB and Search; no shared keys on storage; data stores private ([ADR 0003](adr/0003-private-data-stores.md)). Two function keys remain: the MCP server's, held only by a Foundry connection, and the platform API's, which `csai` fetches with your Azure sign-in (backlog S1). |
 | **C9** Delivery path | Bicep and azd (`azd up` from an empty subscription), pre-commit gates, a documented pipeline ([CI/CD](ci-cd.md)). |
 
@@ -95,7 +95,7 @@ Cosmos DB data roles are Cosmos DB's own role assignments, not in the portal's I
 
 Storage and Cosmos DB have public access disabled (also enforced by policy in the original subscription) and private endpoints in `snet-private-endpoints` with private DNS zones ([ADR 0003](adr/0003-private-data-stores.md)). The function apps use VNet integration (`snet-functions`). The hosted agent runs in the delegated `snet-agents` through Foundry agent network injection, which is set when the Foundry account is created. Foundry, the registry and AI Search stay public with Entra-only access, so developers can deploy from their machines.
 
-Evaluation storage is a separate account: public networking, shared keys and anonymous blobs disabled, a blob private endpoint, and Blob Data Contributor for the Foundry project only. Its firewall allows trusted Azure services, because Foundry's evaluation service doesn't reach it through the private endpoint ([ADR 0008](adr/0008-evaluation-storage-network-exception.md)).
+Evaluation storage is a separate account: public networking, shared keys and anonymous blobs disabled, a blob private endpoint, and Blob Data Contributor for the Foundry project only. Its firewall allows trusted Azure services, because Foundry's evaluation service doesn't reach it through the private endpoint ([ADR 0006](adr/0006-evaluation-storage-network-exception.md)).
 
 To check it: `az network private-endpoint list -g $RG -o table`, and `az cosmosdb show -g $RG -n $COSMOS_ACCOUNT_NAME --query "{public:publicNetworkAccess, localAuthDisabled:disableLocalAuth}"`.
 

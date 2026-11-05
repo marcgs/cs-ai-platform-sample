@@ -139,7 +139,7 @@ The sample shows the **mechanisms**; real targets need baselines measured with t
 - Platform harness, telemetry, episode store and feedback (C1–C9 in minimal form)
 - One RCA agent over a **synthetic fleet**, with 50 test cases: 18 clean incidents and 32 challenge cases
 - MCP tool server, search-backed knowledge, IaC with azd, a small CLI for episodes and feedback; CI/CD documented but not active
-- Evaluation of the deployed agent in Foundry with a read-only quality gate ([ADR 0011](adr/0011-foundry-evaluation-and-measured-gate.md)); not of a local agent, and not enforced by CI
+- Evaluation of the deployed agent in Foundry with a read-only quality gate ([ADR 0007](adr/0007-foundry-evaluation-and-measured-gate.md)); not of a local agent, and not enforced by CI
 
 ### Later
 
