@@ -227,7 +227,7 @@ Sorted by what matters most for a corporate setup: security and networking first
 
 - **Hit:** when the model asks for several tools at once, the calls still run one after another: Agent Framework's MCP client holds a lock across each call whenever a header provider is set, and `FoundryToolbox` always sets one. A tool that takes 6 seconds can appear to take 20, and per-tool durations include queueing.
 - **Workaround:** none. Bypassing the lock would risk mixing identities.
-- **Status:** open in `agent-framework-core` 1.23.0. Checked 2026-10-29.
+- **Status:** open in `agent-framework-core` 1.24.0: `MCPStreamableHTTPTool.call_tool` still holds `_call_headers_lock` across the whole call when a header provider is set. Checked 2026-11-05 by reading the source; not measured again.
 
 ### Some SDK combinations break the MCP session
 
