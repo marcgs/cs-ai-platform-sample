@@ -58,7 +58,7 @@ azd ai eval run start --no-wait --name "$RUN_NAME"
 uv run python -m rca_evals.gate --run "$RUN_NAME"   # once the run has completed
 ```
 
-Foundry sends the 50 test cases to the deployed agent and scores the answers; the gate reads the saved results and prints PASS or FAIL. A run costs about $1, so check the [evaluation findings](docs/foundry-findings.md#evaluation) first. The [eval guide](evals/rca/README.md#evaluation) explains the evaluators, the gate and its baseline.
+Foundry sends the 50 test cases to the deployed agent and scores the answers; the gate reads the saved results and prints PASS or FAIL. A run costs about $1, so check the [known evaluation failures](docs/foundry-findings.md#agent-target-evaluations-can-lose-responses-mid-run) first. The [eval guide](evals/rca/README.md#evaluation) explains the evaluators, the gate and its baseline.
 
 ### Clean up
 

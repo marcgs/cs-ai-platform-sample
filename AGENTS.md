@@ -33,7 +33,7 @@ uv run csai episodes list              # recorded runs; csai feedback records an
 
 Every change must leave ruff, pyright and pytest green. After changing agent instructions, schemas, tools or platform capture, try a few cases against the agent (`azd ai agent run` with the start command above, then `invoke --local`); it needs a deployed environment and costs tokens, so mention it when you skip it.
 
-Evaluation runs in Foundry against the deployed agent, and `uv run python -m rca_evals.gate --run <name>` decides pass or fail ([eval guide](evals/rca/README.md#evaluation)). Each run costs about $1: get approval first, check the [evaluation findings](docs/foundry-findings.md#evaluation), and never measure with a run that has agent-call failures.
+Evaluation runs in Foundry against the deployed agent, and `uv run python -m rca_evals.gate --run <name>` decides pass or fail ([eval guide](evals/rca/README.md#evaluation)). Each run costs about $1: get approval first, check the [known evaluation failures](docs/foundry-findings.md#agent-target-evaluations-can-lose-responses-mid-run), and never measure with a run that has agent-call failures.
 
 Regenerated files are checked by tests. Regenerate them rather than editing by hand:
 
