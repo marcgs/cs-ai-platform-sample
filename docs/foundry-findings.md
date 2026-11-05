@@ -2,14 +2,14 @@
 
 What we hit while building this sample on Microsoft Foundry, Agent Framework and azd, and how we got past it. This is one of the sample's main results: read it before designing a similar platform for a corporate setting, where data and endpoints must stay private.
 
-Each finding has a **Hit** (what happened and why it matters), a **Workaround** (where it lives in this repository) and a **Status**: *open* (still a limitation), *by design* (how the service works) or *unverified*, with the date we last checked. Many features involved are preview or beta ([appendix](#appendix-maturity)), so check the date against the current docs.
+Each finding has a **Hit** (what happened and why it matters), a **Workaround** (where it lives in this repository) and a **Status**: *open* (still a limitation), *by design* (how the service works) or *unverified*, with the date we last checked. Many features involved are preview or beta ([appendix](#maturity)), so check the date against the current docs.
 
 Add a finding when you hit one, and update its status when you check it again. Ideas go in the [backlog](backlog.md).
 
 ## At a glance
 
 - **Private networking:** data stores are private, but Foundry, the registry, AI Search and monitoring are public. Network injection with a public Foundry endpoint [isn't a documented setup](#network-injection-with-a-public-foundry-endpoint-isnt-a-documented-setup), and a fully private Foundry is [untested](#not-tested-yet). Evaluation already needed a [storage firewall exception](#evaluation-in-a-private-network-project-needs-more-than-a-capability-host).
-- **Preview in critical paths:** the services are GA, but the gate's [evaluators are preview](#built-in-judges-dont-know-the-right-answer), the agent's hosting adapter is beta and [corrupts tool calls](#the-hosting-adapter-corrupts-tool-call-arguments-and-over-reports-tokens), and azd's Foundry extensions are beta with no GA date ([appendix](#appendix-maturity)).
+- **Preview in critical paths:** the services are GA, but the gate's [evaluators are preview](#built-in-judges-dont-know-the-right-answer), the agent's hosting adapter is beta and [corrupts tool calls](#the-hosting-adapter-corrupts-tool-call-arguments-and-over-reports-tokens), and azd's Foundry extensions are beta with no GA date ([appendix](#maturity)).
 - **Evaluation reliability:** agent-target runs [lost answers](#agent-target-evaluations-can-lose-responses-mid-run) in 2 of 5 full runs while reporting success, and [run summaries hide errors](#a-completed-run-can-hide-failed-evaluators).
 - **Cost reporting is wrong:** hosted agents over-report tokens 1.6 to 3.3 times, and [judge usage is counted twice](#judge-usage-is-reported-twice).
 - **Guardrails:** content-safety moderation [fails silently](#content-safety-moderation-fails-on-every-knowledge-search) on every knowledge search.
@@ -17,7 +17,7 @@ Add a finding when you hit one, and update its status when you check it again. I
 
 ## Summary
 
-Sorted by what matters most for a corporate setup: security and networking first, then what production needs, then development workarounds. The findings below follow the same order. Stage is the maturity of the component involved ([appendix](#appendix-maturity)); blank means the finding isn't about Foundry.
+Sorted by what matters most for a corporate setup: security and networking first, then what production needs, then development workarounds. The findings below follow the same order. Stage is the maturity of the component involved ([appendix](#maturity)); blank means the finding isn't about Foundry.
 
 | Finding | Status | Stage | Workaround |
 |---|---|---|---|
@@ -329,10 +329,14 @@ What a corporate review will ask about that this sample hasn't tried. Treat thes
 - **Data residency end to end:** where traces, conversations, evaluation results and the data proxy's traffic are processed and stored, beyond the models' Data Zone deployment.
 - **Identity governance in practice:** what the docs say about Entra Agent ID is in the [appendix](#preview-terms-support-and-identity); we haven't tried Conditional Access, identity protection, network controls or ownership and access reviews on the agent identities, and the docs don't say which of them work without a license.
 - **The last two keys:** Entra instead of the MCP server's and the platform API's function keys (backlog S1).
-- **Whether the docs match the regions:** the [region table](#region-availability-docs-only) is from the docs only. Nothing in it was provisioned, including the shared private link from AI Search, and creating a new AI Search service in North Europe or Sweden Central may be refused for lack of capacity.
+- **Whether the docs match the regions:** the [region table](#region-availability) is from the docs only. Nothing in it was provisioned, including the shared private link from AI Search, and creating a new AI Search service in North Europe or Sweden Central may be refused for lack of capacity.
 - **What support does for a GA service with preview parts:** the [terms](#preview-terms-support-and-identity) say what applies to the preview parts, not what is left of the GA service's commitments. Only a Microsoft support contact can answer that.
 
-## Appendix: maturity
+## Appendix
+
+Background for the findings: how mature each part is, where it's available, and the terms that apply.
+
+### Maturity
 
 Preview features come without a service-level agreement, and Microsoft [doesn't recommend them for production](https://learn.microsoft.com/azure/foundry/concepts/general-availability#validate-ga-only-usage); organizations can [hide or block them](https://learn.microsoft.com/azure/foundry/how-to/disable-preview-features). A GA service can still be used through preview parts, as evaluation is here. Everything the sample uses that isn't listed is GA (hosted agents, toolboxes, the evaluation service, tracing for hosted agents, models, AI Search, Cosmos DB, Functions with the MCP tool trigger, azd core, Bicep). From Microsoft Learn and PyPI, checked 2026-11-05.
 
@@ -353,7 +357,7 @@ Preview features come without a service-level agreement, and Microsoft [doesn't 
 | Traffic splitting between agent versions | Unclear | Not yet; [the docs disagree](#traffic-splitting-between-agent-versions) |
 | `agent-framework-core` 1.24.0, `mcp` 2.3.0 | GA | The agent; the [session bug](#some-sdk-combinations-break-the-mcp-session) is fixed in this combination |
 
-### Region availability (docs only)
+### Region availability
 
 From Microsoft Learn, checked 2026-11-05; nothing was provisioned. The Foundry account is in Sweden Central and AI Search in North Europe.
 
