@@ -1,4 +1,4 @@
-# ADR 0011: Foundry evaluation with an answer-key gate and measured thresholds
+# ADR 0007: Foundry evaluation with an answer-key gate and measured thresholds
 
 - **Status:** Accepted
 - **Date:** 2026-11-05
@@ -22,5 +22,5 @@ The RCA agent needs a repeatable check of diagnostic correctness and evidence, n
 - Three 50-case runs of agent version 8 are a **first baseline, not a statistical guarantee**. The gate is a minimum-quality check, not proof of improvement or a calibrated model-judge verdict. New agents need their own cases, evaluators and measured criteria.
 - The portal is useful for inspecting individual results, but its headline pass count is not our acceptance result. Execution failures must not be interpreted as wrong diagnoses.
 - A full run costs about $1 with gpt-5.4-mini (Data Zone); checking saved results costs $0 in model calls. Get approval before runs, and inspect the [evaluation findings](../foundry-findings.md#evaluation) first.
-- The [findings](../foundry-findings.md#evaluation) hold the platform limitations and workarounds. The [evaluation storage exception](0008-evaluation-storage-network-exception.md) remains unchanged.
+- The [findings](../foundry-findings.md#evaluation) hold the platform limitations and workarounds. The [evaluation storage exception](0006-evaluation-storage-network-exception.md) remains unchanged.
 - Commands can move into a pipeline, but **no pipeline is active**. The [CI/CD sketch](../ci-cd.md) shows the evaluation job without adding a workflow.

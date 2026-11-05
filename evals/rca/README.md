@@ -26,7 +26,7 @@ A test checks that the committed file matches the generator, and regeneration ke
 
 ## Evaluation
 
-`../azure.eval.yaml` defines the `rca-quality` evaluation for `azd ai eval`; the commands are in the [README](../../README.md#evaluate), and [ADR 0011](../../docs/adr/0011-foundry-evaluation-and-measured-gate.md) records why it's built this way. Foundry sends each row of `queries.jsonl` to the deployed agent. Two built-in judges (intent resolution, task adherence) report on the answer, and six code evaluators compare it with the row's answer key:
+`../azure.eval.yaml` defines the `rca-quality` evaluation for `azd ai eval`; the commands are in the [README](../../README.md#evaluate), and [ADR 0007](../../docs/adr/0007-foundry-evaluation-and-measured-gate.md) records why it's built this way. Foundry sends each row of `queries.jsonl` to the deployed agent. Two built-in judges (intent resolution, task adherence) report on the answer, and six code evaluators compare it with the row's answer key:
 
 | Evaluator | Scores | Applies to |
 |---|---|---|

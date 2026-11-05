@@ -141,7 +141,7 @@ Add a finding when you hit one, and update its status when you check it again. I
 ### Evaluation in a private-network project needs more than a capability host
 
 - **Hit:** with the project's storage private, evaluation runs failed first at startup (`EvaluationSessionNotBound: The evaluation session is starting. Retry the relay request.`, zero rows, and a misleading "Azure Storage resource already exists"), then, with a storage connection, at result upload (HTTP 403 `AuthorizationFailure` on `CreateContainer`, although the project identity had Blob Data Contributor). A resource-instance rule for the Foundry account didn't admit the project's requests. The errors point at naming, then permissions.
-- **Workaround:** a project capability host, a project storage connection and the storage firewall's trusted Azure services bypass, as in Microsoft's private-network evaluation template (15a). Storage is then no longer private-link only ([ADR 0008](adr/0008-evaluation-storage-network-exception.md)).
+- **Workaround:** a project capability host, a project storage connection and the storage firewall's trusted Azure services bypass, as in Microsoft's private-network evaluation template (15a). Storage is then no longer private-link only ([ADR 0006](adr/0006-evaluation-storage-network-exception.md)).
 - **Status:** open. Checked 2026-11-02.
 
 ### Dataset upload fails behind private storage
@@ -209,7 +209,7 @@ Add a finding when you hit one, and update its status when you check it again. I
 ### azd's pass-rate gate cannot express the RCA gate
 
 - **Hit:** azd's documented [CI gate](https://learn.microsoft.com/azure/foundry/agents/how-to/set-up-ci-cd-cli#verify-with-eval-in-ci) is `--fail-on any-failure` or `--fail-on pass-rate=<0..1>`: passed cases over all cases, with errored and skipped cases counting against it. It can't express per-metric minimum means over applicable cases, a hard injection check, diagnostic-only evaluators, or errors kept apart from wrong answers. It also fails to read back local-source runs ([below](#azd-ai-eval-is-an-early-beta)).
-- **Workaround:** the read-only `uv run python -m rca_evals.gate` reads the saved results with the project's OpenAI client and applies `evals/rca/gate.json` ([ADR 0011](adr/0011-foundry-evaluation-and-measured-gate.md)).
+- **Workaround:** the read-only `uv run python -m rca_evals.gate` reads the saved results with the project's OpenAI client and applies `evals/rca/gate.json` ([ADR 0007](adr/0007-foundry-evaluation-and-measured-gate.md)).
 - **Status:** by design. Checked 2026-11-04.
 
 ### `azd ai eval` is an early beta

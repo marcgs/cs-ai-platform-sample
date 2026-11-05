@@ -28,7 +28,7 @@ Limitations of Foundry and its tools go in [Foundry findings](foundry-findings.m
 
 ## Q. Evaluation
 
-Foundry evaluation and its measured quality gate are implemented ([ADR 0011](adr/0011-foundry-evaluation-and-measured-gate.md), [first baseline](../evals/rca/README.md#first-measurement)). These extend them.
+Foundry evaluation and its measured quality gate are implemented ([ADR 0007](adr/0007-foundry-evaluation-and-measured-gate.md), [first baseline](../evals/rca/README.md#first-measurement)). These extend them.
 
 | ID | Item | Why | Explores | Size |
 |---|---|---|---|---|
