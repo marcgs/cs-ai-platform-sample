@@ -44,7 +44,7 @@ evals:
           response: "{{sample.output_text}}"
           tool_calls: "{{item.tool_calls}}"
       # Code evaluators need a deployment name and a threshold, though they call no model.
-      # Thresholds are provisional until step 4 of docs/plan-evaluation.md sets the criteria.
+      # These label individual cases; rca/gate.json holds the measured aggregate criteria.
       - evaluator: hit_at_1
         initializationParameters:
           deployment_name: gpt-5.4-mini

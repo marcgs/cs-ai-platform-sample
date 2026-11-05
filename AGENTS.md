@@ -31,7 +31,7 @@ azd ai agent invoke "M-0007: ..."      # the deployed agent
 uv run csai episodes list              # recorded runs; csai feedback records an expert verdict
 ```
 
-Every change must leave ruff, pyright and pytest green. After changing agent instructions, schemas, tools or platform capture, try a few cases against the agent (`azd ai agent run` with the start command above, then `invoke --local`); it needs a deployed environment and costs tokens, so mention it when you skip it. Evaluation is being rebuilt the way Foundry documents it ([`docs/plan-evaluation.md`](docs/plan-evaluation.md)); `uv run python -m rca_evals.gate` checks a saved run against provisional criteria, pending step 4's measurement.
+Every change must leave ruff, pyright and pytest green. After changing agent instructions, schemas, tools or platform capture, try a few cases against the agent (`azd ai agent run` with the start command above, then `invoke --local`); it needs a deployed environment and costs tokens, so mention it when you skip it. For evaluation, Foundry calls the deployed agent on 50 cases with two judges and six answer-key code evaluators; `uv run python -m rca_evals.gate --run <name-or-id>` checks the saved results against the measured criteria in `evals/rca/gate.json` ([eval guide](evals/rca/README.md#pass-or-fail), [ADR 0011](docs/adr/0011-foundry-evaluation-and-measured-gate.md)). Get approval before each model-token run (about $1); check the [evaluation findings](docs/foundry-findings.md#evaluation) before starting. Never use a run with agent-call failures to measure quality.
 
 Regenerated files are checked by tests. Regenerate them rather than editing by hand:
 

@@ -92,7 +92,9 @@ The loop for any change to the agent:
 3. Keep a real improvement and deploy it with `azd deploy rca-agent`, or undo the experiment with `git restore agents/rca/src/rca_agent/instructions.md`.
 4. Check what's live with `azd ai agent invoke`, and follow its logs with `azd ai agent monitor --follow`.
 
-Measuring a change across all 50 test cases needs evaluation, which is being rebuilt the way Foundry documents it.
+5. Measure the deployed version on all 50 cases with the [README's evaluation command](../README.md#evaluate), after checking the [known failures](foundry-findings.md#evaluation) and approving the roughly $1 run. Foundry calls the agent and runs two built-in judges and six answer-key code evaluators. Once that run completes, `uv run python -m rca_evals.gate --run <run-name>` checks its saved results and exits 0 for PASS or 1 for FAIL. Agent-call failures are failed runs, not wrong diagnoses.
+
+Compare its applicability-filtered means with the [first baseline](../evals/rca/README.md#first-measurement), not the portal's headline pass count. The baseline is three runs of one version, not a statistical guarantee; the gate checks minimum quality, not proof that a change improved it.
 
 ## Next
 

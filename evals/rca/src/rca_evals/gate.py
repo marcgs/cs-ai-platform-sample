@@ -1,4 +1,4 @@
-"""Read one completed Foundry run and check the provisional RCA quality gate."""
+"""Read one completed Foundry run and check the measured RCA quality gate."""
 
 import argparse
 import math
