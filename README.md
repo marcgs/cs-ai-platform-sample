@@ -6,7 +6,7 @@ A reference sample that shows the path from **an agent prototype** to **an agent
 
 - What and why: [`docs/specification.md`](docs/specification.md) · [`docs/architecture.md`](docs/architecture.md)
 - What we learned about Foundry, its limitations and how we got past them: [`docs/foundry-findings.md`](docs/foundry-findings.md)
-- Using it, one case end to end: [`docs/walkthrough.md`](docs/walkthrough.md) · each part in Azure: [`docs/platform-tour.md`](docs/platform-tour.md)
+- Using it, one case end to end: [`docs/walkthrough.md`](docs/walkthrough.md), with where to look in Azure
 - Decisions: [`docs/adr/`](docs/adr/) · ideas and what's next: [`docs/backlog.md`](docs/backlog.md)
 - Adding an agent: [`docs/onboarding-an-agent.md`](docs/onboarding-an-agent.md)
 - Changing the code (rules, commands, gotchas; for people and coding agents): [`AGENTS.md`](AGENTS.md)
@@ -31,7 +31,7 @@ A reference sample that shows the path from **an agent prototype** to **an agent
 - [Azure Functions Core Tools v4](https://learn.microsoft.com/azure/azure-functions/functions-run-local), to run the MCP server locally
 - An Azure subscription where you can create resources and role assignments (Owner, or Contributor + Role Based Access Control Administrator)
 
-If your machine must use a package mirror, configure it in your user-level uv configuration, never in this repository ([`docs/dependencies.md`](docs/dependencies.md)).
+If your machine must use a package mirror, configure it in your user-level uv configuration, never in this repository ([ADR 0002](docs/adr/0002-local-lock-files.md)).
 
 ### Deploy
 

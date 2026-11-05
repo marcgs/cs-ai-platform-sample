@@ -51,7 +51,7 @@ az login
 uv run rca-local "M-0001: overlay getting worse, stage temperature alarm this morning"
 ```
 
-The output shows the ranked hypotheses with their evidence, then the episode: tool calls with durations, token usage and trace ID. Episodes stay in memory locally; Cosmos DB is private ([ADR 0003](../../docs/adr/0003-private-data-stores.md)). Set `APPLICATIONINSIGHTS_CONNECTION_STRING` to export traces ([tracing](../../docs/tracing.md)).
+The output shows the ranked hypotheses with their evidence, then the episode: tool calls with durations, token usage and trace ID. Episodes stay in memory locally; Cosmos DB is private ([ADR 0003](../../docs/adr/0003-private-data-stores.md)). Set `APPLICATIONINSIGHTS_CONNECTION_STRING` to export traces ([observability](../../docs/architecture.md#observability)).
 
 ## Deploy
 
