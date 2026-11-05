@@ -4,8 +4,8 @@ version = "0.1.0"
 description = "Root-cause analysis agent for machine incidents, built on the CS AI platform."
 requires-python = ">=3.14,<3.15"
 dependencies = [
-    "agent-framework-core>=1.22.0",
-    "agent-framework-foundry-hosting>=1.0.0b261015",
+    "agent-framework-core>=1.24.0",
+    "agent-framework-foundry-hosting>=1.0.0b261030",
     "azure-identity>=1.27.0",
     "cs-platform",
     "pydantic>=2.14.1",

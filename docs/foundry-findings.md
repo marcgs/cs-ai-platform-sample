@@ -35,8 +35,8 @@ Sorted by what matters most for a corporate setup: security and networking first
 | **2. Production readiness** | | | |
 | [Agent-target runs can lose answers](#agent-target-evaluations-can-lose-responses-mid-run) | open | GA | Treat any failed call as an invalid run |
 | [`azd ai eval` is an early beta](#azd-ai-eval-is-an-early-beta) | open | beta | See the entry |
-| [The hosting adapter corrupts tool calls and usage](#the-hosting-adapter-corrupts-tool-call-arguments-and-over-reports-tokens) | open | beta | Nothing reads them; a fix is in closed #43 |
-| [Hosted runs stream internally](#hosted-runs-stream-internally) | open | beta | Compare hosted with hosted |
+| [The hosting adapter corrupts tool calls and usage](#the-hosting-adapter-corrupts-tool-call-arguments-and-over-reports-tokens) | open | beta | Nothing reads them; a fix is in closed #43; still present in b261030 |
+| [Hosted runs stream internally](#hosted-runs-stream-internally) | open | beta | Compare hosted with hosted; still present in b261030 |
 | [Judge usage is reported twice](#judge-usage-is-reported-twice) | open | GA | Count one |
 | [Traffic splitting between agent versions](#traffic-splitting-between-agent-versions) | unverified | preview | Not tried |
 | [The chat model version upgrades itself](#the-chat-model-version-upgrades-automatically) | by design | GA | Record it with every run |
@@ -46,7 +46,7 @@ Sorted by what matters most for a corporate setup: security and networking first
 | [No retries, no repeats, slow runs](#no-retries-no-repeats-slow-runs) | by design | GA | New runs; several full runs |
 | [Model rate limits](#model-rate-limits-fail-hosted-runs) | by design | GA | Retry 429s; low concurrency |
 | [Toolbox MCP calls run one at a time](#toolbox-mcp-calls-run-one-at-a-time) | open | GA | None |
-| [Some SDK combinations break the MCP session](#some-sdk-combinations-break-the-mcp-session) | open | GA | Pin `agent-framework-core` 1.22.0 |
+| [Some SDK combinations break the MCP session](#some-sdk-combinations-break-the-mcp-session) | fixed | GA | Core 1.24.0 with `mcp` 2.3.0; the test needed the mcp 2 API |
 | [What-if is noisy and incomplete](#what-if-shows-changes-that-arent-real-and-hides-some-that-are) | by design | | Declare live settings in Bicep |
 | [A provision hook didn't run](#a-provision-hook-didnt-run) | open | | Check its output |
 | **3. Development workarounds** | | | |
@@ -167,13 +167,13 @@ Sorted by what matters most for a corporate setup: security and networking first
 
 - **Hit:** in the hosted agent's Responses output, tool-call arguments arrive as strings holding the same JSON object twice (`{"machine_id":"M-0001"}{"machine_id":"M-0001"}`), and reported token usage is about 2.8 times the real usage. `agent-framework-foundry-hosting` 1.0.0b261015 appends argument snapshots that should replace the deltas, and sums cumulative usage snapshots instead of keeping the last. The tools aren't called twice. Cost tracking from reported usage is wrong, and Foundry's tool judges reject the output ([below](#tool-judges-reject-string-arguments)).
 - **Workaround:** nothing in the sample reads hosted tool calls or reported usage; episodes record their own. A tested middleware that corrects the stream is in the closed [#43](https://github.com/marcgs/cs-ai-platform-sample/pull/43), with an [offline reproduction](https://github.com/marcgs/cs-ai-platform-sample/blob/before-cleanup/evals/rca/foundry/stream_repro.py).
-- **Status:** open. Checked 2026-11-04.
+- **Status:** open, not fixed in `agent-framework-foundry-hosting` 1.0.0b261030 (with core 1.24.0, `mcp` 2.3.0). Checked 2026-11-05 on agent version 9: all 25 tool calls in three streaming invocations (M-0007, M-0001, M-0006) and one non-streaming one (M-0001) still had doubled arguments. Reported usage against the episode's own count: M-0007 109,218 against 33,344 tokens (3.3 times), M-0001 24,227 against 14,916 (1.6 times), M-0006 39,623 against 20,206 (2.0 times), M-0001 non-streaming 24,091 against 14,780 (1.6 times). Earlier: 1.0.0b261015, checked 2026-11-04.
 
 ### Hosted runs stream internally
 
 - **Hit:** the hosted agent streams internally even when the caller asks for a non-streaming response; local runs don't. On five cases, hosted runs used about 1.7 times the tokens of local runs, not fully separated from sampling.
 - **Workaround:** compare hosted with hosted, and local with local.
-- **Status:** open. Checked 2026-11-04.
+- **Status:** open, not fixed in `agent-framework-foundry-hosting` 1.0.0b261030. Checked 2026-11-05: a request with `"stream": false` returned a normal JSON response, but its tool-call arguments were doubled and its usage over-reported exactly as in streaming requests, which only happens when the adapter accumulates a stream. Not measured against a local run. Earlier: 1.0.0b261015, checked 2026-11-04.
 
 ### Judge usage is reported twice
 
@@ -232,8 +232,8 @@ Sorted by what matters most for a corporate setup: security and networking first
 ### Some SDK combinations break the MCP session
 
 - **Hit:** `agent-framework-core` 1.23.0 with `mcp` 1.30.0 fails a real MCP session (`ClientSession.protocol_version` is missing), while every unit test passes. Core 1.22.0 works.
-- **Workaround:** stay on core 1.22.0, and test a real MCP session offline.
-- **Status:** open. Checked 2026-11-03.
+- **Workaround:** use `mcp` 2.x with core 1.24, and test a real MCP session offline.
+- **Status:** fixed. Core 1.24.0 with `mcp` 2.3.0 passes the real MCP session test and the full suite (256 tests), and the deployed agent (version 9) called the toolbox's MCP tools. Tried 2026-11-05. Core 1.23.0 and 1.24.0 with `mcp` 1.30.0 failed; 1.22.0 worked. The test had to move to the mcp 2 API (`MCPServer`, `Client`); the sample's own code didn't use mcp directly.
 
 ### What-if shows changes that aren't real, and hides some that are
 
@@ -331,7 +331,6 @@ What a corporate review will ask about that this sample hasn't tried. Treat thes
 - **The last two keys:** Entra instead of the MCP server's and the platform API's function keys (backlog S1).
 - **Region availability** of each feature used, outside Sweden Central (AI Search runs in North Europe here).
 - **Support terms when GA services run preview parts,** such as the GA evaluation service with preview evaluators.
-- **Whether newer packages fix our bugs:** `agent-framework-foundry-hosting` builds after 1.0.0b261015, `agent-framework-core` 1.24 and `mcp` 2.x.
 
 ## Appendix: maturity
 
@@ -339,7 +338,7 @@ Preview features come without a service-level agreement, and Microsoft [doesn't 
 
 | Capability | Stage | Where the sample uses it |
 |---|---|---|
-| `agent-framework-foundry-hosting` 1.0.0b261015 | Beta | The agent's hosting adapter, in the request path. GA alternative: a handler on `azure-ai-agentserver-responses` |
+| `agent-framework-foundry-hosting` 1.0.0b261030 | Beta | The agent's hosting adapter, in the request path. GA alternative: a handler on `azure-ai-agentserver-responses` |
 | azd Foundry extensions (`azure.ai.agents` 1.0.0-beta.23, `azure.ai.evaluations` 1.0.0-beta.2, `azure.ai.toolboxes` and five more) | Beta, no GA date | Deploying the agent and toolbox; evaluation runs. GA alternative for evaluation: the `azure-ai-projects` SDK |
 | Custom evaluators | Preview | The gate's six code evaluators; no GA equivalent |
 | Intent resolution, task adherence | Preview | The two judges; the GA tool evaluators need tool calls |
@@ -352,4 +351,4 @@ Preview features come without a service-level agreement, and Microsoft [doesn't 
 | Private endpoint for Foundry, network injection, private registry | No preview label | Network injection; the rest untested. Private registry only for projects created after 2026-06-25 |
 | Entra Agent ID platform | GA since April 2026 | Agent identities. One Entra page still says preview; governance features need Agent 365 licensing |
 | Traffic splitting between agent versions | Unclear | Not yet; [the docs disagree](#traffic-splitting-between-agent-versions) |
-| `agent-framework-core` 1.22.0, `mcp` 1.30.0 | GA, newer releases exist | The agent; pinned because of the [session bug](#some-sdk-combinations-break-the-mcp-session) |
+| `agent-framework-core` 1.24.0, `mcp` 2.3.0 | GA | The agent; the [session bug](#some-sdk-combinations-break-the-mcp-session) is fixed in this combination |

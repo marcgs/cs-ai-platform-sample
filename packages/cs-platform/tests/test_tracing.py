@@ -5,8 +5,8 @@ import httpx
 import pytest
 from agent_framework import MCPStreamableHTTPTool
 from agent_framework.observability import ChatTelemetryLayer
-from mcp.server.fastmcp import Context, FastMCP
-from mcp.shared.memory import create_connected_server_and_client_session
+from mcp import Client
+from mcp.server.mcpserver import Context, MCPServer
 from opentelemetry import propagate, trace
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.sdk.trace import TracerProvider
@@ -179,7 +179,7 @@ async def test_closing_stream_ends_episode_span(
 async def test_real_mcp_session_propagates_episode_context_in_metadata(
     spec: AgentSpec, spans: InMemorySpanExporter, stream: bool
 ) -> None:
-    server = FastMCP("diagnostics")
+    server = MCPServer("diagnostics")
 
     @server.tool()
     def diagnostic_tool(ctx: Context) -> str:
@@ -188,16 +188,19 @@ async def test_real_mcp_session_propagates_episode_context_in_metadata(
         assert meta is not None
         with trace.get_tracer(__name__).start_as_current_span(
             "mcp.server.diagnostic",
-            context=propagate.extract(meta.model_dump()),
+            context=propagate.extract(dict(meta)),
             kind=trace.SpanKind.SERVER,
         ):
             return "evidence"
 
     store = InMemoryEpisodeStore()
     async with (
-        create_connected_server_and_client_session(server) as session,
+        Client(server) as mcp_client,
         MCPStreamableHTTPTool(
-            "diagnostics", "https://example.test/mcp", session=session, load_prompts=False
+            "diagnostics",
+            "https://example.test/mcp",
+            session=mcp_client.session,
+            load_prompts=False,
         ) as mcp_tool,
     ):
         agent = build_agent(
