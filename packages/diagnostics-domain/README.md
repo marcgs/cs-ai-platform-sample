@@ -55,9 +55,9 @@ canaries are deliberately recognizable. Out-of-catalog cases model an unknown ca
 not a validated new failure mode. Dataset counts and category balance imply no real-world
 prevalence. Train/test assignment is owned by the eval manifest; tuning must use train only.
 
-## Synthetic feedback (L2)
+## Synthetic feedback
 
-No Azure, model calls or episode stores are used:
+A large population of episodes with expert reviews and planted patterns, for developing failure analysis (backlog L3) without real feedback. No Azure, model calls or episode stores are used:
 
 ```bash
 uv run generate-feedback --count 2000 --seed 42 --output-dir generated/synthetic-feedback
@@ -87,7 +87,7 @@ Files:
 The stable pattern IDs are `vacuum_telemetry_omission`,
 `overlapping_codes_after_update`, `missing_code_mapping`, `data_quality` and
 `injection_followed`. The taxonomy and review/key shapes are typed in
-`feedback_models.py`, which L3 imports rather than redefining.
+`feedback_models.py`.
 
 Every ten records contain five misses and five matched correct controls, over
 seed machines and causal failure modes. Every captured result is returned by

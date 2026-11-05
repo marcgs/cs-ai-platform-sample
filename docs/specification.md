@@ -1,37 +1,17 @@
 # Specification: CS AI Platform, validated with AI-assisted diagnostics
 
-- **Status:** Living document
-- **Related:** [Architecture](architecture.md) · [Decisions (ADRs)](adr/) · [Foundry findings](foundry-findings.md)
-
 This document describes **what** the sample is and **why**. The [architecture](architecture.md) describes **how**. The scenario is generic: a fictional customer-support organization, fictional equipment and synthetic data.
 
----
 
 ## 1. Background
 
-### 1.1 The organization
+A **customer support (CS) organization** maintains a large installed base of complex industrial equipment at customer sites. When a machine goes down, **field service engineers** diagnose and repair it, backed by remote specialists and subject-matter experts (SMEs). Downtime is expensive, and diagnostic labor is a major cost, so **time to diagnosis** matters most.
 
-A **customer support (CS) organization** maintains a large installed base of complex, high-value industrial equipment at customer sites. When a machine goes down or degrades, **field service engineers** diagnose and repair it on site, backed by remote support specialists and subject-matter experts (SMEs).
+- **Knowledge is fragmented** across telemetry and event logs, error-code references, decision trees, service logbooks, expert emails and historical cases.
+- **Hard cases are slow.** For the long tail, engineers spend hours collecting evidence before forming a hypothesis, and difficult cases escalate to scarce specialists.
+- **Learning from the field is slow.** Insights from a repair can take months to reach the knowledge base.
 
-Every hour of unplanned downtime is expensive for the equipment owner. Diagnostic labor is a major cost driver for the support organization. Reducing **time to diagnosis** and **diagnostic labor hours** is a strategic goal.
-
-### 1.2 Today's diagnostic reality
-
-- **Diagnostic knowledge is fragmented** across many systems: machine telemetry and event logs, error-code references, diagnostic decision trees and knowledge bases, service logbooks, email threads with experts, and historical case records.
-- **Diagnosis is slow for hard cases.** Routine failures are well covered by existing diagnostic content. For the long tail, engineers spend hours collecting evidence from several tools before forming a hypothesis, and difficult cases escalate to scarce specialists.
-- **Learning from the field is slow.** Insights gained during a repair can take months to flow back into the diagnostic knowledge base, so the same investigation happens repeatedly.
-
-### 1.3 Where AI stands today
-
-The organization has **promising diagnostic agent prototypes**. These are LLM-based agents that gather evidence through tools and propose ranked root causes. They show value, but each prototype is built in isolation and lacks what controlled use by field engineers requires:
-
-- no repeatable path from prototype to production (deployment, environments, CI/CD),
-- no consistent observability (what did the agent do, and why?),
-- no systematic evaluation (is the new version better or worse?),
-- no governed way to learn from expert corrections,
-- no shared security, identity and data-access model.
-
-Building one more isolated agent would add to the problem.
+The organization has promising **diagnostic agent prototypes**, but each is built in isolation, without a path to production, observability, systematic evaluation, a governed way to learn from expert corrections, or a shared security model. One more isolated agent would add to the problem.
 
 ## 2. Vision and goals
 
@@ -54,17 +34,14 @@ The approach is **platform-first, validated by a real use case**:
 - Autonomous actions on equipment. Agents read diagnostic data; they do not change machine state.
 - Organizational change, global rollout or adoption programs.
 
-## 3. Users and stakeholders
+## 3. Users
 
-| Role | Needs from the system |
+| Role | Needs |
 |---|---|
-| **Field service engineer** (primary user) | A fast, evidence-backed diagnosis for the machine in front of them, and an easy way to confirm or correct the result. |
-| **Remote support specialist / SME** | Fewer escalations; when escalated, a complete evidence trail instead of starting from scratch. Reviews and approves proposed knowledge updates. |
-| **Diagnostic content author / knowledge engineer** | Visibility into where agents fail and why, and governed proposals for new or improved diagnostic content. |
-| **Agent developer** | A harness, templates and a repeatable delivery path that make building, evaluating and shipping a new agent routine. |
-| **Platform / operations team** | Standardized deployment, identity, telemetry and cost visibility across all agents. |
-| **Reliability / analytics team** | Structured episode data to analyze recurring failure modes and diagnostic effectiveness. |
-| **Security, compliance and responsible-AI reviewers** | Least-privilege access, auditability, data residency, documented controls. |
+| **Field service engineer** (primary user) | A fast, evidence-backed diagnosis, and an easy way to confirm or correct it. |
+| **SME and content author** | A complete evidence trail on escalation; visibility into where agents fail; approval of every proposed knowledge change. |
+| **Agent developer** | A harness and a repeatable path for building, evaluating and shipping an agent. |
+| **Platform, security and compliance** | Standard deployment, identity, telemetry, cost visibility, least privilege, auditability and data residency. |
 
 ## 4. Core workflow: diagnosis to action
 
@@ -86,12 +63,7 @@ sequenceDiagram
     SME->>Store: Review recurring corrections (outer loop)
 ```
 
-1. **Intake.** The field engineer submits a machine identifier and a free-text symptom.
-2. **Evidence gathering.** The agent calls diagnostic tools: machine configuration and recent changes, error events in the relevant window, telemetry for implicated signals, and error-code references. It also searches the knowledge base for similar historical cases and logbook entries.
-3. **Reasoning.** The agent forms several hypotheses and discriminates between them. Shared error codes alone are not enough, so the agent correlates telemetry trends and recent maintenance history.
-4. **Report.** A structured report with ranked hypotheses, a confidence for each, **evidence items that reference concrete records**, and recommended verification checks.
-5. **Capture.** The platform, not the LLM, records the full episode.
-6. **Feedback.** The engineer confirms or corrects the diagnosis, and the correction is attached to the episode.
+The agent gathers evidence with tools and search, discriminates between hypotheses (shared error codes alone aren't enough), and reports ranked hypotheses with cited records and recommended checks. The platform, not the model, records the episode, and the engineer's verdict is attached to it.
 
 ## 5. Platform capabilities
 
@@ -132,7 +104,7 @@ The sample implements the **inner loop** (capture and feedback). Proposals, the 
 | F6 | Persist every run as an episode with a stable identifier returned to the caller. |
 | F7 | Allow an expert to attach feedback to an episode: verdict (correct / partially correct / incorrect), actual root cause, free-text note. |
 | F8 | Allow listing and inspecting episodes. |
-| F9 | Run the evaluation suite against a local or deployed agent and report pass/fail against thresholds. |
+| F9 | Run the evaluation suite against the deployed agent and report pass or fail against thresholds. |
 | F10 | Onboarding a second agent requires only a spec, instructions, a toolbox reference and an eval suite; no new infrastructure code. |
 
 ### 7.2 Non-functional
@@ -151,17 +123,14 @@ The sample implements the **inner loop** (capture and feedback). Proposals, the 
 
 ## 8. Success measures
 
-The sample demonstrates the **mechanisms** for measuring success. The targets below are **illustrative**; real values must come from baselines measured with the people who use the system.
+The sample shows the **mechanisms**; real targets need baselines measured with the people who use the system.
 
-| Outcome | Example measure | Where it's measured |
+| Outcome | Measure | Where |
 |---|---|---|
-| Diagnostic accuracy | Correct root cause in the top 1 / top 3 hypotheses on the case manifest | Evaluation gate |
-| Evidence quality | Share of hypotheses with valid, resolvable evidence references | Evaluation gate |
-| Diagnostic speed | Time from request to report; field time to diagnosis | Traces; pilot measurement |
-| Coverage | Share of in-scope failure modes the agent diagnoses correctly | Evaluation gate; episodes |
-| Learning velocity | Time from expert correction to approved knowledge update | Episode store; outer loop |
-| Adoption | Share of eligible cases where engineers use the agent; satisfaction | Usage telemetry; surveys |
-| Platform reuse | Effort to onboard the next agent | Onboarding guide in practice |
+| Accuracy and evidence quality | Correct root cause ranked first; cited references valid | Evaluation gate |
+| Speed | Time from request to report | Traces |
+| Learning velocity | Time from expert correction to approved update | Episodes; outer loop |
+| Adoption and reuse | Use by engineers; effort to onboard the next agent | Telemetry; onboarding in practice |
 
 ## 9. Scope
 
@@ -170,7 +139,7 @@ The sample demonstrates the **mechanisms** for measuring success. The targets be
 - Platform harness, telemetry, episode store and feedback (C1–C9 in minimal form)
 - One RCA agent over a **synthetic fleet**, with 50 test cases: 18 clean incidents and 32 challenge cases
 - MCP tool server, search-backed knowledge, IaC with azd, a small CLI for episodes and feedback; CI/CD documented but not active
-- Evaluation (C7): Foundry calls the deployed agent on 50 cases, two built-in judges report, and six code evaluators score against the answer key; a read-only gate checks applicability-filtered means, injection resistance and execution errors ([ADR 0011](adr/0011-foundry-evaluation-and-measured-gate.md)). Thresholds come from a three-run first baseline; local-agent batch evaluation and automatic CI enforcement are not implemented.
+- Evaluation of the deployed agent in Foundry with a read-only quality gate ([ADR 0011](adr/0011-foundry-evaluation-and-measured-gate.md)); not of a local agent, and not enforced by CI
 
 ### Later
 
@@ -196,30 +165,14 @@ All data in this repository is **fictional** and generated deterministically. It
 
 ## 11. Assumptions and open questions
 
-Assumptions:
-
-- An Azure subscription with permission to create resources and role assignments.
-- Preview features (hosted agents, toolboxes, parts of tracing and evaluation) are acceptable for a sample, and versions are pinned.
-
-Open questions for adopting the pattern in a real organization:
-
-- Which existing diagnostic systems become MCP tools first, and who owns them?
-- What are the baseline metrics, and who signs off on the evaluation thresholds?
-- Which components and services are approved for use, and which existing IaC must be reused?
-- Who are the SMEs for the learning loop, and what is their review capacity?
-- Where do the boundaries lie between advisory output and actions that need formal procedures?
+Preview features (hosted agents, toolboxes, parts of tracing and evaluation) are acceptable for a sample. For a real adoption, settle first: which diagnostic systems become tools and who owns them; who signs off on evaluation thresholds; which services and existing IaC are approved; who the SMEs are and how much they can review; and where advisory output ends and formal procedures begin.
 
 ## 12. Glossary
 
 | Term | Meaning |
 |---|---|
-| **RCA** | Root-cause analysis: identifying the underlying cause of a failure. |
-| **Agent** | An LLM-driven program that uses tools to gather information and produce a result. |
-| **Harness** | The shared platform library that hosts agents and provides common capabilities. |
-| **MCP** | Model Context Protocol: a standard interface for exposing tools to agents. |
-| **Toolbox** | A curated, versioned bundle of tools behind a single MCP endpoint. |
-| **Episode** | The structured record of one diagnostic run, including feedback. |
-| **Case manifest** | The versioned set of evaluation cases with expected outcomes. |
-| **Evaluation gate** | A check that fails when evaluation results fall below thresholds; runs locally and in any CI. |
-| **SME** | Subject-matter expert. |
-| **Failure mode** | A known way a machine can fail, with characteristic symptoms and evidence. |
+| **RCA** | Root-cause analysis: finding the underlying cause of a failure. |
+| **Harness** | The shared platform library that hosts agents. |
+| **Toolbox** | A Foundry bundle of tools behind one MCP endpoint. |
+| **Episode** | The platform's record of one agent run, with its feedback. |
+| **Evaluation gate** | A check that fails when evaluation results fall below thresholds. |
