@@ -12,10 +12,13 @@ When this plan is done, its results go into the findings, the architecture, the 
 - **The current environment stays as it is** until step 6, except for step 1's approved agent deployment. The private one is a new azd environment.
 - **Approvals:** the hard rules in [AGENTS.md](../AGENTS.md) apply. Anything that changes Azure (provision, deploy, delete) or spends model tokens needs the user's approval with a USD estimate. Read-only checks (`az bicep build`, `what-if`, `show`/`list`) don't.
 - **One step per pull request.** ruff, pyright and pytest green; staged diff checked for environment details.
+- **Model for the implementing agent:** each step names one. A mid-tier model (for example Claude Sonnet 5.5) for mechanical and writing steps, the strongest available (for example Claude Opus 5.5) for the networking steps, where mistakes are subtle. If the mid-tier model comes back with gaps twice, switch up rather than adding review rounds.
 
 ## Steps
 
 ### 1. Package upgrades
+
+Model: mid-tier.
 
 Check whether newer releases fix the bugs we work around. Offline first, then one deployment to the current environment.
 
@@ -26,6 +29,8 @@ Check whether newer releases fix the bugs we work around. Offline first, then on
 
 ### 2. Documentation checks
 
+Model: mid-tier.
+
 No Azure changes, no cost.
 
 - Region availability, in Sweden Central and North Europe, of everything the sample uses or the private setup needs: hosted agents, network injection, toolboxes, evaluation, trace annotations, private registry for hosted agents, and Azure Monitor Private Link Scope.
@@ -35,6 +40,8 @@ No Azure changes, no cost.
 - **Done when** the findings' appendix and "Not tested yet" are updated, and anything that blocks step 3 is raised with the user.
 
 ### 3. A private mode in Bicep
+
+Model: strongest available.
 
 Add a parameter (for example `privateNetworking`, default `false`) that, when true:
 
@@ -52,11 +59,15 @@ Also check whether `azure.yaml`, the hooks (`scripts/setup_platform.py`) and `cs
 
 ### 4. Provision the private environment
 
+Model: strongest available.
+
 With approval, the user provisions a new azd environment (for example `cs-platform-private`) with `privateNetworking=true`: first the network and the jump host, then `azd up` from the jump host. Record every manual step and every failure.
 
 - **Done when** `azd up` completes from inside the network, or the blocking failure is in the findings with what was tried.
 
 ### 5. The sample end to end, privately
+
+Model: strongest available.
 
 From the jump host, with approval for the tokens (about $1, plus any full runs approved under item 4):
 
@@ -71,6 +82,8 @@ From the jump host, with approval for the tokens (about $1, plus any full runs a
 - **Done when** each item works or has a finding, and the findings' "At a glance" and "Not tested yet" reflect the result.
 
 ### 6. Decide and close
+
+Model: mid-tier.
 
 - With the user: does private become the sample's main mode, and is the current environment deleted? Deleting it needs explicit approval.
 - An ADR for the decision, updating ADR 0003 (and ADR 0006 if the bypass is no longer needed).
