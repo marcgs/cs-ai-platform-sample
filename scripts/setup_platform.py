@@ -382,7 +382,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("step", choices=steps)
     args = parser.parse_args(argv)
     try:
-        # On the jump host, deploy as the signed-in developer, never as a VM identity.
+        # In private mode, use the Azure CLI or azd sign-in (on the jump host, the VM identity via
+        # az login --identity) rather than whatever managed identity the process can reach.
         steps[args.step](
             DefaultAzureCredential(exclude_managed_identity_credential=_private_networking())
         )
