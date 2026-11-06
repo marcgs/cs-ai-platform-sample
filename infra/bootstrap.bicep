@@ -52,15 +52,9 @@ module jumpHost 'modules/jump-host.bicep' = {
 }
 
 // The jump host runs azd up, which deploys at subscription scope and creates role assignments.
-var ownerRoleId = '8e3af657-a8ff-443c-a75c-2fe8c4bcb635'
-
-resource jumpHostOwner 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(subscription().id, rg.id, 'jump-host', ownerRoleId)
-  properties: {
-    principalId: jumpHost.outputs.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', ownerRoleId)
-  }
+module jumpHostOwner 'modules/subscription-owner.bicep' = {
+  name: 'jump-host-owner-${environmentName}'
+  params: { principalId: jumpHost.outputs.principalId }
 }
 
 output resourceGroupName string = rg.name
