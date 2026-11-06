@@ -20,9 +20,6 @@
     "evaluationStorageTrustedServicesBypass": {
       "value": "${AZURE_EVALUATION_TRUSTED_SERVICES_BYPASS=false}"
     },
-    "bastionSku": {
-      "value": "${AZURE_BASTION_SKU=Basic}"
-    },
     "jumpVmSize": {
       "value": "${AZURE_JUMP_VM_SIZE=Standard_B2s}"
     },

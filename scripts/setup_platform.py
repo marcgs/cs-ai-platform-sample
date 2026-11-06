@@ -382,7 +382,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("step", choices=steps)
     args = parser.parse_args(argv)
     try:
-        # On the jump host, the VM identity is for Entra SSH, not developer deployment rights.
+        # On the jump host, deploy as the signed-in developer, never as a VM identity.
         steps[args.step](
             DefaultAzureCredential(exclude_managed_identity_credential=_private_networking())
         )

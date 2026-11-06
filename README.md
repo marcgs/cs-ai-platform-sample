@@ -69,7 +69,7 @@ Foundry sends the 50 test cases to the deployed agent and scores the answers; th
 azd down --purge
 ```
 
-Fixed costs are about $4/day (default) or $14/day (private mode), plus usage ([assumptions](docs/plan-corporate-readiness.md#costs)). Model usage is about 10–15k tokens per diagnosis.
+Fixed costs are about $4/day (default) or $8/day (private mode), plus usage ([assumptions](docs/plan-corporate-readiness.md#costs)). Model usage is about 10–15k tokens per diagnosis.
 
 ## Development
 

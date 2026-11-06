@@ -1,4 +1,4 @@
-// Shared virtual network, private DNS and optional development-host egress.
+// Shared virtual network and private DNS, plus the jump host's subnet in private mode.
 //
 // Storage (Functions host) and Cosmos DB (episodes) are reachable only through private
 // endpoints. The function app and the hosted agents reach them from delegated subnets; the
@@ -34,58 +34,14 @@ var dnsZoneNames = union({
   agentService: 'privatelink.agentsvc.azure-automation.net'
 } : {})
 
-resource outboundIp 'Microsoft.Network/publicIPAddresses@2024-05-01' = if (privateNetworking) {
-  name: '${vnetName}-egress'
-  location: location
-  tags: tags
-  sku: { name: 'Standard' }
-  properties: { publicIPAllocationMethod: 'Static' }
-}
-
-resource nat 'Microsoft.Network/natGateways@2024-05-01' = if (privateNetworking) {
-  name: '${vnetName}-nat'
-  location: location
-  tags: tags
-  sku: { name: 'Standard' }
-  properties: {
-    idleTimeoutInMinutes: 10
-    publicIpAddresses: [{ id: outboundIp!.id }]
-  }
-}
-
+// No custom rules: the defaults allow SSH from inside the network and from Bastion Developer
+// (Azure's platform address), and deny inbound from the internet. The VM has no public IP.
 resource jumpNsg 'Microsoft.Network/networkSecurityGroups@2024-05-01' = if (privateNetworking) {
   name: '${vnetName}-jump'
   location: location
   tags: tags
   properties: {
-    securityRules: [
-      {
-        name: 'BastionSsh'
-        properties: {
-          priority: 100
-          direction: 'Inbound'
-          access: 'Allow'
-          protocol: 'Tcp'
-          sourceAddressPrefix: cidrSubnet(addressPrefix, 26, 20)
-          sourcePortRange: '*'
-          destinationAddressPrefix: '*'
-          destinationPortRange: '22'
-        }
-      }
-      {
-        name: 'DenyOtherInbound'
-        properties: {
-          priority: 200
-          direction: 'Inbound'
-          access: 'Deny'
-          protocol: '*'
-          sourceAddressPrefix: '*'
-          sourcePortRange: '*'
-          destinationAddressPrefix: '*'
-          destinationPortRange: '*'
-        }
-      }
-    ]
+    securityRules: []
   }
 }
 
@@ -144,14 +100,10 @@ resource vnet 'Microsoft.Network/virtualNetworks@2024-05-01' = {
         name: 'snet-jump'
         properties: {
           addressPrefix: cidrSubnet(addressPrefix, 24, 4)
-          defaultOutboundAccess: false
-          natGateway: { id: nat!.id }
+          // Default outbound access, no NAT: governed subscriptions can block new public IPs.
+          defaultOutboundAccess: true
           networkSecurityGroup: { id: jumpNsg!.id }
         }
-      }
-      {
-        name: 'AzureBastionSubnet'
-        properties: { addressPrefix: cidrSubnet(addressPrefix, 26, 20) }
       }
     ] : [])
   }
@@ -195,7 +147,6 @@ output privateEndpointSubnetId string = vnet::privateEndpointSubnet.id
 output functionsSubnetId string = vnet::functionsSubnet.id
 output agentsSubnetId string = vnet::agentsSubnet.id
 output jumpSubnetId string = '${vnet.id}/subnets/snet-jump'
-output bastionSubnetId string = '${vnet.id}/subnets/AzureBastionSubnet'
 output dnsZoneIds object = toObject(
   items(dnsZoneNames),
   zone => zone.key,
