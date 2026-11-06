@@ -20,11 +20,11 @@ Existing private storage and Cosmos stay unchanged: 11 VNet endpoints, one Searc
 
 Use a new environment; these commands change Azure and incur the [plan's costs](plan-corporate-readiness.md#costs). France Central is proposed; check quota and capacity first.
 
-1. On the workstation, bootstrap the network and access host with example values. The private key stays in `~/.ssh`, never in the repository.
+1. On the workstation, bootstrap the network and access host with example values. The private key stays in `~/.ssh`, never in the repository; the portal's Bastion connection needs an RSA key in PEM format ([Learn](https://learn.microsoft.com/azure/bastion/bastion-connect-vm-ssh-linux#authentication-details)).
    ```bash
    ENV_NAME=cs-platform-private
    REGION=francecentral
-   ssh-keygen -t ed25519 -f ~/.ssh/cs-platform-jump
+   ssh-keygen -t rsa -b 4096 -m PEM -f ~/.ssh/cs-platform-jump
    az deployment sub create --name private-bootstrap --location "$REGION" \
      --template-file infra/bootstrap.bicep \
      --parameters environmentName="$ENV_NAME" location="$REGION" \
