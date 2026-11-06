@@ -1,23 +1,17 @@
-// Entra-only development host. Bastion and NAT have public IPs; the VM does not.
+// Development host inside the private network, reached through Bastion Developer. Neither has a
+// public IP: governed subscriptions can block new public IPs, and Developer uses a shared pool.
 
 param location string
 param tags object = {}
 param name string
 param subnetId string
-param bastionSubnetId string
-@allowed(['Basic', 'Standard'])
-param bastionSku string = 'Basic'
+param vnetId string
 param vmSize string = 'Standard_B2s'
-param principalId string = ''
-param principalType string = 'User'
-@description('Initial provisioning key; discard its private half and use Entra sign-in.')
+@description('SSH public key for the admin account; the private key stays on the developer machine.')
 @minLength(1)
 param adminPublicKey string
-@description('Initial provisioning account; password authentication is disabled.')
+@description('Admin account; password authentication is disabled.')
 param adminUsername string = 'jumpadmin'
-
-var loginRole = '1c0163c0-47e6-4577-8991-ea5c82e286e4'
-var readerRole = 'acdd72a7-3385-48ef-bd42-f606fba81ae7'
 
 resource nic 'Microsoft.Network/networkInterfaces@2024-05-01' = {
   name: '${name}-nic'
@@ -40,7 +34,6 @@ resource vm 'Microsoft.Compute/virtualMachines@2024-07-01' = {
   name: name
   location: location
   tags: tags
-  identity: { type: 'SystemAssigned' }
   properties: {
     hardwareProfile: { vmSize: vmSize }
     storageProfile: {
@@ -83,62 +76,13 @@ resource vm 'Microsoft.Compute/virtualMachines@2024-07-01' = {
   }
 }
 
-resource entraLogin 'Microsoft.Compute/virtualMachines/extensions@2024-07-01' = {
-  parent: vm
-  name: 'AADSSHLoginForLinux'
-  location: location
-  tags: tags
-  properties: {
-    publisher: 'Microsoft.Azure.ActiveDirectory'
-    type: 'AADSSHLoginForLinux'
-    typeHandlerVersion: '1.0'
-    autoUpgradeMinorVersion: true
-  }
-}
-
-resource bastionIp 'Microsoft.Network/publicIPAddresses@2024-05-01' = {
-  name: '${name}-bastion-ip'
-  location: location
-  tags: tags
-  sku: { name: 'Standard' }
-  properties: { publicIPAllocationMethod: 'Static' }
-}
-
 resource bastion 'Microsoft.Network/bastionHosts@2024-05-01' = {
   name: '${name}-bastion'
   location: location
   tags: tags
-  sku: { name: bastionSku }
+  sku: { name: 'Developer' }
   properties: {
-    enableTunneling: bastionSku == 'Standard'
-    ipConfigurations: [
-      {
-        name: 'bastion'
-        properties: {
-          subnet: { id: bastionSubnetId }
-          publicIPAddress: { id: bastionIp.id }
-        }
-      }
-    ]
-  }
-}
-
-resource login 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(principalId) && principalType == 'User') {
-  name: guid(vm.id, principalId, loginRole)
-  scope: vm
-  properties: {
-    principalId: principalId
-    principalType: 'User'
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', loginRole)
-  }
-}
-
-resource reader 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(principalId)) {
-  name: guid(resourceGroup().id, principalId, readerRole)
-  properties: {
-    principalId: principalId
-    principalType: principalType
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', readerRole)
+    virtualNetwork: { id: vnetId }
   }
 }
 

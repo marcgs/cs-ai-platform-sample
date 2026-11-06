@@ -4,14 +4,9 @@ targetScope = 'subscription'
 
 param environmentName string
 param location string
-param principalId string
 @minLength(1)
 param adminPublicKey string
-@allowed(['User', 'ServicePrincipal'])
-param principalType string = 'User'
 param vnetAddressPrefix string = '10.40.0.0/16'
-@allowed(['Basic', 'Standard'])
-param bastionSku string = 'Basic'
 param jumpVmSize string = 'Standard_B2s'
 param privateEndpointSubnetNetworkSecurityGroupId string = ''
 param functionsSubnetNetworkSecurityGroupId string = ''
@@ -50,11 +45,8 @@ module jumpHost 'modules/jump-host.bicep' = {
     tags: tags
     name: 'vm-jump-${token}'
     subnetId: network.outputs.jumpSubnetId
-    bastionSubnetId: network.outputs.bastionSubnetId
-    bastionSku: bastionSku
+    vnetId: network.outputs.vnetId
     vmSize: jumpVmSize
-    principalId: principalId
-    principalType: principalType
     adminPublicKey: adminPublicKey
   }
 }

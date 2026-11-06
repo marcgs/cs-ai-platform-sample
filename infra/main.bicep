@@ -19,15 +19,11 @@ param searchLocation string = ''
 @description('Isolate service data planes and add a jump host. Use a new environment.')
 param privateNetworking bool = false
 
-@description('Required in private mode; discard the private key after generating this provisioning key.')
+@description('Required in private mode: the SSH public key for the jump host.')
 param adminPublicKey string = ''
 
 @description('Private-mode fallback for ADR 0006. Public mode always retains the existing exception.')
 param evaluationStorageTrustedServicesBypass bool = false
-
-@description('Basic supports browser Entra SSH; Standard also supports native clients.')
-@allowed(['Basic', 'Standard'])
-param bastionSku string = 'Basic'
 
 @description('Jump host VM size; local Docker builds need sufficient memory.')
 param jumpVmSize string = 'Standard_B2s'
@@ -118,11 +114,8 @@ module jumpHost 'modules/jump-host.bicep' = if (privateNetworking) {
     tags: tags
     name: 'vm-jump-${token}'
     subnetId: network.outputs.jumpSubnetId
-    bastionSubnetId: network.outputs.bastionSubnetId
-    bastionSku: bastionSku
+    vnetId: network.outputs.vnetId
     vmSize: jumpVmSize
-    principalId: principalId
-    principalType: principalType
     adminPublicKey: adminPublicKey
   }
 }
@@ -384,7 +377,6 @@ module developerAccess 'modules/developer-access.bicep' = if (hasPrincipal) {
 output AZURE_RESOURCE_GROUP string = rg.name
 output AZURE_LOCATION string = location
 output AZURE_PRIVATE_NETWORKING bool = privateNetworking
-output AZURE_BASTION_SKU string = bastionSku
 output JUMP_VM_NAME string = privateNetworking ? jumpHost!.outputs.vmName : ''
 output BASTION_NAME string = privateNetworking ? jumpHost!.outputs.bastionName : ''
 output AZURE_AI_ACCOUNT_ID string = foundry.outputs.accountId

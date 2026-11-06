@@ -44,7 +44,7 @@ Add a parameter (for example `privateNetworking`, default `false`) that, when tr
 - puts Application Insights and Log Analytics behind an Azure Monitor Private Link Scope;
 - gives the MCP function app and the platform API private inbound access;
 - tries evaluation storage **without** the trusted-services bypass of [ADR 0006](adr/0006-evaluation-storage-network-exception.md), keeping the bypass as a fallback;
-- adds a way in for deployment and development: a small jump VM in its own subnet, with Entra sign-in and no public IP, reached through Azure Bastion (Basic by default, Standard for native Entra SSH). A self-hosted CI runner would use the same subnet later.
+- adds a way in for deployment and development: a small jump VM in its own subnet with no public IP, reached through Bastion Developer with an SSH key. How we reach the network can be simple; only the services must be private. A self-hosted CI runner would use the same subnet later.
 
 Also check whether `azure.yaml`, the hooks (`scripts/setup_platform.py`) and `csai` need changes when the data planes are private. For example, the toolbox hook and search seeding have to run from inside the network.
 
@@ -93,17 +93,15 @@ Confirmed 2026-11-05 with the [Azure Retail Prices API](https://prices.azure.com
 | ACR Premium | $1.6666/day (Basic is $0.1666/day) | $1.667 |
 | 11 VNet endpoints plus Search shared endpoint | $0.01/endpoint-hour | $2.880 |
 | 14 private DNS zones | $0.50/zone-month | $0.230 |
-| Bastion Basic | $0.19/hour | $4.560 |
-| NAT Standard | $0.045/hour | $1.080 |
-| Two Standard static IPv4 public IPs | $0.005/IP-hour | $0.240 |
+| Bastion Developer | free | $0 |
 | Linux B2s, running 8 hours and deallocated for 16 | $0.0472/hour | $0.378 |
 | E6 64 GB Standard SSD LRS, retained all day | $5.28/month | $0.174 |
-| **Private fixed subtotal, VM 8 hours/day** | | **$13.63/day** |
-| **Private fixed subtotal, VM 24 hours/day** | | **$14.39/day** |
+| **Private fixed subtotal, VM 8 hours/day** | | **$7.75/day** |
+| **Private fixed subtotal, VM 24 hours/day** | | **$8.51/day** |
 
-Bastion Standard adds **$2.40/day**. The public environment adds about **$3.86/day**: both together cost **$17.49/day** with eight VM hours, or **$18.24/day** always running. A two-week spike is about **$245 fixed** at eight hours, before usage.
+The public environment adds about **$3.86/day**: both together cost **$11.61/day** with eight VM hours, or **$12.37/day** always running. A two-week spike is about **$165 fixed** at eight hours, before usage.
 
-Add hosted compute, Cosmos, Functions, storage, Monitor, Search usage, tokens and transfer. Private Link processing starts at $0.01/GB, NAT is $0.045/GB, and DNS queries are $0.40/million. Token budgets remain about $0.10 for step 1 and $1 for step 5, separately approved. VM deallocation doesn't stop NAT, Bastion, disk or endpoint charges.
+Add hosted compute, Cosmos, Functions, storage, Monitor, Search usage, tokens and transfer. Private Link processing starts at $0.01/GB and DNS queries are $0.40/million. Token budgets remain about $0.10 for step 1 and $1 for step 5, separately approved. VM deallocation doesn't stop disk or endpoint charges.
 
 ## Not in this plan
 

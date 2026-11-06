@@ -31,7 +31,7 @@ Sorted by what matters most for a corporate setup: security and networking first
 | [Traces stop at the toolbox](#traces-stop-at-the-toolbox) | open | GA | None |
 | [Search results contain the service's address](#search-results-contain-the-search-services-address) | by design | GA | Strip URLs before export |
 | [A new identity per agent version](#each-agent-version-gets-a-new-identity-which-exists-only-after-deployment) | by design | GA | Post-deploy hook grants its role |
-| [Azure Policy can override templates](#azure-policy-can-override-templates) | by design | | Private data stores from the start |
+| [Azure Policy can override templates](#azure-policy-can-override-templates) | by design | | Private data stores from the start; no public IPs for the jump host |
 | [Trusted-service provider spelling](#trusted-service-provider-spelling) | unverified | | The broader bypass |
 | **2. Production readiness** | | | |
 | [Agent-target runs can lose answers](#agent-target-evaluations-can-lose-responses-mid-run) | open | GA | Treat any failed call as an invalid run |
@@ -74,8 +74,8 @@ Sorted by what matters most for a corporate setup: security and networking first
 
 ### Private provisioning needs an access bootstrap and link approval
 
-- **Hit:** private data planes need in-network hooks and owner approval of Search's outbound link; Developer Bastion doesn't support Entra SSH.
-- **Workaround:** [bootstrap the host](private-networking.md), then run `azd up` there and approve only `foundry-vectorizer`. Basic supports browser Entra SSH; native clients need Standard ([Learn](https://learn.microsoft.com/azure/bastion/bastion-entra-id-authentication)).
+- **Hit:** private data planes need in-network hooks and owner approval of Search's outbound link.
+- **Workaround:** [bootstrap the host](private-networking.md), then run `azd up` there and approve only `foundry-vectorizer`.
 - **Status:** by design. Checked 2026-11-05: [supported resource types, footnote 6](https://learn.microsoft.com/azure/search/search-indexer-howto-access-private#supported-resource-types) assigns `openai_account` to Azure OpenAI vectorizers, including this AIServices account; `foundry_account` describes hosted-model skills, not this query vectorizer.
 
 ### Evaluation in a private-network project needs more than a capability host
@@ -122,9 +122,9 @@ Sorted by what matters most for a corporate setup: security and networking first
 
 ### Azure Policy can override templates
 
-- **Hit:** in governed subscriptions, a `modify` policy turns public network access off on storage and Cosmos DB, whatever the template says. The function app then couldn't upload its package (403), and the hosted agent couldn't reach Cosmos DB.
-- **Workaround:** design for private stores ([ADR 0003](adr/0003-private-data-stores.md)) and preserve externally attached subnet NSGs in local azd inputs before reprovisioning.
-- **Status:** by design. Checked 2026-11-05 with read-only subnet inspection.
+- **Hit:** in governed subscriptions, a `modify` policy turns public network access off on storage and Cosmos DB, whatever the template says. The function app then couldn't upload its package (403), and the hosted agent couldn't reach Cosmos DB. On 2026-11-06 the private bootstrap failed on its first public IP (for NAT): a management-group `append` policy adds an IP tag to every new public IP, which needs a subscription feature that wasn't registered (`SubscriptionNotRegisteredForFeature`, `Microsoft.Network/AllowBringYourOwnPublicIpAddress`). Bastion Basic and NAT both need public IPs.
+- **Workaround:** design for private stores ([ADR 0003](adr/0003-private-data-stores.md)) and preserve externally attached subnet NSGs in local azd inputs before reprovisioning. The jump host uses Bastion Developer and default outbound access, so it needs no public IP; a corporate deployment would reach the network through its existing VPN or ExpressRoute.
+- **Status:** by design. Checked 2026-11-06.
 
 ### Trusted-service provider spelling
 

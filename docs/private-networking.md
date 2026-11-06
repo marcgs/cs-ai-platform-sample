@@ -12,7 +12,7 @@ Set `AZURE_PRIVATE_NETWORKING=true` for a new environment; the default is `false
 | Monitoring | AMPLS covers Application Insights and Log Analytics; private ingestion/query |
 | Functions | Private MCP and platform API endpoints, including SCM DNS |
 | Evaluation storage | Bypass off; `AZURE_EVALUATION_TRUSTED_SERVICES_BYPASS=true` is the fallback |
-| Access | Private Ubuntu B2s VM, Entra sign-in, Basic/Standard Bastion and NAT egress |
+| Access | Ubuntu B2s VM with SSH key sign-in, Bastion Developer, default outbound access; no public IPs |
 
 Existing private storage and Cosmos stay unchanged: 11 VNet endpoints, one Search-managed endpoint and 14 DNS zones.
 
@@ -20,23 +20,17 @@ Existing private storage and Cosmos stay unchanged: 11 VNet endpoints, one Searc
 
 Use a new environment; these commands change Azure and incur the [plan's costs](plan-corporate-readiness.md#costs). France Central is proposed; check quota and capacity first.
 
-1. On the workstation, bootstrap the network and access host with example values.
+1. On the workstation, bootstrap the network and access host with example values. The private key stays in `~/.ssh`, never in the repository.
    ```bash
    ENV_NAME=cs-platform-private
    REGION=francecentral
-   tmp=$(mktemp -d)
-   ssh-keygen -t ed25519 -N '' -f "$tmp/jump"
-   rm "$tmp/jump"
-   ADMIN_PUBLIC_KEY=$(cat "$tmp/jump.pub")
-   rm "$tmp/jump.pub"
-   rmdir "$tmp"
+   ssh-keygen -t ed25519 -f ~/.ssh/cs-platform-jump
    az deployment sub create --name private-bootstrap --location "$REGION" \
      --template-file infra/bootstrap.bicep \
-     --parameters environmentName="$ENV_NAME" location="$REGION" bastionSku=Basic \
-       principalId="$(az ad signed-in-user show --query id -o tsv)" adminPublicKey="$ADMIN_PUBLIC_KEY"
+     --parameters environmentName="$ENV_NAME" location="$REGION" \
+       adminPublicKey="$(cat ~/.ssh/cs-platform-jump.pub)"
    ```
-   Azure requires an initial admin credential; discarding the private key immediately leaves Entra as the only usable sign-in.
-2. Connect through the VM's Bastion / Microsoft Entra ID portal option; install Git, Azure CLI, azd with its Foundry extension, uv and Docker, then clone this branch.
+2. In the portal, open the VM → **Connect** → **Bastion**, choose **SSH Private Key from Local File**, user `jumpadmin`, and the key from step 1. Install Git, Azure CLI, azd with its Foundry extension, uv and Docker, then clone `main`.
    ```bash
    az login --use-device-code
    azd auth login --use-device-code
@@ -47,8 +41,7 @@ Use a new environment; these commands change Azure and incur the [plan's costs](
    azd env new cs-platform-private
    azd env set AZURE_LOCATION francecentral
    azd env set AZURE_PRIVATE_NETWORKING true
-   azd env set AZURE_BASTION_SKU Basic
-   azd env set AZURE_JUMP_ADMIN_PUBLIC_KEY "$(sudo cat /home/jumpadmin/.ssh/authorized_keys)"
+   azd env set AZURE_JUMP_ADMIN_PUBLIC_KEY "$(cat ~/.ssh/authorized_keys)"
    uv sync --all-packages
    ```
 4. Preserve [external subnet NSGs](architecture.md#deployment); match `AZURE_VNET_ADDRESS_PREFIX` and `AZURE_JUMP_VM_SIZE` to bootstrap if nondefault, and set the agent's `docker.remoteBuild: false` in this VM checkout only.
@@ -62,9 +55,9 @@ Use a new environment; these commands change Azure and incur the [plan's costs](
    uv run csai episodes list
    ```
 
-Basic supports browser Entra SSH; native clients need `bastionSku=Standard` at bootstrap and `AZURE_BASTION_SKU=Standard` on the VM. Step 5's private Foundry portal check needs a separate browser route, such as a VPN-connected client.
+The access path is deliberately simple: Bastion Developer and default outbound access need no public IP, which governed subscriptions can block ([findings](foundry-findings.md#azure-policy-can-override-templates)). A corporate deployment would use its existing VPN or ExpressRoute instead. Step 5's private Foundry portal check needs a browser in the network, for example a small Windows VM opened through the same Bastion.
 
-Hooks and `csai` use developer credentials, not the VM identity. Deallocate the VM when unused; disk, NAT, Bastion and endpoints still cost money.
+Hooks and `csai` use developer credentials (`az login`, `azd auth login`). Deallocate the VM when unused; its disk and the private endpoints still cost money.
 
 ## Read-only validation, 2026-11-05
 
