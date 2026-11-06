@@ -56,7 +56,7 @@ def _private_network_hint() -> str:
     if _private_networking():
         return (
             ". Private mode requires the jump host (or another VNet-connected client); "
-            "check private DNS and your signed-in user's access"
+            "check private DNS and the signed-in identity's access"
         )
     return ""
 

@@ -1,5 +1,6 @@
 // Development host inside the private network, reached through Bastion Developer. Neither has a
 // public IP: governed subscriptions can block new public IPs, and Developer uses a shared pool.
+// The VM deploys as its own managed identity: Conditional Access can block user sign-ins from it.
 
 param location string
 param tags object = {}
@@ -34,6 +35,7 @@ resource vm 'Microsoft.Compute/virtualMachines@2024-07-01' = {
   name: name
   location: location
   tags: tags
+  identity: { type: 'SystemAssigned' }
   properties: {
     hardwareProfile: { vmSize: vmSize }
     storageProfile: {
@@ -87,4 +89,5 @@ resource bastion 'Microsoft.Network/bastionHosts@2024-05-01' = {
 }
 
 output vmName string = vm.name
+output principalId string = vm.identity.principalId
 output bastionName string = bastion.name

@@ -32,6 +32,7 @@ Sorted by what matters most for a corporate setup: security and networking first
 | [Search results contain the service's address](#search-results-contain-the-search-services-address) | by design | GA | Strip URLs before export |
 | [A new identity per agent version](#each-agent-version-gets-a-new-identity-which-exists-only-after-deployment) | by design | GA | Post-deploy hook grants its role |
 | [Azure Policy can override templates](#azure-policy-can-override-templates) | by design | | Private data stores from the start; no public IPs for the jump host |
+| [Conditional Access can block sign-in on the jump host](#conditional-access-can-block-sign-in-on-the-jump-host) | by design | | Deploy as the VM's managed identity |
 | [Trusted-service provider spelling](#trusted-service-provider-spelling) | unverified | | The broader bypass |
 | **2. Production readiness** | | | |
 | [Agent-target runs can lose answers](#agent-target-evaluations-can-lose-responses-mid-run) | open | GA | Treat any failed call as an invalid run |
@@ -124,6 +125,12 @@ Sorted by what matters most for a corporate setup: security and networking first
 
 - **Hit:** in governed subscriptions, a `modify` policy turns public network access off on storage and Cosmos DB, whatever the template says. The function app then couldn't upload its package (403), and the hosted agent couldn't reach Cosmos DB. On 2026-11-06 the private bootstrap failed on its first public IP (for NAT): a management-group `append` policy adds an IP tag to every new public IP, which needs a subscription feature that wasn't registered (`SubscriptionNotRegisteredForFeature`, `Microsoft.Network/AllowBringYourOwnPublicIpAddress`). Bastion Basic and NAT both need public IPs.
 - **Workaround:** design for private stores ([ADR 0003](adr/0003-private-data-stores.md)) and preserve externally attached subnet NSGs in local azd inputs before reprovisioning. The jump host uses Bastion Developer and default outbound access, so it needs no public IP; a corporate deployment would reach the network through its existing VPN or ExpressRoute.
+- **Status:** by design. Checked 2026-11-06.
+
+### Conditional Access can block sign-in on the jump host
+
+- **Hit:** on 2026-11-06, `az login --use-device-code` on the jump VM failed with Conditional Access error 53003, and so did the same command on a compliant workstation: the tenant blocks the device code flow. The VM has no browser, and Bastion Developer can't forward ports, so a user can't sign in from it at all. A tenant can also restrict sign-ins by location or device, and the VM is an unmanaged device at an Azure address.
+- **Workaround:** the bootstrap gives the VM a system-assigned identity with Owner on the subscription; `az login --identity` and `azd auth login --managed-identity` sign in as it, since Conditional Access doesn't apply to managed identities. The data-plane roles go to that identity (`AZURE_PRINCIPAL_TYPE=ServicePrincipal`). A self-hosted CI runner would work the same way. The private Foundry portal check still needs a user sign-in from inside the network, which likely needs a compliant device there.
 - **Status:** by design. Checked 2026-11-06.
 
 ### Trusted-service provider spelling
