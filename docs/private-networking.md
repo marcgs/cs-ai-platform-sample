@@ -30,21 +30,43 @@ Use a new environment; these commands change Azure and incur the [plan's costs](
      --parameters environmentName="$ENV_NAME" location="$REGION" \
        adminPublicKey="$(cat ~/.ssh/cs-platform-jump.pub)"
    ```
-2. In the portal, open the VM → **Connect** → **Bastion**, choose **SSH Private Key from Local File**, user `jumpadmin`, and the key from step 1. Install Git, Azure CLI, azd with its Foundry extension, uv and Docker, then clone `main`.
+   A governed subscription can attach NSGs to the subnets after the first run. When rerunning the bootstrap, pass them in so the deployment doesn't detach them, and check its what-if first.
    ```bash
-   az login --use-device-code
-   azd auth login --use-device-code
+   VNET=$(az network vnet list -g "rg-$ENV_NAME" --query "[0].name" -o tsv)
+   nsg() { az network vnet subnet show -g "rg-$ENV_NAME" --vnet-name "$VNET" -n "$1" --query networkSecurityGroup.id -o tsv; }
+   # add to the --parameters above:
+   #   privateEndpointSubnetNetworkSecurityGroupId="$(nsg snet-private-endpoints)" \
+   #   functionsSubnetNetworkSecurityGroupId="$(nsg snet-functions)" \
+   #   agentsSubnetNetworkSecurityGroupId="$(nsg snet-agents)"
+   ```
+2. In the portal, open the VM → **Connect** → **Bastion**, choose **SSH Private Key from Local File**, user `jumpadmin`, and the private key from step 1. Install the tools, then reconnect so the `docker` group and `PATH` apply.
+   ```bash
+   sudo apt-get update && sudo apt-get install -y git docker.io
+   sudo usermod -aG docker "$USER"
+   curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+   curl -fsSL https://aka.ms/install-azd.sh | bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+3. After reconnecting, sign in as the VM's managed identity, which the bootstrap made Owner of the subscription. Conditional Access can block user sign-ins from the VM (device code flow, location or device), and it doesn't apply to managed identities ([findings](foundry-findings.md#conditional-access-can-block-sign-in-on-the-jump-host)).
+   ```bash
+   azd extension install microsoft.foundry
+   azd extension install azure.ai.evaluations
+   git clone <this repository> && cd <its folder>
+   az login --identity
+   azd auth login --managed-identity
    docker info
    ```
-3. On the VM, select the bootstrap subscription and reuse its environment name, region and public key.
+   Then reuse the bootstrap's environment name, region and public key, and grant the data-plane roles to the identity.
    ```bash
    azd env new cs-platform-private
    azd env set AZURE_LOCATION francecentral
    azd env set AZURE_PRIVATE_NETWORKING true
    azd env set AZURE_JUMP_ADMIN_PUBLIC_KEY "$(cat ~/.ssh/authorized_keys)"
+   azd env set AZURE_PRINCIPAL_ID "$(az vm list -g rg-cs-platform-private --query "[0].identity.principalId" -o tsv)"
+   azd env set AZURE_PRINCIPAL_TYPE ServicePrincipal
    uv sync --all-packages
    ```
-4. Preserve [external subnet NSGs](architecture.md#deployment); match `AZURE_VNET_ADDRESS_PREFIX` and `AZURE_JUMP_VM_SIZE` to bootstrap if nondefault, and set the agent's `docker.remoteBuild: false` in this VM checkout only.
+4. Preserve [external subnet NSGs](architecture.md#deployment) with the same IDs in `PRIVATE_ENDPOINT_SUBNET_NSG_ID`, `FUNCTIONS_SUBNET_NSG_ID` and `AGENTS_SUBNET_NSG_ID`; match `AZURE_VNET_ADDRESS_PREFIX` and `AZURE_JUMP_VM_SIZE` to bootstrap if nondefault, and set the agent's `docker.remoteBuild: false` in this VM checkout only.
 5. Review the environment's what-if, then provision and deploy from the VM.
    ```bash
    azd up
@@ -57,7 +79,7 @@ Use a new environment; these commands change Azure and incur the [plan's costs](
 
 The access path is deliberately simple: Bastion Developer and default outbound access need no public IP, which governed subscriptions can block ([findings](foundry-findings.md#azure-policy-can-override-templates)). A corporate deployment would use its existing VPN or ExpressRoute instead. Step 5's private Foundry portal check needs a browser in the network, for example a small Windows VM opened through the same Bastion.
 
-Hooks and `csai` use developer credentials (`az login`, `azd auth login`). Deallocate the VM when unused; its disk and the private endpoints still cost money.
+Hooks and `csai` use the Azure CLI and azd sign-ins, here the VM's identity. Anyone who can open the VM through Bastion acts with that identity's subscription Owner rights, which is acceptable for a sample subscription only. Deallocate the VM when unused; its disk and the private endpoints still cost money.
 
 ## Read-only validation, 2026-11-05
 

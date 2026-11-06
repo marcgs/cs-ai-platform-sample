@@ -51,6 +51,13 @@ module jumpHost 'modules/jump-host.bicep' = {
   }
 }
 
+// The jump host runs azd up, which deploys at subscription scope and creates role assignments.
+module jumpHostOwner 'modules/subscription-owner.bicep' = {
+  name: 'jump-host-owner-${environmentName}'
+  params: { principalId: jumpHost.outputs.principalId }
+}
+
 output resourceGroupName string = rg.name
 output jumpVmName string = jumpHost.outputs.vmName
 output bastionName string = jumpHost.outputs.bastionName
+output jumpPrincipalId string = jumpHost.outputs.principalId
