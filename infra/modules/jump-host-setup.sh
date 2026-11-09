@@ -9,10 +9,24 @@ apt-get update
 apt-get install -y curl git docker.io
 usermod -aG docker "$user"
 
-command -v az >/dev/null || curl -sL https://aka.ms/InstallAzureCLIDeb | bash
-command -v azd >/dev/null || curl -fsSL https://aka.ms/install-azd.sh | bash
-command -v uv >/dev/null ||
-  curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 sh
+# Download to a file first: sh has no pipefail, so a failed download piped into a shell would pass.
+installer=$(mktemp)
+trap 'rm -f "$installer"' EXIT
+fetch() { curl -fsSL --retry 3 -o "$installer" "$1"; }
+
+# Plain if blocks: set -e doesn't stop on a failure inside an || or && list.
+if ! command -v az >/dev/null; then
+  fetch https://aka.ms/InstallAzureCLIDeb
+  bash "$installer"
+fi
+if ! command -v azd >/dev/null; then
+  fetch https://aka.ms/install-azd.sh
+  bash "$installer"
+fi
+if ! command -v uv >/dev/null; then
+  fetch https://astral.sh/uv/install.sh
+  env UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 sh "$installer"
+fi
 
 # azd extensions are per user.
 for extension in microsoft.foundry azure.ai.evaluations; do
