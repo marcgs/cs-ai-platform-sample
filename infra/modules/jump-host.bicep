@@ -78,6 +78,24 @@ resource vm 'Microsoft.Compute/virtualMachines@2024-07-01' = {
   }
 }
 
+// Installs Git, Docker, the Azure CLI, azd with its extensions and uv. Unlike customData, an
+// extension also applies to an existing VM; it reruns when the script changes.
+resource setup 'Microsoft.Compute/virtualMachines/extensions@2024-07-01' = {
+  parent: vm
+  name: 'setup'
+  location: location
+  tags: tags
+  properties: {
+    publisher: 'Microsoft.Azure.Extensions'
+    type: 'CustomScript'
+    typeHandlerVersion: '2.1'
+    autoUpgradeMinorVersion: true
+    settings: {
+      script: base64(replace(loadTextContent('jump-host-setup.sh'), '__ADMIN_USER__', adminUsername))
+    }
+  }
+}
+
 resource bastion 'Microsoft.Network/bastionHosts@2024-05-01' = {
   name: '${name}-bastion'
   location: location

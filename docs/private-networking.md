@@ -12,7 +12,7 @@ Set `AZURE_PRIVATE_NETWORKING=true` for a new environment; the default is `false
 | Monitoring | AMPLS covers Application Insights and Log Analytics; private ingestion/query |
 | Functions | Private MCP and platform API endpoints, including SCM DNS |
 | Evaluation storage | Bypass off; `AZURE_EVALUATION_TRUSTED_SERVICES_BYPASS=true` is the fallback |
-| Access | Ubuntu B2s VM with SSH key sign-in, Bastion Developer, default outbound access; no public IPs |
+| Access | Ubuntu B2s VM with SSH key sign-in and the deployment tools preinstalled, Bastion Developer, default outbound access; no public IPs |
 
 Existing private storage and Cosmos stay unchanged: 11 VNet endpoints, one Search-managed endpoint and 14 DNS zones.
 
@@ -30,7 +30,7 @@ Use a new environment; these commands change Azure and incur the [plan's costs](
      --parameters environmentName="$ENV_NAME" location="$REGION" \
        adminPublicKey="$(cat ~/.ssh/cs-platform-jump.pub)"
    ```
-   A governed subscription can attach NSGs to the subnets after the first run. When rerunning the bootstrap, pass them in so the deployment doesn't detach them, and check its what-if first.
+   A governed subscription can attach NSGs to the subnets after the first run. When rerunning the bootstrap, start the VM first (its setup extension can't change while it's deallocated), pass the NSGs in so the deployment doesn't detach them, and check its what-if first.
    ```bash
    VNET=$(az network vnet list -g "rg-$ENV_NAME" --query "[0].name" -o tsv)
    nsg() { az network vnet subnet show -g "rg-$ENV_NAME" --vnet-name "$VNET" -n "$1" --query networkSecurityGroup.id -o tsv; }
@@ -39,18 +39,9 @@ Use a new environment; these commands change Azure and incur the [plan's costs](
    #   functionsSubnetNetworkSecurityGroupId="$(nsg snet-functions)" \
    #   agentsSubnetNetworkSecurityGroupId="$(nsg snet-agents)"
    ```
-2. In the portal, open the VM → **Connect** → **Bastion**, choose **SSH Private Key from Local File**, user `jumpadmin`, and the private key from step 1. Install the tools, then reconnect so the `docker` group and `PATH` apply.
+2. In the portal, open the VM → **Connect** → **Bastion**, choose **SSH Private Key from Local File**, user `jumpadmin`, and the private key from step 1. The bootstrap's `setup` extension has already installed Git, Docker, the Azure CLI, azd with its Foundry and evaluation extensions, and uv ([script](../infra/modules/jump-host-setup.sh)); if a tool is missing, check `/var/log/azure/custom-script/handler.log`.
+3. Sign in as the VM's managed identity, which the bootstrap made Owner of the subscription. Conditional Access can block user sign-ins from the VM (device code flow, location or device), and it doesn't apply to managed identities ([findings](foundry-findings.md#conditional-access-can-block-sign-in-on-the-jump-host)).
    ```bash
-   sudo apt-get update && sudo apt-get install -y git docker.io
-   sudo usermod -aG docker "$USER"
-   curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
-   curl -fsSL https://aka.ms/install-azd.sh | bash
-   curl -LsSf https://astral.sh/uv/install.sh | sh
-   ```
-3. After reconnecting, sign in as the VM's managed identity, which the bootstrap made Owner of the subscription. Conditional Access can block user sign-ins from the VM (device code flow, location or device), and it doesn't apply to managed identities ([findings](foundry-findings.md#conditional-access-can-block-sign-in-on-the-jump-host)).
-   ```bash
-   azd extension install microsoft.foundry
-   azd extension install azure.ai.evaluations
    git clone <this repository> && cd <its folder>
    az login --identity
    azd auth login --managed-identity
