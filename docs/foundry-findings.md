@@ -123,9 +123,9 @@ Sorted by what matters most for a corporate setup: security and networking first
 
 ### Azure Policy can override templates
 
-- **Hit:** in governed subscriptions, a `modify` policy turns public network access off on storage and Cosmos DB, whatever the template says. The function app then couldn't upload its package (403), and the hosted agent couldn't reach Cosmos DB. On 2026-11-06 the private bootstrap failed on its first public IP (for NAT): a management-group `append` policy adds an IP tag to every new public IP, which needs a subscription feature that wasn't registered (`SubscriptionNotRegisteredForFeature`, `Microsoft.Network/AllowBringYourOwnPublicIpAddress`). Bastion Basic and NAT both need public IPs.
-- **Workaround:** design for private stores ([ADR 0003](adr/0003-private-data-stores.md)) and preserve externally attached subnet NSGs in local azd inputs before reprovisioning. The jump host uses Bastion Developer and default outbound access, so it needs no public IP; a corporate deployment would reach the network through its existing VPN or ExpressRoute.
-- **Status:** by design. Checked 2026-11-06.
+- **Hit:** in governed subscriptions, a `modify` policy turns public network access off on storage and Cosmos DB, whatever the template says. The function app then couldn't upload its package (403), and the hosted agent couldn't reach Cosmos DB. On 2026-11-06 the private bootstrap failed on its first public IP (for NAT): a management-group `append` policy adds an IP tag to every new public IP, which needs a subscription feature that wasn't registered (`SubscriptionNotRegisteredForFeature`, `Microsoft.Network/AllowBringYourOwnPublicIpAddress`). Bastion Basic and NAT both need public IPs. On 2026-11-09 a bootstrap rerun failed on the jump VM: its OS disk, requested as Standard SSD, had been created as Standard HDD, and a VM update can't change a disk's type (`OperationNotAllowed`); what-if reported the property as having no effect.
+- **Workaround:** design for private stores ([ADR 0003](adr/0003-private-data-stores.md)) and preserve externally attached subnet NSGs in local azd inputs before reprovisioning. The jump host uses Bastion Developer and default outbound access, so it needs no public IP, and a Standard HDD disk; a corporate deployment would reach the network through its existing VPN or ExpressRoute.
+- **Status:** by design. Checked 2026-11-09.
 
 ### Conditional Access can block sign-in on the jump host
 

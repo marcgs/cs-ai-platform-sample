@@ -48,7 +48,9 @@ resource vm 'Microsoft.Compute/virtualMachines@2024-07-01' = {
       osDisk: {
         createOption: 'FromImage'
         diskSizeGB: 64
-        managedDisk: { storageAccountType: 'StandardSSD_LRS' }
+        // Standard HDD: governed subscriptions can create Standard SSD requests as HDD, and a
+        // later deployment can't change the type through the VM.
+        managedDisk: { storageAccountType: 'Standard_LRS' }
       }
     }
     osProfile: {
