@@ -339,7 +339,7 @@ Sorted by what matters most for a corporate setup: security and networking first
 
 What a corporate review will ask about that this sample hasn't tried. Treat these as unknowns, not as working.
 
-- **Fully private Foundry:** Bicep and what-if checked, not provisioned. Image pull, tools/vectorization, AMPLS, function deployment, bypass-free evaluation and portal access still need live tests ([runbook](private-networking.md)). Private tracing is preview.
+- **Fully private Foundry:** Bicep and what-if checked, not provisioned. Image pull, tools/vectorization, AMPLS, function deployment, bypass-free evaluation and portal access still need live tests ([runbook](private-networking.md)). Private tracing is preview. The jump host clones a public repository; getting an internal repository onto it needs a GitHub sign-in that [Conditional Access may block](#conditional-access-can-block-sign-in-on-the-jump-host), or a non-user path such as a deploy key, a GitHub App or a self-hosted runner.
 - **Data residency end to end:** where traces, conversations, evaluation results and the data proxy's traffic are processed and stored, beyond the models' Data Zone deployment.
 - **Identity governance in practice:** what the docs say about Entra Agent ID is in the [appendix](#preview-terms-support-and-identity); we haven't tried Conditional Access, identity protection, network controls or ownership and access reviews on the agent identities, and the docs don't say which of them work without a license.
 - **The last two keys:** Entra instead of the MCP server's and the platform API's function keys (backlog S1).
